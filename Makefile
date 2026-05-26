@@ -35,7 +35,7 @@ proto-tools-check:
 	}
 
 test:
-	go test ./...
+	go test -short ./...
 
 test-coverage:
 	go test -coverprofile=$(COVERAGE_OUT) $(COVER_PKGS)
