@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package phrony.runtime.v1;
+
+option go_package = "github.com/phrony-platform/runtime/gen/phrony/runtime/v1;runtimev1";
+
+// Runtime is the control plane for the Phrony agent runtime.
+service Runtime {
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+  rpc RunSession(RunSessionRequest) returns (RunSessionResponse);
+  rpc Deploy(DeployRequest) returns (DeployResponse);
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  string version = 1;
+}
+
+message RunSessionRequest {
+  string session_id = 1;
+}
+
+message RunSessionResponse {}
+
+message DeployRequest {
+  bytes manifest = 1;
+}
+
+message DeployResponse {}
