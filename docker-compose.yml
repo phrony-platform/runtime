@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: phrony_runtime
+      POSTGRES_PASSWORD: phrony_runtime
+      POSTGRES_DB: phrony_runtime
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phrony_runtime -d phrony_runtime"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
