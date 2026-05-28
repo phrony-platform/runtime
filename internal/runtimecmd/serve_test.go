@@ -31,7 +31,7 @@ func TestRunServe_success(t *testing.T) {
 		done <- runServeWithDeps(ctx, false, serveDeps{
 			loadSettings: common.LoadSettings,
 			openDB:       common.OpenDB,
-			migrate:      core.Migrate,
+			migrate:      func(*sqlx.DB) error { return nil },
 			newServer:    core.NewServer,
 			notifyContext: func(parent context.Context, _ ...os.Signal) (context.Context, context.CancelFunc) {
 				child, stop := context.WithCancel(parent)

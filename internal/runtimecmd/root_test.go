@@ -3,6 +3,8 @@ package runtimecmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/jmoiron/sqlx"
 )
 
 func TestRunRoot_migrateMissingDatabaseURL(t *testing.T) {
@@ -17,6 +19,10 @@ func TestRunRoot_migrateSuccess(t *testing.T) {
 	restore := stubRuntimeDB(t)
 	defer restore()
 	t.Setenv("RUNTIME_DATABASE_URL", "postgres://unused")
+
+	prev := defaultMigrateDeps.migrate
+	defaultMigrateDeps.migrate = func(*sqlx.DB) error { return nil }
+	t.Cleanup(func() { defaultMigrateDeps.migrate = prev })
 
 	if err := runRoot([]string{"migrate"}); err != nil {
 		t.Fatalf("runRoot: %v", err)

@@ -25,7 +25,40 @@ func startTestRuntimeAddr(t *testing.T) string {
 	}
 	mock.ExpectQuery(`SELECT value FROM runtime_meta`).
 		WithArgs(core.SchemaMetaVersionKey).
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("1"))
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("2"))
+
+	db := sqlx.NewDb(sqlDB, "pgx")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+
+	srv := core.NewServer(db)
+	go func() { _ = srv.GRPC().Serve(lis) }()
+	t.Cleanup(func() { srv.GRPC().Stop() })
+
+	waitForGRPC(t, lis.Addr().String())
+	return lis.Addr().String()
+}
+
+func startTestRuntimeAddrForDeploy(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO agents`).
+		WithArgs(sqlmock.AnyArg(), "demo", "echo-agent", "", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
+	mock.ExpectQuery(`INSERT INTO agent_versions`).
+		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	mock.ExpectCommit()
 
 	db := sqlx.NewDb(sqlDB, "pgx")
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

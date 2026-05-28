@@ -58,10 +58,9 @@ func (*GetVersionRequest) Descriptor() ([]byte, []int) {
 }
 
 type GetVersionResponse struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Version string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
-	// schema_version is the value stored in runtime_meta (applied DB schema).
-	SchemaVersion string `protobuf:"bytes,2,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	SchemaVersion string                 `protobuf:"bytes,2,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -236,6 +235,9 @@ func (x *DeployRequest) GetManifest() []byte {
 
 type DeployResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	VersionId     string                 `protobuf:"bytes,2,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`
+	ContentHash   string                 `protobuf:"bytes,3,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -270,6 +272,27 @@ func (*DeployResponse) Descriptor() ([]byte, []int) {
 	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{5}
 }
 
+func (x *DeployResponse) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *DeployResponse) GetVersionId() string {
+	if x != nil {
+		return x.VersionId
+	}
+	return ""
+}
+
+func (x *DeployResponse) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
+	}
+	return ""
+}
+
 var File_phrony_runtime_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
@@ -284,8 +307,12 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x14\n" +
 	"\x12RunSessionResponse\"+\n" +
 	"\rDeployRequest\x12\x1a\n" +
-	"\bmanifest\x18\x01 \x01(\fR\bmanifest\"\x10\n" +
-	"\x0eDeployResponse2\x8e\x02\n" +
+	"\bmanifest\x18\x01 \x01(\fR\bmanifest\"m\n" +
+	"\x0eDeployResponse\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1d\n" +
+	"\n" +
+	"version_id\x18\x02 \x01(\tR\tversionId\x12!\n" +
+	"\fcontent_hash\x18\x03 \x01(\tR\vcontentHash2\x8e\x02\n" +
 	"\aRuntime\x12Y\n" +
 	"\n" +
 	"GetVersion\x12$.phrony.runtime.v1.GetVersionRequest\x1a%.phrony.runtime.v1.GetVersionResponse\x12Y\n" +

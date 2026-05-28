@@ -44,7 +44,9 @@ runtime/
 │   ├── cli/                Operator CLI (`phrony`) — thin gRPC client
 │   └── phrony-runtime/     Daemon entrypoint (`phrony-runtime`)
 ├── gen/                    Generated Go from protobuf (do not edit by hand)
+├── migrations/             Versioned SQL (golang-migrate); embedded at build time
 ├── internal/
+│   ├── store/              Hand-written, type-safe DB accessors (raw SQL)
 │   ├── clierr/             CLI error formatting
 │   ├── cliout/             CLI output (status panel, branding)
 │   ├── common/             Shared config, DB helpers, validation
@@ -89,12 +91,30 @@ Commit both `proto/` and `gen/` changes together. Requires `protoc` on your `PAT
 
 ### Database migrations
 
-Schema changes belong in `internal/core` migration logic. Test with a fresh database:
+Schema changes are **pure SQL** in [`migrations/`](../migrations/) and applied with [golang-migrate](https://github.com/golang-migrate/migrate). The runtime embeds those files and runs only migrations not yet recorded in `schema_migrations`.
+
+Add a new migration (requires the `migrate` CLI, e.g. `brew install golang-migrate`):
+
+```bash
+migrate create -ext sql -dir migrations -seq short_description
+```
+
+Edit the generated `.up.sql` and `.down.sql`, then test on a fresh database:
 
 ```bash
 make dev-down && make dev-up
 make migrate
 ```
+
+When the human-facing schema label in `phrony status` should change, upsert `runtime_meta` key `schema_version` in the relevant `.up.sql` (see existing migrations).
+
+If you previously applied schema with the old inline migrator, reset local Postgres (`make dev-down && make dev-up`) or manually baseline the `schema_migrations` table before running `migrate` again.
+
+### Application queries
+
+DML lives in [`internal/store/`](../internal/store/) as hand-written, type-safe accessors over raw SQL (parameterized queries on `database/sql`). Each query is a Go method on `store.Queries` that runs against either the pool or a transaction via `WithTx`.
+
+To add or change a query, edit the relevant `internal/store/*.go` file directly and use the `store.Queries` methods from `internal/core` (or future packages).
 
 ## Code style
 
@@ -121,6 +141,12 @@ go fmt ./...
 make test              # short mode, all packages
 make test-coverage     # coverage for internal/
 go test ./...          # full test run
+```
+
+Postgres integration tests (migrate + deploy against a real DB; requires `make dev-up` or `RUNTIME_DATABASE_URL`):
+
+```bash
+go test -tags=integration ./internal/core/...
 ```
 
 Add or update tests for behavior you change. Integration tests that need Postgres should use `make dev-up` and the test database URL from `.env`.

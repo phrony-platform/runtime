@@ -25,6 +25,27 @@ func TestRuntime_GetVersion(t *testing.T) {
 	}
 }
 
+func TestRuntime_GetVersion_schemaMetaQueryFailed(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectQuery(`SELECT value FROM runtime_meta`).
+		WithArgs(SchemaMetaVersionKey).
+		WillReturnError(context.Canceled)
+
+	db := sqlx.NewDb(sqlDB, "pgx")
+	srv := &runtimeServer{db: db}
+	resp, err := srv.GetVersion(context.Background(), &runtimev1.GetVersionRequest{})
+	if err != nil {
+		t.Fatalf("GetVersion: %v", err)
+	}
+	if resp.GetSchemaVersion() != "" {
+		t.Fatalf("schema_version = %q, want empty on query error", resp.GetSchemaVersion())
+	}
+}
+
 func TestRuntime_GetVersion_readsSchemaMeta(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
@@ -49,12 +70,6 @@ func TestRuntime_GetVersion_readsSchemaMeta(t *testing.T) {
 func TestRuntime_RunSession_unimplemented(t *testing.T) {
 	srv := &runtimeServer{}
 	_, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{SessionId: "sess-1"})
-	assertGRPCCode(t, err, codes.Unimplemented)
-}
-
-func TestRuntime_Deploy_unimplemented(t *testing.T) {
-	srv := &runtimeServer{}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: []byte("{}")})
 	assertGRPCCode(t, err, codes.Unimplemented)
 }
 

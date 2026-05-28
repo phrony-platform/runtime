@@ -54,7 +54,7 @@ func TestStatusCommand_success(t *testing.T) {
 	if !strings.Contains(outStr, core.RuntimeVersion) {
 		t.Fatalf("output = %q, want runtime version", outStr)
 	}
-	if !strings.Contains(outStr, "Schema meta") || !strings.Contains(outStr, "1") {
+	if !strings.Contains(outStr, "Schema meta") || !strings.Contains(outStr, "2") {
 		t.Fatalf("output = %q, want schema meta version", outStr)
 	}
 	if !strings.Contains(outStr, "● SERVING") {
@@ -102,21 +102,17 @@ func writeDeployTestBundle(t *testing.T, dir string) string {
 	return manifest
 }
 
-func TestDeployCommand_unimplemented(t *testing.T) {
-	addr := startTestRuntimeAddr(t)
+func TestDeployCommand_success(t *testing.T) {
 	manifest := writeDeployTestBundle(t, t.TempDir())
+	addr := startTestRuntimeAddrForDeploy(t)
 
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{"deploy", "--file", manifest, "--runtime-addr", addr})
 
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "not implemented on this runtime yet") {
-		t.Fatalf("unexpected error: %v", err)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
 }
 

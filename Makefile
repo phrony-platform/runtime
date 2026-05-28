@@ -27,6 +27,7 @@ targets:
 	@echo "  make dev-up              Postgres + migrate"
 	@echo "  make dev-down            Stop Postgres"
 	@echo "  make migrate             Migrations only (Postgres already up)"
+	@echo "  make migrate-create name=description   New SQL migration pair in migrations/"
 	@echo "  make serve               Run phrony-runtime (foreground)"
 	@echo "  make cli ...             Operator CLI (runtime must be running)"
 	@echo ""
@@ -46,6 +47,10 @@ dev-down:
 
 migrate:
 	@$(LOAD_ENV) && go run ./cmd/phrony-runtime migrate
+
+migrate-create:
+	@test -n "$(name)" || { echo "usage: make migrate-create name=short_description"; exit 1; }
+	migrate create -ext sql -dir migrations -seq $(name)
 
 serve:
 	@$(LOAD_ENV) && go run ./cmd/phrony-runtime serve

@@ -1,63 +1,51 @@
 package core
 
 import (
-	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 
-	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/phrony-platform/runtime/migrations"
 )
 
-func TestMigrate_success(t *testing.T) {
-	db, mock := testSQLxDB(t)
-	expectCreateRuntimeMeta(mock)
-	expectSchemaVersionSeed(mock)
+func TestEmbeddedMigrations_present(t *testing.T) {
+	t.Parallel()
 
-	if err := Migrate(db); err != nil {
-		t.Fatalf("Migrate: %v", err)
+	var ups, downs int
+	err := fs.WalkDir(migrations.FS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		switch {
+		case strings.HasSuffix(path, ".up.sql"):
+			ups++
+		case strings.HasSuffix(path, ".down.sql"):
+			downs++
+		default:
+			t.Errorf("unexpected file in migrations: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkDir: %v", err)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("sql expectations: %v", err)
+	if ups == 0 {
+		t.Fatal("expected at least one .up.sql migration")
+	}
+	if ups != downs {
+		t.Fatalf("up migrations = %d, down migrations = %d, want equal", ups, downs)
 	}
 }
 
-func TestMigrate_createTableFailed(t *testing.T) {
-	db, mock := testSQLxDB(t)
-	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS runtime_meta`).
-		WillReturnError(errors.New("migrate failed"))
-
-	err := Migrate(db)
+func TestMigrate_nilDatabase(t *testing.T) {
+	err := Migrate(nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "create runtime_meta") {
-		t.Fatalf("expected create table error, got %v", err)
+	if !strings.Contains(err.Error(), "database is nil") {
+		t.Fatalf("error = %v, want nil database", err)
 	}
-}
-
-func TestMigrate_seedFailed(t *testing.T) {
-	db, mock := testSQLxDB(t)
-	expectCreateRuntimeMeta(mock)
-	mock.ExpectExec(`INSERT INTO runtime_meta`).
-		WithArgs(SchemaMetaVersionKey, schemaVersionValue).
-		WillReturnError(errors.New("seed failed"))
-
-	err := Migrate(db)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "seed schema_version") {
-		t.Fatalf("expected seed error, got %v", err)
-	}
-}
-
-func expectCreateRuntimeMeta(mock sqlmock.Sqlmock) {
-	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS runtime_meta`).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-}
-
-func expectSchemaVersionSeed(mock sqlmock.Sqlmock) {
-	mock.ExpectExec(`INSERT INTO runtime_meta`).
-		WithArgs(SchemaMetaVersionKey, schemaVersionValue).
-		WillReturnResult(sqlmock.NewResult(1, 1))
 }
