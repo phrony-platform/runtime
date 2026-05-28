@@ -40,3 +40,15 @@ func LoadSettings() (Settings, error) {
 func (s Settings) Validate() error {
 	return settingsValidator.Struct(s)
 }
+
+// ResolveRuntimeAddr returns the gRPC address for the phrony CLI.
+// flag takes precedence over PHRONY_RUNTIME_ADDR, then the default.
+func ResolveRuntimeAddr(flag string) string {
+	if flag != "" {
+		return flag
+	}
+	if addr := os.Getenv(envRuntimeAddr); addr != "" {
+		return addr
+	}
+	return defaultRuntimeAddr
+}

@@ -41,3 +41,19 @@ func TestLoadSettings_defaults(t *testing.T) {
 		t.Fatalf("RuntimeAddr = %q, want %q", settings.RuntimeAddr, defaultRuntimeAddr)
 	}
 }
+
+func TestResolveRuntimeAddr(t *testing.T) {
+	t.Setenv(envRuntimeAddr, "env:7777")
+
+	if got := ResolveRuntimeAddr("flag:8888"); got != "flag:8888" {
+		t.Fatalf("ResolveRuntimeAddr(flag) = %q, want flag:8888", got)
+	}
+	if got := ResolveRuntimeAddr(""); got != "env:7777" {
+		t.Fatalf("ResolveRuntimeAddr() = %q, want env:7777", got)
+	}
+
+	t.Setenv(envRuntimeAddr, "")
+	if got := ResolveRuntimeAddr(""); got != defaultRuntimeAddr {
+		t.Fatalf("ResolveRuntimeAddr() = %q, want %q", got, defaultRuntimeAddr)
+	}
+}
