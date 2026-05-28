@@ -75,6 +75,68 @@ func startTestRuntimeAddrForDeploy(t *testing.T) string {
 	return lis.Addr().String()
 }
 
+func startTestRuntimeAddrForRun(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	mock.ExpectQuery(`INSERT INTO sessions`).
+		WithArgs(sqlmock.AnyArg(), "version-uuid", sqlmock.AnyArg(), "pending").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+
+	db := sqlx.NewDb(sqlDB, "pgx")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+
+	srv := core.NewServer(db)
+	go func() { _ = srv.GRPC().Serve(lis) }()
+	t.Cleanup(func() { srv.GRPC().Stop() })
+
+	waitForGRPC(t, lis.Addr().String())
+	return lis.Addr().String()
+}
+
+func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("demo", "echo-agent", "1.2.0").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	mock.ExpectQuery(`INSERT INTO sessions`).
+		WithArgs(sqlmock.AnyArg(), "version-uuid", sqlmock.AnyArg(), "pending").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+
+	db := sqlx.NewDb(sqlDB, "pgx")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+
+	srv := core.NewServer(db)
+	go func() { _ = srv.GRPC().Serve(lis) }()
+	t.Cleanup(func() { srv.GRPC().Stop() })
+
+	waitForGRPC(t, lis.Addr().String())
+	return lis.Addr().String()
+}
+
 func waitForGRPC(t *testing.T, addr string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

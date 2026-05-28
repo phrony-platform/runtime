@@ -24,6 +24,15 @@ type AgentVersion struct {
 	DeployedAt  time.Time       `json:"deployed_at"`
 }
 
+type Session struct {
+	ID             string          `json:"id"`
+	AgentVersionID string          `json:"agent_version_id"`
+	Input          json.RawMessage `json:"input"`
+	Status         string          `json:"status"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+}
+
 type RuntimeMetum struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`

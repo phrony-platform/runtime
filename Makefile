@@ -10,7 +10,7 @@ BIN_DIR := bin
 COVERAGE_OUT := coverage.out
 COVER_PKGS := ./internal/...
 
-# Words after "cli" on the make command line, e.g. make cli status deploy --file x
+# Words after "cli" on the make command line, e.g. make cli status deploy agent.yaml
 CLI_ARGS := $(filter-out cli,$(MAKECMDGOALS))
 ifneq ($(CLI_ARGS),)
 $(CLI_ARGS):

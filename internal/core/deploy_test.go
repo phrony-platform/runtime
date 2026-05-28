@@ -41,6 +41,10 @@ func TestRuntime_Deploy_success(t *testing.T) {
 	if resp.GetContentHash() != hashManifest(manifestJSON) {
 		t.Fatalf("content_hash = %q, want %q", resp.GetContentHash(), hashManifest(manifestJSON))
 	}
+	if resp.GetNamespace() != "demo" || resp.GetName() != "echo-agent" || resp.GetVersion() != "1.2.0" {
+		t.Fatalf("deploy identity = %s/%s@%s, want demo/echo-agent@1.2.0",
+			resp.GetNamespace(), resp.GetName(), resp.GetVersion())
+	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}

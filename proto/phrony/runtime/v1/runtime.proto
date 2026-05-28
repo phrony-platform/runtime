@@ -18,11 +18,26 @@ message GetVersionResponse {
   string schema_version = 2;
 }
 
-message RunSessionRequest {
-  string session_id = 1;
+// AgentRef identifies a deployed agent. When version is empty, the latest
+// deployed semver for that agent is used.
+message AgentRef {
+  string namespace = 1;
+  string name = 2;
+  string version = 3;
 }
 
-message RunSessionResponse {}
+message RunSessionRequest {
+  AgentRef agent_ref = 1;
+  // JSON object with session inputs (opaque to the runtime until execution).
+  bytes input = 2;
+}
+
+message RunSessionResponse {
+  string session_id = 1;
+  string agent_version_id = 2;
+  // pending: session created and bound; model execution is not available yet.
+  string status = 3;
+}
 
 message DeployRequest {
   bytes manifest = 1;
@@ -32,4 +47,7 @@ message DeployResponse {
   string agent_id = 1;
   string version_id = 2;
   string content_hash = 3;
+  string namespace = 4;
+  string name = 5;
+  string version = 6;
 }

@@ -87,8 +87,9 @@ In another terminal, load `.env` again, then:
 
 ```bash
 phrony status
-phrony run <session-id>
-phrony deploy --file path/to/manifest.yaml
+phrony deploy path/to/agent.yaml
+phrony run <namespace>/<name>
+phrony run <namespace>/<name> -v 1.2.0
 ```
 
 Pass `--runtime-addr` to override `PHRONY_RUNTIME_ADDR`.

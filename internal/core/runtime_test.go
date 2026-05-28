@@ -67,10 +67,10 @@ func TestRuntime_GetVersion_readsSchemaMeta(t *testing.T) {
 	}
 }
 
-func TestRuntime_RunSession_unimplemented(t *testing.T) {
-	srv := &runtimeServer{}
-	_, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{SessionId: "sess-1"})
-	assertGRPCCode(t, err, codes.Unimplemented)
+func TestRuntime_RunSession_requiresBinding(t *testing.T) {
+	srv := &runtimeServer{db: testServeDB(t)}
+	_, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{})
+	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
 func assertGRPCCode(t *testing.T, err error, code codes.Code) {

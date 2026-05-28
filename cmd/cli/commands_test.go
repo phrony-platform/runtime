@@ -62,19 +62,98 @@ func TestStatusCommand_success(t *testing.T) {
 	}
 }
 
-func TestRunCommand_unimplemented(t *testing.T) {
-	addr := startTestRuntimeAddr(t)
-
+func TestRunCommand_missingAgentArg(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"run", "sess-1", "--runtime-addr", addr})
+	root.SetArgs([]string{"run"})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "not implemented on this runtime yet") {
+	if !strings.Contains(err.Error(), "accepts 1 arg") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForRun(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"run", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "session ") || !strings.Contains(out.String(), "created") {
+		t.Fatalf("output = %q, want created session", out.String())
+	}
+}
+
+func TestRunCommand_withVersionFlag(t *testing.T) {
+	addr := startTestRuntimeAddrForRunWithVersion(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"run", "demo/echo-agent", "-v", "1.2.0", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "created") {
+		t.Fatalf("output = %q, want created session", out.String())
+	}
+}
+
+func TestRunCommand_withInput(t *testing.T) {
+	addr := startTestRuntimeAddrForRun(t)
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{
+		"run", "demo/echo-agent",
+		"--input", `{"message":"hello"}`,
+		"--runtime-addr", addr,
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestRunCommand_invalidAgentName(t *testing.T) {
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"run", "echo-agent"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "namespace/name") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCommand_invalidInput(t *testing.T) {
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"run", "demo/echo-agent", "--input", "not-json"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "valid JSON") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -106,13 +185,17 @@ func TestDeployCommand_success(t *testing.T) {
 	manifest := writeDeployTestBundle(t, t.TempDir())
 	addr := startTestRuntimeAddrForDeploy(t)
 
+	var out bytes.Buffer
 	root := NewRootCommand()
-	root.SetOut(&bytes.Buffer{})
+	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", "--file", manifest, "--runtime-addr", addr})
+	root.SetArgs([]string{"deploy", manifest, "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "demo/echo-agent 1.2.0") {
+		t.Fatalf("output = %q, want agent name and version", out.String())
 	}
 }
 
@@ -122,7 +205,7 @@ func TestDeployCommand_dialRuntimeFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", "--file", manifest, "--runtime-addr", "127.0.0.1:1"})
+	root.SetArgs([]string{"deploy", manifest, "--runtime-addr", "127.0.0.1:1"})
 
 	err := root.Execute()
 	if err == nil {
@@ -142,7 +225,7 @@ func TestDeployCommand_parseManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", "--file", manifest})
+	root.SetArgs([]string{"deploy", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -162,7 +245,7 @@ func TestDeployCommand_invalidManifest(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", "--file", manifest})
+	root.SetArgs([]string{"deploy", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -182,7 +265,7 @@ func TestDeployCommand_unresolvedBundleRef(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", "--file", manifest})
+	root.SetArgs([]string{"deploy", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -197,7 +280,7 @@ func TestDeployCommand_readManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", "--file", filepath.Join(t.TempDir(), "missing.json")})
+	root.SetArgs([]string{"deploy", filepath.Join(t.TempDir(), "missing.json")})
 
 	err := root.Execute()
 	if err == nil {

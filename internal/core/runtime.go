@@ -8,8 +8,6 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/jmoiron/sqlx"
 	"github.com/phrony-platform/runtime/internal/store"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type runtimeServer struct {
@@ -36,6 +34,3 @@ func (s *runtimeServer) lookupSchemaVersion(ctx context.Context) (string, bool) 
 	return value, true
 }
 
-func (s *runtimeServer) RunSession(context.Context, *runtimev1.RunSessionRequest) (*runtimev1.RunSessionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "RunSession is not implemented yet")
-}

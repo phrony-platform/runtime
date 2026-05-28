@@ -78,6 +78,9 @@ func (s *runtimeServer) Deploy(ctx context.Context, req *runtimev1.DeployRequest
 		AgentId:     agentID,
 		VersionId:   versionID,
 		ContentHash: hash,
+		Namespace:   agent.Metadata.Namespace,
+		Name:        agent.Metadata.Name,
+		Version:     agent.Metadata.Version,
 	}, nil
 }
 

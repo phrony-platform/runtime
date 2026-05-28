@@ -1,34 +1,74 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
 func newRunCommand(runtimeAddr *string) *cobra.Command {
-	return &cobra.Command{
-		Use:   "run SESSION_ID",
-		Short: "Run an agent session on the runtime",
+	var version, input string
+
+	cmd := &cobra.Command{
+		Use:   "run AGENT",
+		Short: "Start a session for a deployed agent",
+		Long:  "AGENT is namespace/name (for example demo/echo-agent). Uses the latest deployed version unless -v is set.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSession(cmd, runtimeAddr, args[0])
+			return runSession(cmd, runtimeAddr, args[0], version, input)
 		},
 	}
+	cmd.Flags().StringVarP(&version, "version", "v", "", "deployed agent version (semver from manifest metadata.version)")
+	cmd.Flags().StringVar(&input, "input", "", "session input as a JSON object")
+
+	return cmd
 }
 
-func runSession(cmd *cobra.Command, runtimeAddr *string, sessionID string) error {
+func runSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, input string) error {
+	namespace, name, err := parseAgentName(agentName)
+	if err != nil {
+		return err
+	}
+
+	req := &runtimev1.RunSessionRequest{
+		AgentRef: &runtimev1.AgentRef{
+			Namespace: namespace,
+			Name:      name,
+			Version:   version,
+		},
+	}
+
+	if input != "" {
+		if !json.Valid([]byte(input)) {
+			return fmt.Errorf("input must be valid JSON")
+		}
+		req.Input = []byte(input)
+	}
+
 	clients, err := dialRuntime(cmd.Context(), *runtimeAddr)
 	if err != nil {
 		return err
 	}
 	defer clients.Close()
 
-	_, err = clients.runtime.RunSession(cmd.Context(), &runtimev1.RunSessionRequest{
-		SessionId: sessionID,
-	})
+	resp, err := clients.runtime.RunSession(cmd.Context(), req)
 	if err != nil {
 		return clierr.WrapRPC("run session", err)
 	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "session %s created (status: %s)\n",
+		resp.GetSessionId(), resp.GetStatus())
 	return nil
+}
+
+func parseAgentName(agentName string) (namespace, name string, err error) {
+	namespace, name, ok := strings.Cut(agentName, "/")
+	if !ok || namespace == "" || name == "" {
+		return "", "", fmt.Errorf("agent must be namespace/name, got %q", agentName)
+	}
+	return namespace, name, nil
 }

@@ -12,19 +12,14 @@ import (
 )
 
 func newDeployCommand(runtimeAddr *string) *cobra.Command {
-	var manifestPath string
-
-	cmd := &cobra.Command{
-		Use:   "deploy",
-		Short: "Deploy a manifest to the runtime",
+	return &cobra.Command{
+		Use:   "deploy MANIFEST",
+		Short: "Deploy an agent manifest to the runtime",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDeploy(cmd, runtimeAddr, manifestPath)
+			return runDeploy(cmd, runtimeAddr, args[0])
 		},
 	}
-	cmd.Flags().StringVar(&manifestPath, "file", "", "path to manifest file")
-	_ = cmd.MarkFlagRequired("file")
-
-	return cmd
 }
 
 func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) error {
@@ -57,11 +52,23 @@ func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) err
 	}
 	defer clients.Close()
 
-	_, err = clients.runtime.Deploy(cmd.Context(), &runtimev1.DeployRequest{
+	resp, err := clients.runtime.Deploy(cmd.Context(), &runtimev1.DeployRequest{
 		Manifest: manifestJSON,
 	})
 	if err != nil {
 		return clierr.WrapRPC("deploy", err)
 	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n",
+		formatAgentName(resp.GetNamespace(), resp.GetName()),
+		resp.GetVersion(),
+	)
 	return nil
+}
+
+func formatAgentName(namespace, name string) string {
+	if namespace == "" {
+		return name
+	}
+	return namespace + "/" + name
 }
