@@ -40,7 +40,6 @@ func WriteStatus(w io.Writer, panel StatusPanel) error {
 		return err
 	}
 	var b strings.Builder
-	b.WriteString("Status\n\n")
 	writeTable(&b, rows)
 
 	_, err := io.WriteString(w, b.String())

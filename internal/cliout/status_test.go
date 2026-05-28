@@ -20,7 +20,7 @@ func TestWriteStatus_containsLogoAndTable(t *testing.T) {
 	}
 	s := out.String()
 	for _, want := range []string{
-		"ÆÆÆÆÆ", "Status",
+		"ÆÆÆÆÆ",
 		"CLI", "1.2.3", "Schema meta", "● SERVING",
 		"127.0.0.1:7777", "0.0.1",
 	} {
