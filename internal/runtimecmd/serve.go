@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/phrony-platform/runtime/internal/cliout"
 	"github.com/phrony-platform/runtime/internal/common"
 	"github.com/phrony-platform/runtime/internal/core"
 )
@@ -56,6 +57,10 @@ func runServeWithDeps(ctx context.Context, skipMigrate bool, deps serveDeps) err
 
 	ctx, stop := deps.notifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if err := cliout.WriteLogo(os.Stderr); err != nil {
+		return fmt.Errorf("write logo: %w", err)
+	}
 
 	if err := srv.Serve(ctx, settings.GRPCAddr); err != nil && ctx.Err() == nil {
 		return fmt.Errorf("serve: %w", err)

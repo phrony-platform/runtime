@@ -58,8 +58,10 @@ func (*GetVersionRequest) Descriptor() ([]byte, []int) {
 }
 
 type GetVersionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Version string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	// schema_version is the value stored in runtime_meta (applied DB schema).
+	SchemaVersion string `protobuf:"bytes,2,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -97,6 +99,13 @@ func (*GetVersionResponse) Descriptor() ([]byte, []int) {
 func (x *GetVersionResponse) GetVersion() string {
 	if x != nil {
 		return x.Version
+	}
+	return ""
+}
+
+func (x *GetVersionResponse) GetSchemaVersion() string {
+	if x != nil {
+		return x.SchemaVersion
 	}
 	return ""
 }
@@ -266,9 +275,10 @@ var File_phrony_runtime_v1_runtime_proto protoreflect.FileDescriptor
 const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
 	"\x1fphrony/runtime/v1/runtime.proto\x12\x11phrony.runtime.v1\"\x13\n" +
-	"\x11GetVersionRequest\".\n" +
+	"\x11GetVersionRequest\"U\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\tR\aversion\"2\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
+	"\x0eschema_version\x18\x02 \x01(\tR\rschemaVersion\"2\n" +
 	"\x11RunSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x14\n" +

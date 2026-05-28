@@ -6,7 +6,9 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-const schemaVersionKey = "schema_version"
+// SchemaMetaVersionKey is the runtime_meta key for the applied schema version.
+const SchemaMetaVersionKey = "schema_version"
+
 const schemaVersionValue = "1"
 
 const createRuntimeMetaTable = `
@@ -26,7 +28,7 @@ func Migrate(db *sqlx.DB) error {
 		return fmt.Errorf("create runtime_meta: %w", err)
 	}
 
-	if _, err := db.Exec(upsertSchemaVersion, schemaVersionKey, schemaVersionValue); err != nil {
+	if _, err := db.Exec(upsertSchemaVersion, SchemaMetaVersionKey, schemaVersionValue); err != nil {
 		return fmt.Errorf("seed schema_version: %w", err)
 	}
 

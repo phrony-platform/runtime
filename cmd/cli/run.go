@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
-
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 func newRunCommand(runtimeAddr *string) *cobra.Command {
@@ -31,14 +28,7 @@ func runSession(cmd *cobra.Command, runtimeAddr *string, sessionID string) error
 		SessionId: sessionID,
 	})
 	if err != nil {
-		return formatRPCError("run session", err)
+		return clierr.WrapRPC("run session", err)
 	}
 	return nil
-}
-
-func formatRPCError(action string, err error) error {
-	if st, ok := status.FromError(err); ok && st.Code() == codes.Unimplemented {
-		return fmt.Errorf("%s: %s (not implemented on this runtime yet)", action, st.Message())
-	}
-	return fmt.Errorf("%s: %w", action, err)
 }

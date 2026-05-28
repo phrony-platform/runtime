@@ -15,6 +15,7 @@ message GetVersionRequest {}
 
 message GetVersionResponse {
   string version = 1;
+  string schema_version = 2;
 }
 
 message RunSessionRequest {

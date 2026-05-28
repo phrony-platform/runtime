@@ -17,7 +17,7 @@ type Server struct {
 // NewServer registers Runtime and Health services on a new gRPC server.
 func NewServer(db *sqlx.DB) *Server {
 	grpcSrv := grpc.NewServer()
-	runtimev1.RegisterRuntimeServer(grpcSrv, &runtimeServer{})
+	runtimev1.RegisterRuntimeServer(grpcSrv, &runtimeServer{db: db})
 	grpc_health_v1.RegisterHealthServer(grpcSrv, &healthServer{db: db})
 	return &Server{grpc: grpcSrv, db: db}
 }

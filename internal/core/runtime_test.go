@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jmoiron/sqlx"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,6 +19,30 @@ func TestRuntime_GetVersion(t *testing.T) {
 	}
 	if resp.GetVersion() != RuntimeVersion {
 		t.Fatalf("version = %q, want %q", resp.GetVersion(), RuntimeVersion)
+	}
+	if resp.GetSchemaVersion() != "" {
+		t.Fatalf("schema_version = %q, want empty without db", resp.GetSchemaVersion())
+	}
+}
+
+func TestRuntime_GetVersion_readsSchemaMeta(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectQuery(`SELECT value FROM runtime_meta`).
+		WithArgs(SchemaMetaVersionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("1"))
+
+	db := sqlx.NewDb(sqlDB, "pgx")
+	srv := &runtimeServer{db: db}
+	resp, err := srv.GetVersion(context.Background(), &runtimev1.GetVersionRequest{})
+	if err != nil {
+		t.Fatalf("GetVersion: %v", err)
+	}
+	if resp.GetSchemaVersion() != "1" {
+		t.Fatalf("schema_version = %q, want 1", resp.GetSchemaVersion())
 	}
 }
 

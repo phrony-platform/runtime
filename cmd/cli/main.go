@@ -1,8 +1,10 @@
 package main
 
 import (
-	"log/slog"
+	"fmt"
 	"os"
+
+	"github.com/phrony-platform/runtime/internal/clierr"
 )
 
 func main() {
@@ -10,9 +12,8 @@ func main() {
 }
 
 func run(args []string) int {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err := runRoot(args); err != nil {
-		slog.Error("command failed", "error", err)
+		fmt.Fprintln(os.Stderr, clierr.Format(err))
 		return 1
 	}
 	return 0

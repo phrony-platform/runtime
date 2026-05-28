@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/phrony-platform/runtime/internal/core"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 func TestStatusCommand_success(t *testing.T) {
@@ -24,11 +22,21 @@ func TestStatusCommand_success(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(out.String(), "version: "+core.RuntimeVersion) {
-		t.Fatalf("output = %q, want version line", out.String())
+	outStr := out.String()
+	if !strings.Contains(outStr, "ÆÆÆÆÆ") {
+		t.Fatalf("output = %q, want ASCII logo", outStr)
 	}
-	if !strings.Contains(out.String(), "health: SERVING") {
-		t.Fatalf("output = %q, want SERVING health", out.String())
+	if !strings.Contains(outStr, CLIVersion) {
+		t.Fatalf("output = %q, want CLI version", outStr)
+	}
+	if !strings.Contains(outStr, core.RuntimeVersion) {
+		t.Fatalf("output = %q, want runtime version", outStr)
+	}
+	if !strings.Contains(outStr, "Schema meta") || !strings.Contains(outStr, "1") {
+		t.Fatalf("output = %q, want schema meta version", outStr)
+	}
+	if !strings.Contains(outStr, "● SERVING") {
+		t.Fatalf("output = %q, want SERVING health", outStr)
 	}
 }
 
@@ -81,20 +89,6 @@ func TestDeployCommand_readManifestFailed(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "read manifest") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestFormatRPCError(t *testing.T) {
-	unimplemented := status.Error(codes.Unimplemented, "Deploy is not implemented yet")
-	err := formatRPCError("deploy", unimplemented)
-	if !strings.Contains(err.Error(), "not implemented on this runtime yet") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	other := status.Error(codes.Internal, "boom")
-	err = formatRPCError("deploy", other)
-	if !strings.Contains(err.Error(), "deploy:") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

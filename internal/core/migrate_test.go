@@ -39,7 +39,7 @@ func TestMigrate_seedFailed(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	expectCreateRuntimeMeta(mock)
 	mock.ExpectExec(`INSERT INTO runtime_meta`).
-		WithArgs(schemaVersionKey, schemaVersionValue).
+		WithArgs(SchemaMetaVersionKey, schemaVersionValue).
 		WillReturnError(errors.New("seed failed"))
 
 	err := Migrate(db)
@@ -58,6 +58,6 @@ func expectCreateRuntimeMeta(mock sqlmock.Sqlmock) {
 
 func expectSchemaVersionSeed(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(`INSERT INTO runtime_meta`).
-		WithArgs(schemaVersionKey, schemaVersionValue).
+		WithArgs(SchemaMetaVersionKey, schemaVersionValue).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 }

@@ -1,17 +1,17 @@
 package runtimecmd
 
 import (
-	"log/slog"
+	"fmt"
 	"os"
 
+	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
 // Run is the daemon entrypoint for cmd/phrony-runtime.
 func Run(args []string) int {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err := runRoot(args); err != nil {
-		slog.Error("command failed", "error", err)
+		fmt.Fprintln(os.Stderr, clierr.Format(err))
 		return 1
 	}
 	return 0
@@ -19,8 +19,10 @@ func Run(args []string) int {
 
 func runRoot(args []string) error {
 	root := &cobra.Command{
-		Use:   "phrony-runtime",
-		Short: "Phrony agent runtime daemon",
+		Use:           "phrony-runtime",
+		Short:         "Phrony agent runtime daemon",
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	var skipMigrate bool

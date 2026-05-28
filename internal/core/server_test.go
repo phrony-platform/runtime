@@ -21,6 +21,9 @@ func TestNewServer_registersServices(t *testing.T) {
 		t.Fatalf("sqlmock.New: %v", err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectQuery(`SELECT value FROM runtime_meta`).
+		WithArgs(SchemaMetaVersionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("1"))
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 
 	db := sqlx.NewDb(sqlDB, "pgx")
@@ -44,6 +47,9 @@ func TestNewServer_registersServices(t *testing.T) {
 	}
 	if versionResp.GetVersion() != RuntimeVersion {
 		t.Fatalf("version = %q, want %q", versionResp.GetVersion(), RuntimeVersion)
+	}
+	if versionResp.GetSchemaVersion() != "1" {
+		t.Fatalf("schema_version = %q, want 1", versionResp.GetSchemaVersion())
 	}
 
 	healthClient := phronyhealth.NewHealthClient(conn)

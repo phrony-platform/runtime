@@ -24,9 +24,11 @@ func NewRootCommand() *cobra.Command {
 	var runtimeAddr string
 
 	root := &cobra.Command{
-		Use:   "phrony",
-		Short: "Phrony runtime operator CLI",
-		Long:  "Operator commands for phrony-runtime over gRPC (not the manifest-focused Node CLI).",
+		Use:           "phrony",
+		Short:         "Phrony runtime operator CLI",
+		Long:          "Operator commands for phrony-runtime over gRPC (not the manifest-focused Node CLI).",
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 	root.PersistentFlags().StringVar(&runtimeAddr, "runtime-addr", "", "runtime gRPC address (overrides PHRONY_RUNTIME_ADDR)")
 

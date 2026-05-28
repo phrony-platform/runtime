@@ -1,8 +1,10 @@
 package runtimecmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -18,6 +20,8 @@ func TestRunServe_success(t *testing.T) {
 	defer restore()
 	t.Setenv("RUNTIME_DATABASE_URL", "postgres://unused")
 	t.Setenv("RUNTIME_GRPC_ADDR", "127.0.0.1:0")
+
+	stderr := captureStderr(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -48,6 +52,34 @@ func TestRunServe_success(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for runServe")
 	}
+
+	if !strings.Contains(stderr.String(), "ÆÆÆÆÆ") {
+		t.Fatalf("stderr = %q, want ASCII logo", stderr.String())
+	}
+}
+
+func captureStderr(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stderr = w
+
+	var buf bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	t.Cleanup(func() {
+		_ = w.Close()
+		<-done
+		os.Stderr = old
+	})
+	return &buf
 }
 
 func TestRunServe_skipMigrate(t *testing.T) {

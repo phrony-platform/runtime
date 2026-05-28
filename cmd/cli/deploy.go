@@ -5,6 +5,7 @@ import (
 	"os"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +41,7 @@ func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) err
 		Manifest: manifest,
 	})
 	if err != nil {
-		return formatRPCError("deploy", err)
+		return clierr.WrapRPC("deploy", err)
 	}
 	return nil
 }

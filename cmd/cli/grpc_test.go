@@ -23,6 +23,9 @@ func startTestRuntimeAddr(t *testing.T) string {
 	for range 4 {
 		mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 	}
+	mock.ExpectQuery(`SELECT value FROM runtime_meta`).
+		WithArgs(core.SchemaMetaVersionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("1"))
 
 	db := sqlx.NewDb(sqlDB, "pgx")
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
