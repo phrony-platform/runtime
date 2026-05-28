@@ -10,6 +10,28 @@ import (
 	"github.com/phrony-platform/runtime/internal/core"
 )
 
+const validAgentManifestYAML = `apiVersion: phrony.dev/v1
+kind: Agent
+
+metadata:
+  name: echo-agent
+  namespace: demo
+  version: 1.2.0
+
+spec:
+  purpose: Echo user messages as structured JSON.
+  instructions:
+    ref: prompts/system
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-5
+
+output:
+  format: json
+  schema:
+    ref: schemas/result
+`
+
 func TestStatusCommand_success(t *testing.T) {
 	addr := startTestRuntimeAddr(t)
 
@@ -59,8 +81,8 @@ func TestRunCommand_unimplemented(t *testing.T) {
 
 func TestDeployCommand_unimplemented(t *testing.T) {
 	addr := startTestRuntimeAddr(t)
-	manifest := filepath.Join(t.TempDir(), "manifest.json")
-	if err := os.WriteFile(manifest, []byte("{}"), 0o600); err != nil {
+	manifest := filepath.Join(t.TempDir(), "agent.yaml")
+	if err := os.WriteFile(manifest, []byte(validAgentManifestYAML), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -74,6 +96,26 @@ func TestDeployCommand_unimplemented(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "not implemented on this runtime yet") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDeployCommand_invalidManifest(t *testing.T) {
+	manifest := filepath.Join(t.TempDir(), "agent.yaml")
+	if err := os.WriteFile(manifest, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"deploy", "--file", manifest})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid manifest") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
