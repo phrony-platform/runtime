@@ -32,3 +32,6 @@ go.work.sum
 
 # Vendor (if used)
 /vendor/
+
+.gomodcache
+.gocache
