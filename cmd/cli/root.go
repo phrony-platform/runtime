@@ -36,6 +36,7 @@ func NewRootCommand() *cobra.Command {
 		newStatusCommand(&runtimeAddr),
 		newRunCommand(&runtimeAddr),
 		newDeployCommand(&runtimeAddr),
+		newValidateCommand(),
 	)
 
 	return root

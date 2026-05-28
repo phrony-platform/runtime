@@ -1,13 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"os"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/clierr"
-	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -23,21 +20,7 @@ func newDeployCommand(runtimeAddr *string) *cobra.Command {
 }
 
 func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) error {
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return fmt.Errorf("read manifest: %w", err)
-	}
-
-	agent, err := manifest.Parse(data)
-	if err != nil {
-		return err
-	}
-	if err := manifest.Validate(agent); err != nil {
-		// Preserve the full multi-field message for clierr.Format (ValidationErrors only unwraps the first field).
-		return errors.New(err.Error())
-	}
-
-	resolved, err := manifest.ResolveBundle(manifestPath, agent)
+	resolved, err := loadResolvedManifest(manifestPath)
 	if err != nil {
 		return err
 	}
