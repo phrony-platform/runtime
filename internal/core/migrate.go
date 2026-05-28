@@ -3,23 +3,30 @@ package core
 import (
 	"fmt"
 
-	"github.com/phrony-platform/runtime/internal/model"
-	"gorm.io/gorm"
+	"github.com/jmoiron/sqlx"
 )
 
 const schemaVersionKey = "schema_version"
 const schemaVersionValue = "1"
 
+const createRuntimeMetaTable = `
+CREATE TABLE IF NOT EXISTS runtime_meta (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+)`
+
+const upsertSchemaVersion = `
+INSERT INTO runtime_meta (key, value)
+VALUES ($1, $2)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
+
 // Migrate applies the v0 schema and seeds runtime metadata.
-func Migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&model.RuntimeMeta{}); err != nil {
-		return fmt.Errorf("auto migrate: %w", err)
+func Migrate(db *sqlx.DB) error {
+	if _, err := db.Exec(createRuntimeMetaTable); err != nil {
+		return fmt.Errorf("create runtime_meta: %w", err)
 	}
 
-	var meta model.RuntimeMeta
-	if err := db.Where(model.RuntimeMeta{Key: schemaVersionKey}).
-		Assign(model.RuntimeMeta{Value: schemaVersionValue}).
-		FirstOrCreate(&meta).Error; err != nil {
+	if _, err := db.Exec(upsertSchemaVersion, schemaVersionKey, schemaVersionValue); err != nil {
 		return fmt.Errorf("seed schema_version: %w", err)
 	}
 

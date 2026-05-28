@@ -4,16 +4,16 @@ import (
 	"context"
 
 	grpc_health_v1 "github.com/phrony-platform/runtime/gen/grpc/health/v1"
+	"github.com/jmoiron/sqlx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"gorm.io/gorm"
 )
 
 const healthServiceRuntime = "phrony.runtime.v1.Runtime"
 
 type healthServer struct {
 	grpc_health_v1.UnimplementedHealthServer
-	db *gorm.DB
+	db *sqlx.DB
 }
 
 func (h *healthServer) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
@@ -31,8 +31,8 @@ func (h *healthServer) List(ctx context.Context, _ *grpc_health_v1.HealthListReq
 	ready := h.checkReady(ctx)
 	return &grpc_health_v1.HealthListResponse{
 		Statuses: map[string]grpc_health_v1.HealthCheckResponse_ServingStatus{
-			"":                      ready.GetStatus(),
-			healthServiceRuntime:    ready.GetStatus(),
+			"":                   ready.GetStatus(),
+			healthServiceRuntime: ready.GetStatus(),
 		},
 	}, nil
 }

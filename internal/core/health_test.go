@@ -6,13 +6,12 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	grpc_health_v1 "github.com/phrony-platform/runtime/gen/grpc/health/v1"
+	"github.com/jmoiron/sqlx"
 	"google.golang.org/grpc/codes"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 func TestHealth_Check_ready(t *testing.T) {
-	db, mock := testGORMDB(t)
+	db, mock := testSQLxDB(t)
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 
 	srv := &healthServer{db: db}
@@ -26,7 +25,7 @@ func TestHealth_Check_ready(t *testing.T) {
 }
 
 func TestHealth_Check_notReady(t *testing.T) {
-	db, mock := testGORMDB(t)
+	db, mock := testSQLxDB(t)
 	mock.ExpectExec(`SELECT 1`).WillReturnError(context.Canceled)
 
 	srv := &healthServer{db: db}
@@ -40,7 +39,7 @@ func TestHealth_Check_notReady(t *testing.T) {
 }
 
 func TestHealth_Check_unknownService(t *testing.T) {
-	db, _ := testGORMDB(t)
+	db, _ := testSQLxDB(t)
 	srv := &healthServer{db: db}
 
 	resp, err := srv.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{Service: "other.Service"})
@@ -53,7 +52,7 @@ func TestHealth_Check_unknownService(t *testing.T) {
 }
 
 func TestHealth_Check_runtimeService(t *testing.T) {
-	db, mock := testGORMDB(t)
+	db, mock := testSQLxDB(t)
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 
 	srv := &healthServer{db: db}
@@ -73,7 +72,7 @@ func TestHealth_Watch_unimplemented(t *testing.T) {
 }
 
 func TestHealth_List(t *testing.T) {
-	db, mock := testGORMDB(t)
+	db, mock := testSQLxDB(t)
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 
 	srv := &healthServer{db: db}
@@ -86,17 +85,12 @@ func TestHealth_List(t *testing.T) {
 	}
 }
 
-func testGORMDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
+func testSQLxDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
 	t.Helper()
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("gorm.Open: %v", err)
-	}
-	return db, mock
+	return sqlx.NewDb(sqlDB, "pgx"), mock
 }

@@ -9,8 +9,8 @@ import (
 )
 
 func TestMigrate_success(t *testing.T) {
-	db, mock := testGORMDB(t)
-	expectAutoMigrate(mock)
+	db, mock := testSQLxDB(t)
+	expectCreateRuntimeMeta(mock)
 	expectSchemaVersionSeed(mock)
 
 	if err := Migrate(db); err != nil {
@@ -21,24 +21,25 @@ func TestMigrate_success(t *testing.T) {
 	}
 }
 
-func TestMigrate_autoMigrateFailed(t *testing.T) {
-	db, mock := testGORMDB(t)
-	mock.ExpectQuery(`SELECT count\(\*\) FROM information_schema\.tables`).
+func TestMigrate_createTableFailed(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS runtime_meta`).
 		WillReturnError(errors.New("migrate failed"))
 
 	err := Migrate(db)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "auto migrate") {
-		t.Fatalf("expected auto migrate error, got %v", err)
+	if !strings.Contains(err.Error(), "create runtime_meta") {
+		t.Fatalf("expected create table error, got %v", err)
 	}
 }
 
 func TestMigrate_seedFailed(t *testing.T) {
-	db, mock := testGORMDB(t)
-	expectAutoMigrate(mock)
-	mock.ExpectQuery(`SELECT \* FROM "runtime_meta"`).
+	db, mock := testSQLxDB(t)
+	expectCreateRuntimeMeta(mock)
+	mock.ExpectExec(`INSERT INTO runtime_meta`).
+		WithArgs(schemaVersionKey, schemaVersionValue).
 		WillReturnError(errors.New("seed failed"))
 
 	err := Migrate(db)
@@ -50,20 +51,13 @@ func TestMigrate_seedFailed(t *testing.T) {
 	}
 }
 
-func expectAutoMigrate(mock sqlmock.Sqlmock) {
-	mock.ExpectQuery(`SELECT count\(\*\) FROM information_schema\.tables`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectExec(`CREATE TABLE "runtime_meta"`).
+func expectCreateRuntimeMeta(mock sqlmock.Sqlmock) {
+	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS runtime_meta`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
 func expectSchemaVersionSeed(mock sqlmock.Sqlmock) {
-	mock.ExpectQuery(`SELECT \* FROM "runtime_meta"`).
-		WithArgs(schemaVersionKey, 1).
-		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}))
-	mock.ExpectBegin()
-	mock.ExpectExec(`INSERT INTO "runtime_meta"`).
+	mock.ExpectExec(`INSERT INTO runtime_meta`).
+		WithArgs(schemaVersionKey, schemaVersionValue).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectCommit()
 }

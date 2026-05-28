@@ -3,8 +3,8 @@ package common
 import (
 	"fmt"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const (
@@ -12,31 +12,26 @@ const (
 	defaultMaxIdleConns = 5
 )
 
-var newPostgresDialector = func(dsn string) gorm.Dialector {
-	return postgres.Open(dsn)
+var connectPostgres = func(dsn string) (*sqlx.DB, error) {
+	return sqlx.Connect("pgx", dsn)
 }
 
-// OpenDB connects to Postgres using GORM and tunes the underlying sql.DB pool.
-func OpenDB(settings Settings) (*gorm.DB, error) {
+// OpenDB connects to Postgres using sqlx and tunes the connection pool.
+func OpenDB(settings Settings) (*sqlx.DB, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, err
 	}
-	return connectDB(newPostgresDialector(settings.DatabaseURL))
+	return connectDB(settings.DatabaseURL)
 }
 
-func connectDB(dialector gorm.Dialector) (*gorm.DB, error) {
-	db, err := gorm.Open(dialector, &gorm.Config{})
+func connectDB(dsn string) (*sqlx.DB, error) {
+	db, err := connectPostgres(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("underlying sql.DB: %w", err)
-	}
-
-	sqlDB.SetMaxOpenConns(defaultMaxOpenConns)
-	sqlDB.SetMaxIdleConns(defaultMaxIdleConns)
+	db.SetMaxOpenConns(defaultMaxOpenConns)
+	db.SetMaxIdleConns(defaultMaxIdleConns)
 
 	return db, nil
 }

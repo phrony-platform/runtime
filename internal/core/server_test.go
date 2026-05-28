@@ -7,10 +7,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jmoiron/sqlx"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 
 	phronyhealth "github.com/phrony-platform/runtime/gen/grpc/health/v1"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
@@ -24,10 +23,7 @@ func TestNewServer_registersServices(t *testing.T) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 
-	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("gorm.Open: %v", err)
-	}
+	db := sqlx.NewDb(sqlDB, "pgx")
 
 	lis := startTestListener(t, db)
 	t.Cleanup(func() { lis.Close() })
@@ -60,7 +56,7 @@ func TestNewServer_registersServices(t *testing.T) {
 	}
 }
 
-func startTestListener(t *testing.T, db *gorm.DB) net.Listener {
+func startTestListener(t *testing.T, db *sqlx.DB) net.Listener {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

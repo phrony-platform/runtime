@@ -7,10 +7,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-playground/validator/v10"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-	"gorm.io/gorm/schema"
+	"github.com/jmoiron/sqlx"
 )
 
 func TestOpenDB_invalidSettings(t *testing.T) {
@@ -25,7 +22,7 @@ func TestOpenDB_invalidSettings(t *testing.T) {
 }
 
 func TestOpenDB_success(t *testing.T) {
-	restore := stubPostgresDialector(t)
+	restore := stubConnectPostgres(t)
 	defer restore()
 
 	db, err := OpenDB(Settings{
@@ -36,51 +33,21 @@ func TestOpenDB_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenDB: %v", err)
 	}
-	t.Cleanup(func() {
-		sqlDB, err := db.DB()
-		if err != nil {
-			t.Errorf("db.DB: %v", err)
-			return
-		}
-		_ = sqlDB.Close()
-	})
+	t.Cleanup(func() { _ = db.Close() })
 
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("db.DB: %v", err)
-	}
-	if got := sqlDB.Stats().MaxOpenConnections; got != defaultMaxOpenConns {
+	if got := db.Stats().MaxOpenConnections; got != defaultMaxOpenConns {
 		t.Fatalf("MaxOpenConnections = %d, want %d", got, defaultMaxOpenConns)
 	}
 }
 
-func TestNewPostgresDialector(t *testing.T) {
-	d := newPostgresDialector("postgres://localhost:5432/test?sslmode=disable")
-	if d.Name() != "postgres" {
-		t.Fatalf("dialector name = %q, want postgres", d.Name())
-	}
-}
-
-func TestConnectDB_dbFailed(t *testing.T) {
-	_, err := connectDB(invalidPoolDialector{})
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "underlying sql.DB") {
-		t.Fatalf("expected underlying sql.DB error, got %v", err)
-	}
-}
-
 func TestConnectDB_openFailed(t *testing.T) {
-	sqlDB, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
-	if err != nil {
-		t.Fatalf("sqlmock.New: %v", err)
+	prev := connectPostgres
+	connectPostgres = func(string) (*sqlx.DB, error) {
+		return nil, errors.New("dial failed")
 	}
-	defer sqlDB.Close()
+	t.Cleanup(func() { connectPostgres = prev })
 
-	mock.ExpectPing().WillReturnError(errors.New("dial failed"))
-
-	_, err = connectDB(postgres.New(postgres.Config{Conn: sqlDB}))
+	_, err := connectDB("postgres://unused")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -89,38 +56,16 @@ func TestConnectDB_openFailed(t *testing.T) {
 	}
 }
 
-func stubPostgresDialector(t *testing.T) func() {
+func stubConnectPostgres(t *testing.T) func() {
 	t.Helper()
-	prev := newPostgresDialector
-	newPostgresDialector = func(string) gorm.Dialector {
+	prev := connectPostgres
+	connectPostgres = func(string) (*sqlx.DB, error) {
 		sqlDB, _, err := sqlmock.New()
 		if err != nil {
 			t.Fatalf("sqlmock.New: %v", err)
 		}
 		t.Cleanup(func() { _ = sqlDB.Close() })
-		return postgres.New(postgres.Config{Conn: sqlDB})
+		return sqlx.NewDb(sqlDB, "pgx"), nil
 	}
-	return func() { newPostgresDialector = prev }
+	return func() { connectPostgres = prev }
 }
-
-// invalidPoolDialector opens GORM with a ConnPool that db.DB() cannot unwrap.
-type invalidPoolDialector struct{}
-
-func (invalidPoolDialector) Name() string { return "mock" }
-
-func (invalidPoolDialector) Initialize(db *gorm.DB) error {
-	db.ConnPool = nil
-	return nil
-}
-
-func (invalidPoolDialector) Migrator(*gorm.DB) gorm.Migrator { return nil }
-
-func (invalidPoolDialector) DataTypeOf(*schema.Field) string { return "" }
-
-func (invalidPoolDialector) DefaultValueOf(*schema.Field) clause.Expression { return nil }
-
-func (invalidPoolDialector) BindVarTo(clause.Writer, *gorm.Statement, interface{}) {}
-
-func (invalidPoolDialector) QuoteTo(clause.Writer, string) {}
-
-func (invalidPoolDialector) Explain(string, ...interface{}) string { return "" }

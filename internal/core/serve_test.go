@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"github.com/jmoiron/sqlx"
 )
 
 type brokenListener struct{}
@@ -91,9 +91,9 @@ func TestServe_listenFailed(t *testing.T) {
 	}
 }
 
-func testServeDB(t *testing.T) *gorm.DB {
+func testServeDB(t *testing.T) *sqlx.DB {
 	t.Helper()
-	db, _ := testGORMDB(t)
+	db, _ := testSQLxDB(t)
 	return db
 }
 
