@@ -1,4 +1,4 @@
-.PHONY: proto proto-tools proto-tools-check test test-coverage test-coverage-html
+.PHONY: proto proto-tools proto-tools-check build build-phrony build-runtime test test-coverage test-coverage-html
 
 GOPATH_BIN := $(shell go env GOPATH)/bin
 export PATH := $(GOPATH_BIN):$(PATH)
@@ -8,8 +8,8 @@ GEN_DIR := gen
 
 COVERAGE_OUT := coverage.out
 COVERAGE_HTML := coverage.html
-# Exclude generated protobuf stubs from coverage reports.
-COVER_PKGS := $(shell go list ./... | grep -v '/gen/')
+# Application packages only (excludes gen/ and cmd/ thin mains).
+COVER_PKGS := ./internal/...
 
 # Install protoc plugins (protoc itself must be installed separately, e.g. brew install protobuf).
 proto-tools:
@@ -33,6 +33,14 @@ proto-tools-check:
 	@command -v protoc-gen-go-grpc >/dev/null 2>&1 || { \
 		echo "protoc-gen-go-grpc not found; run: make proto-tools"; exit 1; \
 	}
+
+build: build-phrony build-runtime
+
+build-phrony:
+	go build -o bin/phrony ./cmd/cli
+
+build-runtime:
+	go build -o bin/phrony-runtime ./cmd/phrony-runtime
 
 test:
 	go test -short ./...
