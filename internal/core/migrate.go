@@ -35,9 +35,7 @@ func Migrate(db *sqlx.DB) error {
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
-	defer func() {
-		_, _ = m.Close()
-	}()
+	// Do not call m.Close(): WithInstance shares db.DB and migrate closes it on Close.
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate up: %w", err)
