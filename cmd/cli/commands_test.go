@@ -79,12 +79,32 @@ func TestRunCommand_unimplemented(t *testing.T) {
 	}
 }
 
+func writeDeployTestBundle(t *testing.T, dir string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "prompts"), 0o755); err != nil {
+		t.Fatalf("MkdirAll prompts: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "schemas"), 0o755); err != nil {
+		t.Fatalf("MkdirAll schemas: %v", err)
+	}
+	manifest := filepath.Join(dir, "agent.yaml")
+	if err := os.WriteFile(manifest, []byte(validAgentManifestYAML), 0o600); err != nil {
+		t.Fatalf("WriteFile agent: %v", err)
+	}
+	prompt := []byte("text: |\n  You are an echo agent.\n")
+	if err := os.WriteFile(filepath.Join(dir, "prompts", "system.yaml"), prompt, 0o600); err != nil {
+		t.Fatalf("WriteFile prompt: %v", err)
+	}
+	schema := []byte(`{"type":"object","properties":{"message":{"type":"string"}}}`)
+	if err := os.WriteFile(filepath.Join(dir, "schemas", "result.json"), schema, 0o600); err != nil {
+		t.Fatalf("WriteFile schema: %v", err)
+	}
+	return manifest
+}
+
 func TestDeployCommand_unimplemented(t *testing.T) {
 	addr := startTestRuntimeAddr(t)
-	manifest := filepath.Join(t.TempDir(), "agent.yaml")
-	if err := os.WriteFile(manifest, []byte(validAgentManifestYAML), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+	manifest := writeDeployTestBundle(t, t.TempDir())
 
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
@@ -96,6 +116,43 @@ func TestDeployCommand_unimplemented(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "not implemented on this runtime yet") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDeployCommand_dialRuntimeFailed(t *testing.T) {
+	manifest := writeDeployTestBundle(t, t.TempDir())
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"deploy", "--file", manifest, "--runtime-addr", "127.0.0.1:1"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "deploy") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDeployCommand_parseManifestFailed(t *testing.T) {
+	manifest := filepath.Join(t.TempDir(), "agent.yaml")
+	if err := os.WriteFile(manifest, []byte("apiVersion: [\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"deploy", "--file", manifest})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "parse manifest") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -116,6 +173,26 @@ func TestDeployCommand_invalidManifest(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "invalid manifest") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDeployCommand_unresolvedBundleRef(t *testing.T) {
+	manifest := filepath.Join(t.TempDir(), "agent.yaml")
+	if err := os.WriteFile(manifest, []byte(validAgentManifestYAML), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"deploy", "--file", manifest})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "spec.instructions.ref") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

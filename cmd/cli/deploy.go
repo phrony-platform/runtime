@@ -42,6 +42,15 @@ func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) err
 		return errors.New(err.Error())
 	}
 
+	resolved, err := manifest.ResolveBundle(manifestPath, agent)
+	if err != nil {
+		return err
+	}
+	manifestJSON, err := resolved.JSON()
+	if err != nil {
+		return fmt.Errorf("encode resolved manifest: %w", err)
+	}
+
 	clients, err := dialRuntime(cmd.Context(), *runtimeAddr)
 	if err != nil {
 		return err
@@ -49,7 +58,7 @@ func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) err
 	defer clients.Close()
 
 	_, err = clients.runtime.Deploy(cmd.Context(), &runtimev1.DeployRequest{
-		Manifest: data,
+		Manifest: manifestJSON,
 	})
 	if err != nil {
 		return clierr.WrapRPC("deploy", err)
