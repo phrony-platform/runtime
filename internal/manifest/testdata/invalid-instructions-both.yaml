@@ -1,0 +1,16 @@
+apiVersion: phrony.dev/v1
+kind: Agent
+
+metadata:
+  name: bad-agent
+  namespace: test
+  version: 1.0.0
+
+spec:
+  purpose: Test agent.
+  instructions:
+    ref: prompts/foo
+    text: inline prompt
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-5
