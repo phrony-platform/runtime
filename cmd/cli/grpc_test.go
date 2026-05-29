@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"net"
 	"testing"
 	"time"
@@ -55,6 +56,13 @@ func startTestRuntimeAddrForDeploy(t *testing.T) string {
 	mock.ExpectQuery(`INSERT INTO agents`).
 		WithArgs(sqlmock.AnyArg(), "demo", "echo-agent", "", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("agent-uuid").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow("agent-uuid", "demo", "echo-agent", nil))
+	mock.ExpectQuery(`SELECT av.id, av.content_hash`).
+		WithArgs("agent-uuid", "1.2.0").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
@@ -117,11 +125,114 @@ func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(`FROM agent_versions av`).
 		WithArgs("demo", "echo-agent", "1.2.0").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "archived_at"}).AddRow("version-uuid", nil, nil))
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", sqlmock.AnyArg(), "pending").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
 
+	db := sqlx.NewDb(sqlDB, "pgx")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+
+	srv := core.NewServer(db)
+	go func() { _ = srv.GRPC().Serve(lis) }()
+	t.Cleanup(func() { srv.GRPC().Stop() })
+
+	waitForGRPC(t, lis.Addr().String())
+	return lis.Addr().String()
+}
+
+func startTestRuntimeAddrForAgentsList(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "owner", "archived_at", "created_at"}).
+			AddRow("agent-uuid", "demo", "echo-agent", "", nil, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForVersionsList(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	agentID := "agent-uuid"
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow(agentID, "demo", "echo-agent", nil))
+	mock.ExpectQuery(`FROM agent_versions`).
+		WithArgs(agentID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "version", "content_hash", "deployed_at", "deprecated_at"}).
+			AddRow("ver-1", "1.2.0", "abc", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForDeprecate(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	agentID := "agent-uuid"
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow(agentID, "demo", "echo-agent", nil))
+	mock.ExpectQuery(`UPDATE agent_versions`).
+		WithArgs(agentID, "1.2.0").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ver-1"))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForArchive(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	agentID := "agent-uuid"
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow(agentID, "demo", "echo-agent", nil))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`UPDATE agents`).
+		WithArgs(agentID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(agentID))
+	mock.ExpectExec(`UPDATE agent_versions`).
+		WithArgs(agentID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startRuntimeOnDB(t *testing.T, sqlDB *sql.DB) string {
+	t.Helper()
 	db := sqlx.NewDb(sqlDB, "pgx")
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

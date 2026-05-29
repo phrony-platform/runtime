@@ -12,3 +12,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  runtime:
+    build: .
+    ports:
+      - "7777:7777"
+    environment:
+      RUNTIME_DATABASE_URL: postgres://phrony_runtime:phrony_runtime@postgres:5432/phrony_runtime?sslmode=disable
+      RUNTIME_GRPC_ADDR: 0.0.0.0:7777
+    depends_on:
+      postgres:
+        condition: service_healthy

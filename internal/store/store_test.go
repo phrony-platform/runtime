@@ -80,7 +80,7 @@ func TestQueries_UpsertAgent(t *testing.T) {
 	}
 }
 
-func TestQueries_UpsertAgentVersion(t *testing.T) {
+func TestQueries_InsertAgentVersion(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
@@ -93,7 +93,7 @@ func TestQueries_UpsertAgentVersion(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ver-id"))
 
 	q := New(sqlDB)
-	id, err := q.UpsertAgentVersion(context.Background(), UpsertAgentVersionParams{
+	id, err := q.InsertAgentVersion(context.Background(), InsertAgentVersionParams{
 		ID:          "ver-id",
 		AgentID:     "agent-id",
 		Version:     "1.0.0",
@@ -101,7 +101,7 @@ func TestQueries_UpsertAgentVersion(t *testing.T) {
 		Manifest:    manifest,
 	})
 	if err != nil {
-		t.Fatalf("UpsertAgentVersion: %v", err)
+		t.Fatalf("InsertAgentVersion: %v", err)
 	}
 	if id != "ver-id" {
 		t.Fatalf("id = %q, want ver-id", id)

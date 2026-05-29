@@ -92,7 +92,7 @@ func locateBundleFile(bundleRoot, ref string, version any, kind refKind) (string
 		return "", fmt.Errorf("ref is empty")
 	}
 	if filepath.IsAbs(ref) {
-		return "", resolveNotFoundError(kindPath(kind), ref, version, "ref must be bundle-relative")
+		return "", resolveNotFoundError(kindPath(kind), ref, version, "", "ref must be bundle-relative")
 	}
 
 	exts := kind.extensions()
@@ -112,7 +112,11 @@ func locateBundleFile(bundleRoot, ref string, version any, kind refKind) (string
 			return abs, nil
 		}
 	}
-	return "", resolveNotFoundError(kindPath(kind), ref, version, triedPaths(bundleRoot, tried))
+	detail := ""
+	if len(tried) == 0 {
+		detail = "ref path escapes bundle directory"
+	}
+	return "", resolveNotFoundError(kindPath(kind), ref, version, bundleRoot, detail)
 }
 
 func bundleRefCandidates(ref string, version any, exts []string) []string {
@@ -168,27 +172,19 @@ func kindPath(kind refKind) string {
 	}
 }
 
-func resolveNotFoundError(fieldPath, ref string, version any, detail string) error {
+func resolveNotFoundError(fieldPath, ref string, version any, bundleRoot, detail string) error {
 	ver, hasVer := formatRefVersion(version)
-	msg := fmt.Sprintf("no file found for ref %q", ref)
+	msg := fmt.Sprintf("ref %q not found", ref)
 	if hasVer {
-		msg = fmt.Sprintf("no file found for ref %q (version %q)", ref, ver)
+		msg = fmt.Sprintf("ref %q (version %q) not found", ref, ver)
+	}
+	if bundleRoot != "" && detail == "" {
+		msg += fmt.Sprintf(" in bundle directory %s", bundleRoot)
 	}
 	if detail != "" {
 		msg += ": " + detail
 	}
 	return FieldError{Path: fieldPath, Message: msg}
-}
-
-func triedPaths(bundleRoot string, rel []string) string {
-	if len(rel) == 0 {
-		return "no candidates"
-	}
-	paths := make([]string, len(rel))
-	for i, p := range rel {
-		paths[i] = filepath.Join(bundleRoot, p)
-	}
-	return "tried " + strings.Join(paths, ", ")
 }
 
 func isPathWithinRoot(root, path string) bool {

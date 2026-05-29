@@ -90,8 +90,8 @@ func TestLocateBundleFile_rejectsPathEscape(t *testing.T) {
 	if err == nil {
 		t.Fatal("path escape: want error")
 	}
-	if !strings.Contains(err.Error(), "no candidates") {
-		t.Fatalf("error = %v, want no candidates detail", err)
+	if !strings.Contains(err.Error(), "escapes bundle directory") {
+		t.Fatalf("error = %v, want path escape detail", err)
 	}
 }
 

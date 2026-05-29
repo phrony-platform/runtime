@@ -36,17 +36,13 @@ func (q *Queries) UpsertAgent(ctx context.Context, arg UpsertAgentParams) (strin
 	return id, err
 }
 
-const upsertAgentVersion = `
+const insertAgentVersion = `
 INSERT INTO agent_versions (id, agent_id, version, content_hash, manifest)
 VALUES ($1, $2, $3, $4, $5::jsonb)
-ON CONFLICT (agent_id, version) DO UPDATE SET
-	content_hash = EXCLUDED.content_hash,
-	manifest = EXCLUDED.manifest,
-	deployed_at = NOW()
 RETURNING id
 `
 
-type UpsertAgentVersionParams struct {
+type InsertAgentVersionParams struct {
 	ID          string          `json:"id"`
 	AgentID     string          `json:"agent_id"`
 	Version     string          `json:"version"`
@@ -54,8 +50,8 @@ type UpsertAgentVersionParams struct {
 	Manifest    json.RawMessage `json:"manifest"`
 }
 
-func (q *Queries) UpsertAgentVersion(ctx context.Context, arg UpsertAgentVersionParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, upsertAgentVersion,
+func (q *Queries) InsertAgentVersion(ctx context.Context, arg InsertAgentVersionParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, insertAgentVersion,
 		arg.ID,
 		arg.AgentID,
 		arg.Version,

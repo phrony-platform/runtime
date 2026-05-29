@@ -1,4 +1,4 @@
-.PHONY: targets dev-up dev-down migrate serve build test test-coverage proto proto-tools cli
+.PHONY: targets dev-up dev-down migrate serve build install-cli install-cli-path test test-coverage proto proto-tools cli
 
 GOPATH_BIN := $(shell go env GOPATH)/bin
 export PATH := $(GOPATH_BIN):$(PATH)
@@ -10,11 +10,14 @@ BIN_DIR := bin
 COVERAGE_OUT := coverage.out
 COVER_PKGS := ./internal/...
 
-# Words after "cli" on the make command line, e.g. make cli status deploy agent.yaml
-CLI_ARGS := $(filter-out cli,$(MAKECMDGOALS))
+# Passthrough for "make cli ..." only (e.g. make cli status). Do not treat other targets
+# like install-cli as CLI args — that would shadow real Makefile targets.
+ifeq ($(firstword $(MAKECMDGOALS)),cli)
+CLI_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 ifneq ($(CLI_ARGS),)
 $(CLI_ARGS):
 	@:
+endif
 endif
 
 # Load .env if present, otherwise .env.example.
@@ -24,12 +27,14 @@ LOAD_ENV = set -a && { [ -f .env ] && . ./.env || . ./.env.example; } && set +a
 
 targets:
 	@echo "Local dev (copy .env.example to .env once):"
-	@echo "  make dev-up              Postgres + migrate"
-	@echo "  make dev-down            Stop Postgres"
+	@echo "  make dev-up              Postgres + runtime (docker compose up)"
+	@echo "  make dev-down            Stop compose stack"
 	@echo "  make migrate             Migrations only (Postgres already up)"
 	@echo "  make migrate-create name=description   New SQL migration pair in migrations/"
 	@echo "  make serve               Run phrony-runtime (foreground)"
-	@echo "  make cli ...             Operator CLI (runtime must be running)"
+	@echo "  make cli ...             Operator CLI via go run (flags like --namespace break make)"
+	@echo "  make install-cli         Install phrony to \$$(go env GOPATH)/bin"
+	@echo "  make install-cli-path    Install to ~/.local/bin and update shell PATH (recommended)"
 	@echo ""
 	@echo "Build & test:"
 	@echo "  make build               bin/phrony, bin/phrony-runtime"
@@ -39,8 +44,7 @@ targets:
 	@echo "  make proto               Regenerate gen/ (run make proto-tools once if needed)"
 
 dev-up:
-	docker compose up -d --wait
-	@$(LOAD_ENV) && go run ./cmd/phrony-runtime migrate
+	docker compose up -d --build --wait
 
 dev-down:
 	docker compose down
@@ -59,6 +63,23 @@ build:
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/phrony ./cmd/cli
 	go build -o $(BIN_DIR)/phrony-runtime ./cmd/phrony-runtime
+
+# Install phrony to $(go env GOPATH)/bin (or $(go env GOBIN) when set).
+# Prefer this over "make cli" so flags like --namespace are not parsed by make.
+install-cli:
+	@bin=$$(go env GOBIN); \
+	if [ -z "$$bin" ]; then bin="$$(go env GOPATH)/bin"; fi; \
+	go build -o "$$bin/phrony" ./cmd/cli; \
+	echo "Installed phrony to $$bin/phrony"; \
+	echo "Run 'make install-cli-path' to add it to your shell PATH automatically"
+
+# Install to ~/.local/bin (no sudo) and append PATH to ~/.zshrc / ~/.bashrc once.
+install-cli-path:
+	@install_dir="$${HOME}/.local/bin"; \
+	mkdir -p "$$install_dir"; \
+	go build -o "$$install_dir/phrony" ./cmd/cli; \
+	PHRONY_INSTALL_DIR="$$install_dir" sh scripts/setup-cli-path.sh; \
+	echo "Installed phrony to $$install_dir/phrony"
 
 cli:
 	@$(LOAD_ENV) && go run ./cmd/cli $(CLI_ARGS)

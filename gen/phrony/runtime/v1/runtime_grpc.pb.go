@@ -19,9 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Runtime_GetVersion_FullMethodName = "/phrony.runtime.v1.Runtime/GetVersion"
-	Runtime_RunSession_FullMethodName = "/phrony.runtime.v1.Runtime/RunSession"
-	Runtime_Deploy_FullMethodName     = "/phrony.runtime.v1.Runtime/Deploy"
+	Runtime_GetVersion_FullMethodName            = "/phrony.runtime.v1.Runtime/GetVersion"
+	Runtime_RunSession_FullMethodName            = "/phrony.runtime.v1.Runtime/RunSession"
+	Runtime_Deploy_FullMethodName                = "/phrony.runtime.v1.Runtime/Deploy"
+	Runtime_ListAgents_FullMethodName            = "/phrony.runtime.v1.Runtime/ListAgents"
+	Runtime_ListAgentVersions_FullMethodName     = "/phrony.runtime.v1.Runtime/ListAgentVersions"
+	Runtime_DeprecateAgentVersion_FullMethodName = "/phrony.runtime.v1.Runtime/DeprecateAgentVersion"
+	Runtime_ArchiveAgent_FullMethodName          = "/phrony.runtime.v1.Runtime/ArchiveAgent"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -33,6 +37,10 @@ type RuntimeClient interface {
 	GetVersion(ctx context.Context, in *GetVersionRequest, opts ...grpc.CallOption) (*GetVersionResponse, error)
 	RunSession(ctx context.Context, in *RunSessionRequest, opts ...grpc.CallOption) (*RunSessionResponse, error)
 	Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error)
+	ListAgents(ctx context.Context, in *ListAgentsRequest, opts ...grpc.CallOption) (*ListAgentsResponse, error)
+	ListAgentVersions(ctx context.Context, in *ListAgentVersionsRequest, opts ...grpc.CallOption) (*ListAgentVersionsResponse, error)
+	DeprecateAgentVersion(ctx context.Context, in *DeprecateAgentVersionRequest, opts ...grpc.CallOption) (*DeprecateAgentVersionResponse, error)
+	ArchiveAgent(ctx context.Context, in *ArchiveAgentRequest, opts ...grpc.CallOption) (*ArchiveAgentResponse, error)
 }
 
 type runtimeClient struct {
@@ -73,6 +81,46 @@ func (c *runtimeClient) Deploy(ctx context.Context, in *DeployRequest, opts ...g
 	return out, nil
 }
 
+func (c *runtimeClient) ListAgents(ctx context.Context, in *ListAgentsRequest, opts ...grpc.CallOption) (*ListAgentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAgentsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListAgents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListAgentVersions(ctx context.Context, in *ListAgentVersionsRequest, opts ...grpc.CallOption) (*ListAgentVersionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAgentVersionsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListAgentVersions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) DeprecateAgentVersion(ctx context.Context, in *DeprecateAgentVersionRequest, opts ...grpc.CallOption) (*DeprecateAgentVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeprecateAgentVersionResponse)
+	err := c.cc.Invoke(ctx, Runtime_DeprecateAgentVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ArchiveAgent(ctx context.Context, in *ArchiveAgentRequest, opts ...grpc.CallOption) (*ArchiveAgentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArchiveAgentResponse)
+	err := c.cc.Invoke(ctx, Runtime_ArchiveAgent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -82,6 +130,10 @@ type RuntimeServer interface {
 	GetVersion(context.Context, *GetVersionRequest) (*GetVersionResponse, error)
 	RunSession(context.Context, *RunSessionRequest) (*RunSessionResponse, error)
 	Deploy(context.Context, *DeployRequest) (*DeployResponse, error)
+	ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error)
+	ListAgentVersions(context.Context, *ListAgentVersionsRequest) (*ListAgentVersionsResponse, error)
+	DeprecateAgentVersion(context.Context, *DeprecateAgentVersionRequest) (*DeprecateAgentVersionResponse, error)
+	ArchiveAgent(context.Context, *ArchiveAgentRequest) (*ArchiveAgentResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -100,6 +152,18 @@ func (UnimplementedRuntimeServer) RunSession(context.Context, *RunSessionRequest
 }
 func (UnimplementedRuntimeServer) Deploy(context.Context, *DeployRequest) (*DeployResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Deploy not implemented")
+}
+func (UnimplementedRuntimeServer) ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAgents not implemented")
+}
+func (UnimplementedRuntimeServer) ListAgentVersions(context.Context, *ListAgentVersionsRequest) (*ListAgentVersionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAgentVersions not implemented")
+}
+func (UnimplementedRuntimeServer) DeprecateAgentVersion(context.Context, *DeprecateAgentVersionRequest) (*DeprecateAgentVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeprecateAgentVersion not implemented")
+}
+func (UnimplementedRuntimeServer) ArchiveAgent(context.Context, *ArchiveAgentRequest) (*ArchiveAgentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArchiveAgent not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -176,6 +240,78 @@ func _Runtime_Deploy_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_ListAgents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAgentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListAgents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListAgents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListAgents(ctx, req.(*ListAgentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListAgentVersions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAgentVersionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListAgentVersions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListAgentVersions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListAgentVersions(ctx, req.(*ListAgentVersionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_DeprecateAgentVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeprecateAgentVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).DeprecateAgentVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_DeprecateAgentVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).DeprecateAgentVersion(ctx, req.(*DeprecateAgentVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ArchiveAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArchiveAgentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ArchiveAgent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ArchiveAgent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ArchiveAgent(ctx, req.(*ArchiveAgentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -194,6 +330,22 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Deploy",
 			Handler:    _Runtime_Deploy_Handler,
+		},
+		{
+			MethodName: "ListAgents",
+			Handler:    _Runtime_ListAgents_Handler,
+		},
+		{
+			MethodName: "ListAgentVersions",
+			Handler:    _Runtime_ListAgentVersions_Handler,
+		},
+		{
+			MethodName: "DeprecateAgentVersion",
+			Handler:    _Runtime_DeprecateAgentVersion_Handler,
+		},
+		{
+			MethodName: "ArchiveAgent",
+			Handler:    _Runtime_ArchiveAgent_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

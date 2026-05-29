@@ -368,6 +368,111 @@ func TestDeployCommand_unresolvedBundleRef(t *testing.T) {
 	}
 }
 
+func TestAgentsListCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForAgentsList(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"agents", "ls", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	outStr := out.String()
+	if !strings.Contains(outStr, "agent-uuid") || !strings.Contains(outStr, "demo") {
+		t.Fatalf("output = %q, want agent table row", outStr)
+	}
+	if !strings.Contains(outStr, "NAMESPACE") {
+		t.Fatalf("output = %q, want table headers", outStr)
+	}
+}
+
+func TestAgentsVersionsListCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForVersionsList(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"agents", "versions", "ls", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	outStr := out.String()
+	if !strings.Contains(outStr, "1.2.0") || !strings.Contains(outStr, "runnable") {
+		t.Fatalf("output = %q, want version row", outStr)
+	}
+}
+
+func TestAgentsVersionsListCommand_missingAgentArg(t *testing.T) {
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"agents", "versions", "ls"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "accepts 1 arg") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAgentsDeprecateCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForDeprecate(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{
+		"agents", "deprecate", "demo/echo-agent", "-v", "1.2.0", "--runtime-addr", addr,
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "deprecated demo/echo-agent version 1.2.0") {
+		t.Fatalf("output = %q, want deprecation confirmation", out.String())
+	}
+}
+
+func TestAgentsArchiveCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForArchive(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"agents", "archive", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "archived agent demo/echo-agent") {
+		t.Fatalf("output = %q, want archive confirmation", out.String())
+	}
+}
+
+func TestAgentsArchiveCommand_invalidAgentName(t *testing.T) {
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"agents", "archive", "echo-agent"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "namespace/name") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDeployCommand_readManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})

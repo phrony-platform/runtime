@@ -1,0 +1,11 @@
+.git
+.github
+bin
+dist
+.env
+.env.*
+!.env.example
+*.md
+coverage.out
+.gomodcache
+.gocache

@@ -43,7 +43,7 @@ func TestRuntime_RunSession_specificVersion(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	mock.ExpectQuery(`FROM agent_versions av`).
 		WithArgs("demo", "echo-agent", "1.2.0").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "archived_at"}).AddRow("version-uuid", nil, nil))
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"q":"hi"}`), runSessionStatusPending).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
@@ -82,6 +82,9 @@ func TestRuntime_RunSession_noDatabase(t *testing.T) {
 func TestRuntime_RunSession_agentNotFound(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("demo", "missing").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`FROM agents`).
 		WithArgs("demo", "missing").
 		WillReturnError(sql.ErrNoRows)
 

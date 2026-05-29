@@ -19,23 +19,26 @@ This repository implements the runtime defined by the Phrony Agent Spec—the op
 
 ## Getting started
 
-### 1. Postgres and environment
+### 1. Run with Docker Compose
 
-Copy the example env file and adjust values if needed (connection URL, gRPC addresses):
+From a clone of this repository, start Postgres and the runtime with one command:
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # optional; used by the operator CLI on your host
+docker compose up --build
 ```
 
-Start Postgres and apply schema migrations:
+Or in the background:
 
 ```bash
 make dev-up
 ```
 
-`make dev-up` runs `docker compose up` for Postgres, then `phrony-runtime migrate`. To stop Postgres later: `make dev-down`.
+Compose starts Postgres, waits until it is healthy, builds `phrony-runtime`, runs migrations on startup, and listens on **gRPC port 7777** (`127.0.0.1:7777` from your machine). Stop the stack with `docker compose down` or `make dev-down`.
 
-Load the env in your shell before running binaries (or use the `make` shortcuts in [Development](#development)):
+### 2. Environment (operator CLI on the host)
+
+Copy `.env.example` to `.env` so the `phrony` CLI can reach the containerized runtime. Load it when running CLI commands outside `make`:
 
 ```bash
 set -a && source .env && set +a
@@ -43,11 +46,11 @@ set -a && source .env && set +a
 
 | Variable | Description |
 |----------|-------------|
-| `RUNTIME_DATABASE_URL` | Postgres connection string for `phrony-runtime` |
-| `RUNTIME_GRPC_ADDR` | gRPC listen address (default `127.0.0.1:7777`) |
-| `PHRONY_RUNTIME_ADDR` | Runtime endpoint for the `phrony` CLI (optional override) |
+| `RUNTIME_DATABASE_URL` | Postgres URL when running `phrony-runtime` on the host |
+| `RUNTIME_GRPC_ADDR` | gRPC listen address on the host (default `127.0.0.1:7777`) |
+| `PHRONY_RUNTIME_ADDR` | Runtime endpoint for the `phrony` CLI (default `127.0.0.1:7777`) |
 
-### 2. Install binaries
+### 3. Install binaries
 
 Install both binaries into `$(go env GOPATH)/bin` (must be on your `PATH`):
 
@@ -67,21 +70,19 @@ make build
 export PATH="$(pwd)/bin:$PATH"
 ```
 
-### 3. Run the runtime
+### 4. Run the runtime on the host (optional)
 
-With `.env` loaded (step 1):
-
-```bash
-phrony-runtime serve
-```
-
-`serve` runs migrations (unless `--skip-migrate`) and starts the gRPC server. Migrations only:
+For Go development, start only Postgres in Compose, then run the daemon locally:
 
 ```bash
-phrony-runtime migrate
+docker compose up -d postgres --wait
+make migrate    # or: phrony-runtime migrate
+make serve      # or: phrony-runtime serve
 ```
 
-### 4. Operator CLI
+`serve` runs migrations (unless `--skip-migrate`) and starts the gRPC server. Do not run `make serve` while the compose `runtime` service is also bound to port 7777.
+
+### 5. Operator CLI
 
 In another terminal, load `.env` again, then:
 
@@ -112,8 +113,8 @@ From the repo root, `make` loads `.env` (or `.env.example`) automatically:
 
 | Target | Description |
 |--------|-------------|
-| `make dev-up` | Start Postgres and run migrations |
-| `make dev-down` | Stop Postgres |
+| `make dev-up` | Start Postgres + runtime (`docker compose up`) |
+| `make dev-down` | Stop the compose stack |
 | `make migrate` | Migrations only (Postgres already running) |
 | `make serve` | Run `phrony-runtime serve` |
 | `make cli …` | Operator CLI (e.g. `make cli status`) |

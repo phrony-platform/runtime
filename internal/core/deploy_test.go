@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -22,6 +23,10 @@ func TestRuntime_Deploy_success(t *testing.T) {
 	mock.ExpectQuery(`INSERT INTO agents`).
 		WithArgs(sqlmock.AnyArg(), "demo", "echo-agent", "", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
+	expectActiveAgentByID(mock, "agent-uuid")
+	mock.ExpectQuery(`SELECT av.id, av.content_hash`).
+		WithArgs("agent-uuid", "1.2.0").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", hashManifest(manifestJSON), manifestJSON).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
@@ -90,6 +95,10 @@ func TestRuntime_Deploy_withLabels(t *testing.T) {
 	mock.ExpectQuery(`INSERT INTO agents`).
 		WithArgs(sqlmock.AnyArg(), "demo", "echo-agent", "", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
+	expectActiveAgentByID(mock, "agent-uuid")
+	mock.ExpectQuery(`SELECT av.id, av.content_hash`).
+		WithArgs("agent-uuid", "1.2.0").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", hashManifest(manifestJSON), manifestJSON).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
@@ -134,12 +143,46 @@ func TestRuntime_Deploy_upsertAgentFailed(t *testing.T) {
 	}
 }
 
-func TestRuntime_Deploy_upsertVersionFailed(t *testing.T) {
+func TestRuntime_Deploy_sameVersionRejected(t *testing.T) {
+	manifestJSON := resolvedDeployManifestJSON(t)
+	existingHash := "existing-hash"
+	manifestHash := hashManifest(manifestJSON)
+
 	db, mock := testSQLxDB(t)
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO agents`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
-	mock.ExpectQuery(`INSERT INTO agent_versions`).WillReturnError(errors.New("upsert version failed"))
+	expectActiveAgentByID(mock, "agent-uuid")
+	mock.ExpectQuery(`SELECT av.id, av.content_hash`).
+		WithArgs("agent-uuid", "1.2.0").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "content_hash"}).AddRow("existing-version", existingHash))
+	mock.ExpectRollback()
+
+	srv := &runtimeServer{db: db}
+	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON})
+	assertGRPCCode(t, err, codes.AlreadyExists)
+	msg := statusMessage(t, err)
+	if !strings.Contains(msg, "demo/echo-agent") || !strings.Contains(msg, `version "1.2.0"`) {
+		t.Fatalf("error = %v, want agent/version in message", err)
+	}
+	if !strings.Contains(msg, "cannot be changed") {
+		t.Fatalf("error = %v, want immutable version reason", err)
+	}
+	if !strings.Contains(msg, existingHash) || !strings.Contains(msg, manifestHash) {
+		t.Fatalf("error = %v, want both content hashes", err)
+	}
+}
+
+func TestRuntime_Deploy_insertVersionFailed(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO agents`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
+	expectActiveAgentByID(mock, "agent-uuid")
+	mock.ExpectQuery(`SELECT av.id, av.content_hash`).
+		WithArgs("agent-uuid", "1.2.0").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`INSERT INTO agent_versions`).WillReturnError(errors.New("insert version failed"))
 	mock.ExpectRollback()
 
 	srv := &runtimeServer{db: db}
@@ -159,6 +202,10 @@ func TestRuntime_Deploy_commitFailed(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO agents`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
+	expectActiveAgentByID(mock, "agent-uuid")
+	mock.ExpectQuery(`SELECT av.id, av.content_hash`).
+		WithArgs("agent-uuid", "1.2.0").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", hashManifest(manifestJSON), manifestJSON).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
@@ -244,6 +291,13 @@ func resolvedDeployManifestJSON(t *testing.T, opts ...deployManifestOpts) []byte
 		t.Fatalf("Marshal: %v", err)
 	}
 	return raw
+}
+
+func expectActiveAgentByID(mock sqlmock.Sqlmock, agentID string) {
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs(agentID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow(agentID, "demo", "echo-agent", nil))
 }
 
 func statusMessage(t *testing.T, err error) string {

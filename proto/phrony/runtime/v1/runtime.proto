@@ -9,6 +9,10 @@ service Runtime {
   rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
   rpc RunSession(RunSessionRequest) returns (RunSessionResponse);
   rpc Deploy(DeployRequest) returns (DeployResponse);
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+  rpc ListAgentVersions(ListAgentVersionsRequest) returns (ListAgentVersionsResponse);
+  rpc DeprecateAgentVersion(DeprecateAgentVersionRequest) returns (DeprecateAgentVersionResponse);
+  rpc ArchiveAgent(ArchiveAgentRequest) returns (ArchiveAgentResponse);
 }
 
 message GetVersionRequest {}
@@ -51,3 +55,52 @@ message DeployResponse {
   string name = 5;
   string version = 6;
 }
+
+message ListAgentsRequest {
+  // When set, only agents in this namespace are returned.
+  string namespace = 1;
+}
+
+message AgentSummary {
+  string id = 1;
+  string namespace = 2;
+  string name = 3;
+  string owner = 4;
+  // RFC3339 timestamp when archived; empty when active.
+  string archived_at = 5;
+}
+
+message ListAgentsResponse {
+  repeated AgentSummary agents = 1;
+}
+
+message ListAgentVersionsRequest {
+  AgentRef agent_ref = 1;
+}
+
+message AgentVersionSummary {
+  string id = 1;
+  string version = 2;
+  string content_hash = 3;
+  string deployed_at = 4;
+  // RFC3339 timestamp when deprecated; empty when runnable.
+  string deprecated_at = 5;
+}
+
+message ListAgentVersionsResponse {
+  repeated AgentVersionSummary versions = 1;
+}
+
+message DeprecateAgentVersionRequest {
+  AgentRef agent_ref = 1;
+}
+
+message DeprecateAgentVersionResponse {
+  string version_id = 1;
+}
+
+message ArchiveAgentRequest {
+  AgentRef agent_ref = 1;
+}
+
+message ArchiveAgentResponse {}

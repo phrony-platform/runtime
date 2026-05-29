@@ -6,12 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/manifest"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const defaultIntegrationDSN = "postgres://phrony_runtime:phrony_runtime@localhost:5432/phrony_runtime?sslmode=disable"
@@ -49,27 +52,22 @@ func TestIntegration_MigrateAndDeploy(t *testing.T) {
 		t.Fatalf("content_hash = %q, want %q", resp.GetContentHash(), hashManifest(manifestJSON))
 	}
 
-	firstAgentID := resp.GetAgentId()
 	versionV1ID := resp.GetVersionId()
 
 	updatedJSON := integrationManifestJSON(t, namespace, "Updated integration purpose.", "1.0.0")
-	resp2, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: updatedJSON})
-	if err != nil {
-		t.Fatalf("Deploy redeploy: %v", err)
+	_, err = srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: updatedJSON})
+	if err == nil {
+		t.Fatal("Deploy redeploy same version: want error")
 	}
-	if resp2.GetAgentId() != firstAgentID {
-		t.Fatalf("redeploy agent_id = %q, want %q (upsert same agent)", resp2.GetAgentId(), firstAgentID)
+	if st, ok := status.FromError(err); !ok || st.Code() != codes.AlreadyExists {
+		t.Fatalf("redeploy same version: err = %v, want AlreadyExists", err)
 	}
-	if resp2.GetVersionId() != versionV1ID {
-		t.Fatalf("redeploy version_id = %q, want %q (upsert same version)", resp2.GetVersionId(), versionV1ID)
+	if !strings.Contains(err.Error(), `version "1.0.0"`) || !strings.Contains(err.Error(), "cannot be changed") {
+		t.Fatalf("redeploy error = %v, want immutable version message", err)
 	}
-	if resp2.GetContentHash() == resp.GetContentHash() {
-		t.Fatal("expected content hash to change after manifest update")
+	if !strings.Contains(err.Error(), hashManifest(updatedJSON)) {
+		t.Fatalf("redeploy error = %v, want manifest content hash in message", err)
 	}
-	if resp2.GetContentHash() != hashManifest(updatedJSON) {
-		t.Fatalf("content_hash = %q, want %q", resp2.GetContentHash(), hashManifest(updatedJSON))
-	}
-
 	runV1, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
 		AgentRef: &runtimev1.AgentRef{
 			Namespace: namespace,
@@ -110,10 +108,106 @@ func TestIntegration_MigrateAndDeploy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunSession latest: %v", err)
 	}
+
 	if runLatest.GetAgentVersionId() != respV2.GetVersionId() {
 		t.Fatalf("latest agent_version_id = %q, want %q", runLatest.GetAgentVersionId(), respV2.GetVersionId())
 	}
 	t.Cleanup(func() { cleanupIntegrationSessions(t, db, runLatest.GetSessionId()) })
+}
+
+func TestIntegration_AgentLifecycle(t *testing.T) {
+	dsn := os.Getenv("RUNTIME_DATABASE_URL")
+	if dsn == "" {
+		dsn = defaultIntegrationDSN
+	}
+
+	db, err := sqlx.Connect("pgx", dsn)
+	if err != nil {
+		t.Skipf("postgres not available: %v", err)
+	}
+
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	namespace := "itest-" + uuid.NewString()[:8]
+	t.Cleanup(func() { cleanupIntegrationAgents(t, db, namespace) })
+
+	manifestJSON := integrationManifestJSON(t, namespace, "Lifecycle agent.", "1.0.0")
+	srv := &runtimeServer{db: db}
+
+	deployResp, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON})
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if deployResp.GetAgentId() == "" {
+		t.Fatal("Deploy returned empty agent_id")
+	}
+
+	listAgents, err := srv.ListAgents(context.Background(), &runtimev1.ListAgentsRequest{Namespace: namespace})
+	if err != nil {
+		t.Fatalf("ListAgents: %v", err)
+	}
+
+	if len(listAgents.GetAgents()) != 1 {
+		t.Fatalf("agents = %d, want 1", len(listAgents.GetAgents()))
+	}
+
+	agentRef := &runtimev1.AgentRef{Namespace: namespace, Name: "echo-agent"}
+	versions, err := srv.ListAgentVersions(context.Background(), &runtimev1.ListAgentVersionsRequest{AgentRef: agentRef})
+	if err != nil {
+		t.Fatalf("ListAgentVersions: %v", err)
+	}
+
+	if len(versions.GetVersions()) != 1 {
+		t.Fatalf("versions = %d, want 1", len(versions.GetVersions()))
+	}
+
+	_, err = srv.DeprecateAgentVersion(context.Background(), &runtimev1.DeprecateAgentVersionRequest{
+		AgentRef: &runtimev1.AgentRef{Namespace: namespace, Name: "echo-agent", Version: "1.0.0"},
+	})
+	if err != nil {
+		t.Fatalf("DeprecateAgentVersion: %v", err)
+	}
+
+	_, err = srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
+		AgentRef: &runtimev1.AgentRef{Namespace: namespace, Name: "echo-agent", Version: "1.0.0"},
+	})
+
+	if err == nil {
+		t.Fatal("RunSession deprecated version: want error")
+	}
+
+	if st, ok := status.FromError(err); !ok || st.Code() != codes.FailedPrecondition {
+		t.Fatalf("RunSession deprecated: err = %v, want FailedPrecondition", err)
+	}
+
+	manifestV2 := integrationManifestJSON(t, namespace, "Lifecycle v2.", "2.0.0")
+	if _, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestV2}); err != nil {
+		t.Fatalf("Deploy v2: %v", err)
+	}
+
+	if _, err := srv.ArchiveAgent(context.Background(), &runtimev1.ArchiveAgentRequest{AgentRef: agentRef}); err != nil {
+		t.Fatalf("ArchiveAgent: %v", err)
+	}
+
+	_, err = srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
+		AgentRef: &runtimev1.AgentRef{Namespace: namespace, Name: "echo-agent"},
+	})
+
+	if err == nil {
+		t.Fatal("RunSession archived agent: want error")
+	}
+
+	if st, ok := status.FromError(err); !ok || st.Code() != codes.FailedPrecondition {
+		t.Fatalf("RunSession archived: err = %v, want FailedPrecondition", err)
+	}
+
+	if _, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestV2}); err == nil {
+		t.Fatal("Deploy to archived agent: want error")
+	}
 }
 
 func integrationManifestJSON(t *testing.T, namespace, purpose, version string) []byte {

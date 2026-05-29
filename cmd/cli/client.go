@@ -7,6 +7,7 @@ import (
 	grpc_health_v1 "github.com/phrony-platform/runtime/gen/grpc/health/v1"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/common"
+	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -38,4 +39,15 @@ func (c *runtimeClients) Close() error {
 		return nil
 	}
 	return c.conn.Close()
+}
+
+// withRuntimeClient dials the runtime, invokes fn with the runtime client, and
+// closes the connection afterwards.
+func withRuntimeClient(cmd *cobra.Command, runtimeAddrFlag string, fn func(runtimev1.RuntimeClient) error) error {
+	clients, err := dialRuntime(cmd.Context(), runtimeAddrFlag)
+	if err != nil {
+		return err
+	}
+	defer clients.Close()
+	return fn(clients.runtime)
 }

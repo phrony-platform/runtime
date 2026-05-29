@@ -4,7 +4,7 @@ kind: Agent
 metadata:
   name: echo-agent
   namespace: demo
-  version: 1.2.0
+  version: 1.2.1
   owner: platform-team
   labels:
     app: echo
@@ -12,7 +12,7 @@ metadata:
 
 spec:
   purpose: >
-    Accept a short user message and return a structured echo response.
+    Accept a small user message and return a structured echo response.
     Read-only. No external side effects.
 
   instructions:

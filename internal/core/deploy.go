@@ -3,8 +3,11 @@ package core
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
@@ -15,8 +18,8 @@ import (
 )
 
 func (s *runtimeServer) Deploy(ctx context.Context, req *runtimev1.DeployRequest) (*runtimev1.DeployResponse, error) {
-	if s.db == nil {
-		return nil, status.Error(codes.FailedPrecondition, "database is not configured")
+	if _, err := s.queries(); err != nil {
+		return nil, err
 	}
 	raw := req.GetManifest()
 	if len(raw) == 0 {
@@ -59,12 +62,26 @@ func (s *runtimeServer) Deploy(ctx context.Context, req *runtimev1.DeployRequest
 		return nil, status.Errorf(codes.Internal, "persist agent: %v", err)
 	}
 
-	versionID, err = q.UpsertAgentVersion(ctx, store.UpsertAgentVersionParams{
+	existing, err := q.AgentByID(ctx, agentID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, status.Errorf(codes.Internal, "lookup agent: %v", err)
+	}
+	if err == nil && existing.ArchivedAt.Valid {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"agent %s is archived and cannot accept new versions",
+			formatAgentRef(agent.Metadata.Namespace, agent.Metadata.Name))
+	}
+
+	if err := rejectImmutableVersionRedeploy(ctx, q, agent, agentID, hash); err != nil {
+		return nil, err
+	}
+
+	versionID, err = q.InsertAgentVersion(ctx, store.InsertAgentVersionParams{
 		ID:          versionID,
 		AgentID:     agentID,
 		Version:     agent.Metadata.Version,
 		ContentHash: hash,
-		Manifest:  json.RawMessage(raw),
+		Manifest:    json.RawMessage(raw),
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "persist agent version: %v", err)
@@ -82,6 +99,27 @@ func (s *runtimeServer) Deploy(ctx context.Context, req *runtimev1.DeployRequest
 		Name:        agent.Metadata.Name,
 		Version:     agent.Metadata.Version,
 	}, nil
+}
+
+func rejectImmutableVersionRedeploy(ctx context.Context, q *store.Queries, agent *manifest.Agent, agentID, manifestHash string) error {
+	_, existingHash, err := q.AgentVersionByAgentAndLabel(ctx, agentID, agent.Metadata.Version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return status.Errorf(codes.Internal, "lookup agent version: %v", err)
+	}
+
+	agentRef := formatAgentRef(agent.Metadata.Namespace, agent.Metadata.Name)
+	msg := fmt.Sprintf(
+		"agent %s version %q is already deployed and cannot be changed; increment metadata.version to publish configuration updates",
+		agentRef,
+		agent.Metadata.Version,
+	)
+	if existingHash != manifestHash {
+		msg += fmt.Sprintf(" (deployed content hash %s, manifest content hash %s)", existingHash, manifestHash)
+	}
+	return status.Error(codes.AlreadyExists, msg)
 }
 
 func deployValidationStatus(err error) error {

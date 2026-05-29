@@ -57,7 +57,8 @@ runtime/
 │   ├── grpc/health/v1/     Standard gRPC health definitions
 │   └── phrony/runtime/v1/  Phrony runtime API
 ├── bin/                    Built binaries (`make build`; gitignored)
-├── docker-compose.yml      Local Postgres for development
+├── docker-compose.yml      Local Postgres + runtime (Docker Compose)
+├── Dockerfile              Image for the compose `runtime` service
 ├── .env.example            Example environment variables
 ├── Makefile                Dev workflows (test, serve, proto, …)
 └── go.mod

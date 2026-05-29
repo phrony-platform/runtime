@@ -17,8 +17,9 @@ import (
 const runSessionStatusPending = model.SessionStatusPending
 
 func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessionRequest) (*runtimev1.RunSessionResponse, error) {
-	if s.db == nil {
-		return nil, status.Error(codes.FailedPrecondition, "database is not configured")
+	q, err := s.queries()
+	if err != nil {
+		return nil, err
 	}
 
 	inputJSON, err := normalizeSessionInput(req.GetInput())
@@ -33,7 +34,6 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 
 	sessionID := uuid.NewString()
 
-	q := store.New(s.db.DB)
 	if _, err := q.InsertSession(ctx, store.InsertSessionParams{
 		ID:             sessionID,
 		AgentVersionID: agentVersionID,
@@ -51,27 +51,44 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 }
 
 func resolveAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.AgentRef) (string, error) {
-	if ref == nil || ref.GetNamespace() == "" || ref.GetName() == "" {
-		return "", status.Error(codes.InvalidArgument, "agent_ref requires namespace and name")
+	ns, name, err := agentRefFromRequest(ref)
+	if err != nil {
+		return "", err
 	}
 
 	q := store.New(db)
-	ns, name := ref.GetNamespace(), ref.GetName()
+	agentRef := formatAgentRef(ns, name)
 
 	if ref.GetVersion() != "" {
-		id, err := q.AgentVersionIDByLabel(ctx, ns, name, ref.GetVersion())
+		lookup, err := q.AgentVersionIDByLabel(ctx, ns, name, ref.GetVersion())
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", status.Errorf(codes.NotFound, "no deployed version %q for agent %s/%s", ref.GetVersion(), ns, name)
+			return "", status.Errorf(codes.NotFound, "no deployed version %q for agent %s", ref.GetVersion(), agentRef)
 		}
 		if err != nil {
 			return "", status.Errorf(codes.Internal, "resolve agent version: %v", err)
 		}
-		return id, nil
+		if lookup.AgentArchive {
+			return "", status.Errorf(codes.FailedPrecondition, "agent %s is archived and cannot be run", agentRef)
+		}
+		if lookup.Deprecated {
+			return "", status.Errorf(codes.FailedPrecondition, "agent %s version %q is deprecated and cannot be run", agentRef, ref.GetVersion())
+		}
+		return lookup.ID, nil
 	}
 
 	id, err := q.LatestAgentVersionID(ctx, ns, name)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", status.Errorf(codes.NotFound, "no deployed version for agent %s/%s", ns, name)
+		agent, lookupErr := q.AgentByNamespaceName(ctx, ns, name)
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			return "", status.Errorf(codes.NotFound, "no deployed version for agent %s", agentRef)
+		}
+		if lookupErr != nil {
+			return "", status.Errorf(codes.Internal, "resolve agent: %v", lookupErr)
+		}
+		if agent.ArchivedAt.Valid {
+			return "", status.Errorf(codes.FailedPrecondition, "agent %s is archived and cannot be run", agentRef)
+		}
+		return "", status.Errorf(codes.NotFound, "no runnable version for agent %s", agentRef)
 	}
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "resolve agent: %v", err)

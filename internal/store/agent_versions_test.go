@@ -39,15 +39,18 @@ func TestQueries_AgentVersionIDByLabel(t *testing.T) {
 
 	mock.ExpectQuery(`FROM agent_versions av`).
 		WithArgs("demo", "echo", "1.2.0").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ver-1"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "archived_at"}).AddRow("ver-1", nil, nil))
 
 	q := New(sqlDB)
-	id, err := q.AgentVersionIDByLabel(context.Background(), "demo", "echo", "1.2.0")
+	lookup, err := q.AgentVersionIDByLabel(context.Background(), "demo", "echo", "1.2.0")
 	if err != nil {
 		t.Fatalf("AgentVersionIDByLabel: %v", err)
 	}
-	if id != "ver-1" {
-		t.Fatalf("id = %q, want ver-1", id)
+	if lookup.ID != "ver-1" {
+		t.Fatalf("id = %q, want ver-1", lookup.ID)
+	}
+	if lookup.Deprecated || lookup.AgentArchive {
+		t.Fatal("expected runnable version")
 	}
 }
 

@@ -29,18 +29,12 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 }
 
 func runSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, input string) error {
-	namespace, name, err := parseAgentName(agentName)
+	ref, err := agentRef(agentName, version)
 	if err != nil {
 		return err
 	}
 
-	req := &runtimev1.RunSessionRequest{
-		AgentRef: &runtimev1.AgentRef{
-			Namespace: namespace,
-			Name:      name,
-			Version:   version,
-		},
-	}
+	req := &runtimev1.RunSessionRequest{AgentRef: ref}
 
 	if input != "" {
 		if !json.Valid([]byte(input)) {
@@ -49,20 +43,16 @@ func runSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, inp
 		req.Input = []byte(input)
 	}
 
-	clients, err := dialRuntime(cmd.Context(), *runtimeAddr)
-	if err != nil {
-		return err
-	}
-	defer clients.Close()
+	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
+		resp, err := rt.RunSession(cmd.Context(), req)
+		if err != nil {
+			return clierr.WrapRPC("run session", err)
+		}
 
-	resp, err := clients.runtime.RunSession(cmd.Context(), req)
-	if err != nil {
-		return clierr.WrapRPC("run session", err)
-	}
-
-	fmt.Fprintf(cmd.OutOrStdout(), "session %s created (status: %s)\n",
-		resp.GetSessionId(), resp.GetStatus())
-	return nil
+		fmt.Fprintf(cmd.OutOrStdout(), "session %s created (status: %s)\n",
+			resp.GetSessionId(), resp.GetStatus())
+		return nil
+	})
 }
 
 func parseAgentName(agentName string) (namespace, name string, err error) {
