@@ -18,6 +18,7 @@ func TestParseValidate_golden(t *testing.T) {
 	}{
 		{name: "full-agent", file: "full-agent.yaml"},
 		{name: "minimal", file: "minimal.yaml"},
+		{name: "with-secrets", file: "with-secrets.yaml"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -89,6 +90,17 @@ func assertGoldenAgentFields(t *testing.T, name string, agent *manifest.Agent) {
 	}
 }
 
+func TestParse_invalidSecretPlaintext(t *testing.T) {
+	t.Parallel()
+	_, err := manifest.Parse(readTestdata(t, "invalid-secret-plaintext.yaml"))
+	if err == nil {
+		t.Fatal("Parse() = nil, want error for secret value field")
+	}
+	if !strings.Contains(err.Error(), "value") {
+		t.Fatalf("Parse() = %v, want value rejection", err)
+	}
+}
+
 func TestValidate_negative(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -120,6 +132,11 @@ func TestValidate_negative(t *testing.T) {
 			name:    "schema ref and inline",
 			file:    "invalid-schema-both.yaml",
 			wantSub: "output.schema",
+		},
+		{
+			name:    "secrets without provider default",
+			file:    "invalid-secrets-missing-default.yaml",
+			wantSub: "spec.model.secret",
 		},
 	}
 	for _, tc := range cases {

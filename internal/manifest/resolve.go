@@ -277,6 +277,12 @@ func cloneAgent(agent *Agent) *Agent {
 			out.Metadata.Labels[k] = v
 		}
 	}
+	if len(agent.Secrets) > 0 {
+		out.Secrets = make(map[string]SecretDefinition, len(agent.Secrets))
+		for k, v := range agent.Secrets {
+			out.Secrets[k] = v
+		}
+	}
 	if agent.Output != nil {
 		o := *agent.Output
 		if agent.Output.Schema != nil {

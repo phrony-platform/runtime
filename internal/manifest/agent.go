@@ -7,11 +7,12 @@ const (
 
 // Agent is the v1 Agent document (Kubernetes-style envelope).
 type Agent struct {
-	APIVersion string        `yaml:"apiVersion" json:"apiVersion"`
-	Kind       string        `yaml:"kind" json:"kind"`
-	Metadata   AgentMetadata `yaml:"metadata" json:"metadata"`
-	Spec       AgentSpec     `yaml:"spec" json:"spec"`
-	Output     *OutputSpec   `yaml:"output,omitempty" json:"output,omitempty"`
+	APIVersion string                      `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string                      `yaml:"kind" json:"kind"`
+	Metadata   AgentMetadata               `yaml:"metadata" json:"metadata"`
+	Secrets    map[string]SecretDefinition `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+	Spec       AgentSpec                   `yaml:"spec" json:"spec"`
+	Output     *OutputSpec                 `yaml:"output,omitempty" json:"output,omitempty"`
 }
 
 // AgentMetadata holds identity and versioning for an Agent.
@@ -42,6 +43,7 @@ type InstructionsSpec struct {
 type ModelConfig struct {
 	Provider        string           `yaml:"provider" json:"provider"`
 	Name            string           `yaml:"name" json:"name"`
+	Secret          string           `yaml:"secret,omitempty" json:"secret,omitempty"`
 	Parameters      *ModelParameters `yaml:"parameters,omitempty" json:"parameters,omitempty"`
 	Reasoning       *ReasoningConfig `yaml:"reasoning,omitempty" json:"reasoning,omitempty"`
 	ProviderOptions map[string]any   `yaml:"provider_options,omitempty" json:"provider_options,omitempty"`

@@ -1,10 +1,13 @@
 package manifest
 
 import (
+	"regexp"
 	"strings"
 
 	"golang.org/x/mod/semver"
 )
+
+var secretNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 var (
 	validOnLimit   = map[string]struct{}{"halt": {}, "escalate": {}}
@@ -34,7 +37,10 @@ func Validate(agent *Agent) error {
 	}
 
 	errs = append(errs, validateMetadata(&agent.Metadata)...)
-	errs = append(errs, validateSpec(&agent.Spec)...)
+	if len(agent.Secrets) > 0 {
+		errs = append(errs, validateSecrets(agent.Secrets)...)
+	}
+	errs = append(errs, validateSpec(&agent.Spec, agent.Secrets)...)
 	if agent.Output != nil {
 		errs = append(errs, validateOutput(agent.Output)...)
 	}
@@ -61,13 +67,13 @@ func validateMetadata(m *AgentMetadata) []FieldError {
 	return errs
 }
 
-func validateSpec(spec *AgentSpec) []FieldError {
+func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition) []FieldError {
 	var errs []FieldError
 	if strings.TrimSpace(spec.Purpose) == "" {
 		errs = append(errs, FieldError{Path: "spec.purpose", Message: "is required"})
 	}
 	errs = append(errs, validateInstructions(&spec.Instructions)...)
-	errs = append(errs, validateModel(&spec.Model)...)
+	errs = append(errs, validateModel(&spec.Model, secrets)...)
 	if spec.Limits != nil {
 		errs = append(errs, validateLimits(spec.Limits)...)
 	}
@@ -92,7 +98,27 @@ func validateInstructions(in *InstructionsSpec) []FieldError {
 	return nil
 }
 
-func validateModel(m *ModelConfig) []FieldError {
+func validateSecrets(secrets map[string]SecretDefinition) []FieldError {
+	var errs []FieldError
+	for name, def := range secrets {
+		path := "secrets." + name
+		if !secretNamePattern.MatchString(name) {
+			errs = append(errs, FieldError{
+				Path:    path,
+				Message: "name must match [a-z][a-z0-9_-]*",
+			})
+		}
+		if strings.TrimSpace(def.FromEnv) == "" {
+			errs = append(errs, FieldError{
+				Path:    path,
+				Message: "must set fromEnv",
+			})
+		}
+	}
+	return errs
+}
+
+func validateModel(m *ModelConfig, secrets map[string]SecretDefinition) []FieldError {
 	var errs []FieldError
 	if strings.TrimSpace(m.Provider) == "" {
 		errs = append(errs, FieldError{Path: "spec.model.provider", Message: "is required"})
@@ -100,6 +126,7 @@ func validateModel(m *ModelConfig) []FieldError {
 	if strings.TrimSpace(m.Name) == "" {
 		errs = append(errs, FieldError{Path: "spec.model.name", Message: "is required"})
 	}
+	errs = append(errs, validateModelSecret(m, secrets)...)
 	if m.Parameters != nil {
 		errs = append(errs, validateModelParameters(m.Parameters)...)
 	}
@@ -112,6 +139,45 @@ func validateModel(m *ModelConfig) []FieldError {
 		}
 	}
 	return errs
+}
+
+func validateModelSecret(m *ModelConfig, secrets map[string]SecretDefinition) []FieldError {
+	secretRef := strings.TrimSpace(m.Secret)
+	if len(secrets) == 0 {
+		if secretRef != "" {
+			return []FieldError{{
+				Path:    "spec.model.secret",
+				Message: "must name a key in secrets",
+			}}
+		}
+		return nil
+	}
+	if secretRef != "" {
+		if !secretNamePattern.MatchString(secretRef) {
+			return []FieldError{{
+				Path:    "spec.model.secret",
+				Message: "must match [a-z][a-z0-9_-]*",
+			}}
+		}
+		if _, ok := secrets[secretRef]; !ok {
+			return []FieldError{{
+				Path:    "spec.model.secret",
+				Message: "must name a key in secrets",
+			}}
+		}
+		return nil
+	}
+	provider := strings.TrimSpace(m.Provider)
+	if provider != "" {
+		if _, ok := secrets[provider]; ok {
+			return nil
+		}
+	}
+	return []FieldError{{
+		Path: "spec.model.secret",
+		Message: "is required when secrets is set; omit to use the secret named after spec.model.provider, " +
+			"or set secret to a secrets key",
+	}}
 }
 
 func validateModelParameters(p *ModelParameters) []FieldError {
