@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 )
 
@@ -73,4 +74,21 @@ func (q *Queries) AgentVersionByAgentAndLabel(ctx context.Context, agentID, vers
 		return "", "", err
 	}
 	return id, contentHash, err
+}
+
+const agentVersionManifest = `
+SELECT manifest
+FROM agent_versions
+WHERE id = $1
+`
+
+// GetAgentVersionManifest returns the ref-only manifest JSON for a deployed version.
+func (q *Queries) GetAgentVersionManifest(ctx context.Context, agentVersionID string) (json.RawMessage, error) {
+	row := q.db.QueryRowContext(ctx, agentVersionManifest, agentVersionID)
+	var manifest json.RawMessage
+	err := row.Scan(&manifest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	return manifest, err
 }

@@ -72,28 +72,24 @@ func TestQueries_AgentVersionIDByLabel_notFound(t *testing.T) {
 	}
 }
 
-func TestQueries_InsertSession(t *testing.T) {
+func TestQueries_GetAgentVersionManifest(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs("sess-1", "ver-1", []byte("{}"), "pending").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
+	manifest := []byte(`{"kind":"Agent"}`)
+	mock.ExpectQuery(`FROM agent_versions`).
+		WithArgs("ver-1").
+		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 
 	q := New(sqlDB)
-	id, err := q.InsertSession(context.Background(), InsertSessionParams{
-		ID:             "sess-1",
-		AgentVersionID: "ver-1",
-		Input:          []byte("{}"),
-		Status:         "pending",
-	})
+	got, err := q.GetAgentVersionManifest(context.Background(), "ver-1")
 	if err != nil {
-		t.Fatalf("InsertSession: %v", err)
+		t.Fatalf("GetAgentVersionManifest: %v", err)
 	}
-	if id != "sess-1" {
-		t.Fatalf("id = %q, want sess-1", id)
+	if string(got) != string(manifest) {
+		t.Fatalf("manifest = %s, want %s", got, manifest)
 	}
 }

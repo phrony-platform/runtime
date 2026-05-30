@@ -29,6 +29,8 @@ type Session struct {
 	AgentVersionID string          `json:"agent_version_id"`
 	Input          json.RawMessage `json:"input"`
 	Status         string          `json:"status"`
+	Output         json.RawMessage `json:"output"`
+	Error          *string         `json:"error"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
