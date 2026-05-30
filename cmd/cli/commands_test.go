@@ -158,6 +158,11 @@ func TestRunCommand_invalidInput(t *testing.T) {
 	}
 }
 
+const deployTestBundleSecretsYAML = `secrets:
+  anthropic:
+    fromEnv: ANTHROPIC_API_KEY
+`
+
 func writeDeployTestBundle(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, "prompts"), 0o755); err != nil {
@@ -177,6 +182,32 @@ func writeDeployTestBundle(t *testing.T, dir string) string {
 	schema := []byte(`{"type":"object","properties":{"message":{"type":"string"}}}`)
 	if err := os.WriteFile(filepath.Join(dir, "schemas", "result.json"), schema, 0o600); err != nil {
 		t.Fatalf("WriteFile schema: %v", err)
+	}
+	return manifest
+}
+
+func writeDeployTestBundleWithSecrets(t *testing.T, dir string) string {
+	t.Helper()
+	manifest := writeDeployTestBundle(t, dir)
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	lines := strings.Split(string(data), "\n")
+	var out []string
+	inserted := false
+	for _, line := range lines {
+		if !inserted && strings.HasPrefix(line, "spec:") {
+			out = append(out, deployTestBundleSecretsYAML)
+			inserted = true
+		}
+		out = append(out, line)
+	}
+	if !inserted {
+		t.Fatal("could not insert secrets block into test manifest")
+	}
+	if err := os.WriteFile(manifest, []byte(strings.Join(out, "\n")), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 	return manifest
 }
@@ -238,6 +269,27 @@ func TestValidateCommand_invalidManifest(t *testing.T) {
 	}
 }
 
+func TestValidateCommand_secretEnvWarning(t *testing.T) {
+	manifest := writeDeployTestBundleWithSecrets(t, t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	var out, errOut bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SetArgs([]string{"validate", manifest})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "valid: demo/echo-agent 1.2.0") {
+		t.Fatalf("stdout = %q, want valid line", out.String())
+	}
+	if !strings.Contains(errOut.String(), "warning:") || !strings.Contains(errOut.String(), "ANTHROPIC_API_KEY") {
+		t.Fatalf("stderr = %q, want secret env warning", errOut.String())
+	}
+}
+
 func TestValidateCommand_unresolvedBundleRef(t *testing.T) {
 	manifest := filepath.Join(t.TempDir(), "agent.yaml")
 	if err := os.WriteFile(manifest, []byte(validAgentManifestYAML), 0o600); err != nil {
@@ -273,9 +325,46 @@ func TestValidateCommand_readManifestFailed(t *testing.T) {
 	}
 }
 
+func TestDeployCommand_missingSecretEnv(t *testing.T) {
+	manifest := writeDeployTestBundleWithSecrets(t, t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"deploy", manifest, "--runtime-addr", "127.0.0.1:1"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDeployCommand_success(t *testing.T) {
 	manifest := writeDeployTestBundle(t, t.TempDir())
 	addr := startTestRuntimeAddrForDeploy(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"deploy", manifest, "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "demo/echo-agent 1.2.0") {
+		t.Fatalf("output = %q, want agent name and version", out.String())
+	}
+}
+
+func TestDeployCommand_successWithSecrets(t *testing.T) {
+	manifest := writeDeployTestBundleWithSecrets(t, t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test-deploy")
+	addr := startTestRuntimeAddrForDeployWithSecrets(t)
 
 	var out bytes.Buffer
 	root := NewRootCommand()

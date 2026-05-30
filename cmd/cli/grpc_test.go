@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"net"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	grpc_health_v1 "github.com/phrony-platform/runtime/gen/grpc/health/v1"
 	"github.com/phrony-platform/runtime/internal/core"
+	"github.com/phrony-platform/runtime/internal/secrets"
 )
 
 func startTestRuntimeAddr(t *testing.T) string {
@@ -69,6 +71,53 @@ func startTestRuntimeAddrForDeploy(t *testing.T) string {
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	mock.ExpectCommit()
+
+	db := sqlx.NewDb(sqlDB, "pgx")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+
+	srv, err := core.NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	go func() { _ = srv.GRPC().Serve(lis) }()
+	t.Cleanup(func() { srv.GRPC().Stop() })
+
+	waitForGRPC(t, lis.Addr().String())
+	return lis.Addr().String()
+}
+
+func startTestRuntimeAddrForDeployWithSecrets(t *testing.T) string {
+	t.Helper()
+	t.Setenv(secrets.EnvEncryptionKey, base64.StdEncoding.EncodeToString(make([]byte, 32)))
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO agents`).
+		WithArgs(sqlmock.AnyArg(), "demo", "echo-agent", "", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("agent-uuid").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow("agent-uuid", "demo", "echo-agent", nil))
+	mock.ExpectQuery(`SELECT av.id, av.content_hash`).
+		WithArgs("agent-uuid", "1.2.0").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`INSERT INTO agent_versions`).
+		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	mock.ExpectExec(`INSERT INTO agent_version_secrets`).
+		WithArgs("version-uuid", "anthropic", 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
 	db := sqlx.NewDb(sqlDB, "pgx")

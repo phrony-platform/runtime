@@ -5,6 +5,7 @@ import (
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/clierr"
+	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +30,11 @@ func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) err
 		return fmt.Errorf("encode resolved manifest: %w", err)
 	}
 
+	resolvedSecrets, err := manifest.ResolveSecretsFromEnv(resolved.Agent)
+	if err != nil {
+		return err
+	}
+
 	clients, err := dialRuntime(cmd.Context(), *runtimeAddr)
 	if err != nil {
 		return err
@@ -36,7 +42,8 @@ func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) err
 	defer clients.Close()
 
 	resp, err := clients.runtime.Deploy(cmd.Context(), &runtimev1.DeployRequest{
-		Manifest: manifestJSON,
+		Manifest:        manifestJSON,
+		ResolvedSecrets: resolvedSecrets,
 	})
 	if err != nil {
 		return clierr.WrapRPC("deploy", err)
