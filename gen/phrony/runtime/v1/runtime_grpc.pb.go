@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Runtime_GetVersion_FullMethodName            = "/phrony.runtime.v1.Runtime/GetVersion"
 	Runtime_RunSession_FullMethodName            = "/phrony.runtime.v1.Runtime/RunSession"
+	Runtime_RunSessionInteractive_FullMethodName = "/phrony.runtime.v1.Runtime/RunSessionInteractive"
 	Runtime_Deploy_FullMethodName                = "/phrony.runtime.v1.Runtime/Deploy"
 	Runtime_ListAgents_FullMethodName            = "/phrony.runtime.v1.Runtime/ListAgents"
 	Runtime_ListAgentVersions_FullMethodName     = "/phrony.runtime.v1.Runtime/ListAgentVersions"
@@ -36,6 +37,9 @@ const (
 type RuntimeClient interface {
 	GetVersion(ctx context.Context, in *GetVersionRequest, opts ...grpc.CallOption) (*GetVersionResponse, error)
 	RunSession(ctx context.Context, in *RunSessionRequest, opts ...grpc.CallOption) (*RunSessionResponse, error)
+	// Bidirectional session stream: client sends start then user_message; server streams
+	// session_started, text_delta, awaiting_input, completed, or failed.
+	RunSessionInteractive(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg], error)
 	Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error)
 	ListAgents(ctx context.Context, in *ListAgentsRequest, opts ...grpc.CallOption) (*ListAgentsResponse, error)
 	ListAgentVersions(ctx context.Context, in *ListAgentVersionsRequest, opts ...grpc.CallOption) (*ListAgentVersionsResponse, error)
@@ -70,6 +74,19 @@ func (c *runtimeClient) RunSession(ctx context.Context, in *RunSessionRequest, o
 	}
 	return out, nil
 }
+
+func (c *runtimeClient) RunSessionInteractive(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Runtime_ServiceDesc.Streams[0], Runtime_RunSessionInteractive_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_RunSessionInteractiveClient = grpc.BidiStreamingClient[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]
 
 func (c *runtimeClient) Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -129,6 +146,9 @@ func (c *runtimeClient) ArchiveAgent(ctx context.Context, in *ArchiveAgentReques
 type RuntimeServer interface {
 	GetVersion(context.Context, *GetVersionRequest) (*GetVersionResponse, error)
 	RunSession(context.Context, *RunSessionRequest) (*RunSessionResponse, error)
+	// Bidirectional session stream: client sends start then user_message; server streams
+	// session_started, text_delta, awaiting_input, completed, or failed.
+	RunSessionInteractive(grpc.BidiStreamingServer[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]) error
 	Deploy(context.Context, *DeployRequest) (*DeployResponse, error)
 	ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error)
 	ListAgentVersions(context.Context, *ListAgentVersionsRequest) (*ListAgentVersionsResponse, error)
@@ -149,6 +169,9 @@ func (UnimplementedRuntimeServer) GetVersion(context.Context, *GetVersionRequest
 }
 func (UnimplementedRuntimeServer) RunSession(context.Context, *RunSessionRequest) (*RunSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunSession not implemented")
+}
+func (UnimplementedRuntimeServer) RunSessionInteractive(grpc.BidiStreamingServer[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]) error {
+	return status.Error(codes.Unimplemented, "method RunSessionInteractive not implemented")
 }
 func (UnimplementedRuntimeServer) Deploy(context.Context, *DeployRequest) (*DeployResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Deploy not implemented")
@@ -221,6 +244,13 @@ func _Runtime_RunSession_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	return interceptor(ctx, in, info, handler)
 }
+
+func _Runtime_RunSessionInteractive_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(RuntimeServer).RunSessionInteractive(&grpc.GenericServerStream[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_RunSessionInteractiveServer = grpc.BidiStreamingServer[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]
 
 func _Runtime_Deploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeployRequest)
@@ -348,6 +378,13 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Runtime_ArchiveAgent_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "RunSessionInteractive",
+			Handler:       _Runtime_RunSessionInteractive_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "phrony/runtime/v1/runtime.proto",
 }

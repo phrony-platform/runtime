@@ -8,6 +8,9 @@ option go_package = "github.com/phrony-platform/runtime/gen/phrony/runtime/v1;ru
 service Runtime {
   rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
   rpc RunSession(RunSessionRequest) returns (RunSessionResponse);
+  // Bidirectional session stream: client sends start then user_message; server streams
+  // session_started, text_delta, awaiting_input, completed, or failed.
+  rpc RunSessionInteractive(stream RunSessionInteractiveClientMsg) returns (stream RunSessionInteractiveServerMsg);
   rpc Deploy(DeployRequest) returns (DeployResponse);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   rpc ListAgentVersions(ListAgentVersionsRequest) returns (ListAgentVersionsResponse);
@@ -41,6 +44,56 @@ message RunSessionResponse {
   string agent_version_id = 2;
   // pending: session created and bound; model execution is not available yet.
   string status = 3;
+}
+
+message RunSessionInteractiveClientMsg {
+  oneof body {
+    RunSessionInteractiveStart start = 1;
+    RunSessionInteractiveUserMessage user_message = 2;
+  }
+}
+
+message RunSessionInteractiveStart {
+  AgentRef agent_ref = 1;
+  // JSON object with session inputs (same semantics as RunSessionRequest.input).
+  bytes input = 2;
+}
+
+message RunSessionInteractiveUserMessage {
+  string text = 1;
+}
+
+message RunSessionInteractiveServerMsg {
+  oneof body {
+    RunSessionInteractiveSessionStarted session_started = 1;
+    RunSessionInteractiveTextDelta text_delta = 2;
+    RunSessionInteractiveAwaitingInput awaiting_input = 3;
+    RunSessionInteractiveCompleted completed = 4;
+    RunSessionInteractiveFailed failed = 5;
+  }
+}
+
+message RunSessionInteractiveSessionStarted {
+  string session_id = 1;
+  string agent_version_id = 2;
+}
+
+message RunSessionInteractiveTextDelta {
+  string delta = 1;
+}
+
+message RunSessionInteractiveAwaitingInput {
+  string stop_reason = 1;
+}
+
+message RunSessionInteractiveCompleted {
+  string stop_reason = 1;
+  // JSON object with the final session output for this run.
+  bytes output = 2;
+}
+
+message RunSessionInteractiveFailed {
+  string message = 1;
 }
 
 message DeployRequest {

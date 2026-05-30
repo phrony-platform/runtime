@@ -285,6 +285,552 @@ func (x *RunSessionResponse) GetStatus() string {
 	return ""
 }
 
+type RunSessionInteractiveClientMsg struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*RunSessionInteractiveClientMsg_Start
+	//	*RunSessionInteractiveClientMsg_UserMessage
+	Body          isRunSessionInteractiveClientMsg_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveClientMsg) Reset() {
+	*x = RunSessionInteractiveClientMsg{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveClientMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveClientMsg) ProtoMessage() {}
+
+func (x *RunSessionInteractiveClientMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveClientMsg.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveClientMsg) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RunSessionInteractiveClientMsg) GetBody() isRunSessionInteractiveClientMsg_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveClientMsg) GetStart() *RunSessionInteractiveStart {
+	if x != nil {
+		if x, ok := x.Body.(*RunSessionInteractiveClientMsg_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveClientMsg) GetUserMessage() *RunSessionInteractiveUserMessage {
+	if x != nil {
+		if x, ok := x.Body.(*RunSessionInteractiveClientMsg_UserMessage); ok {
+			return x.UserMessage
+		}
+	}
+	return nil
+}
+
+type isRunSessionInteractiveClientMsg_Body interface {
+	isRunSessionInteractiveClientMsg_Body()
+}
+
+type RunSessionInteractiveClientMsg_Start struct {
+	Start *RunSessionInteractiveStart `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type RunSessionInteractiveClientMsg_UserMessage struct {
+	UserMessage *RunSessionInteractiveUserMessage `protobuf:"bytes,2,opt,name=user_message,json=userMessage,proto3,oneof"`
+}
+
+func (*RunSessionInteractiveClientMsg_Start) isRunSessionInteractiveClientMsg_Body() {}
+
+func (*RunSessionInteractiveClientMsg_UserMessage) isRunSessionInteractiveClientMsg_Body() {}
+
+type RunSessionInteractiveStart struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	AgentRef *AgentRef              `protobuf:"bytes,1,opt,name=agent_ref,json=agentRef,proto3" json:"agent_ref,omitempty"`
+	// JSON object with session inputs (same semantics as RunSessionRequest.input).
+	Input         []byte `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveStart) Reset() {
+	*x = RunSessionInteractiveStart{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveStart) ProtoMessage() {}
+
+func (x *RunSessionInteractiveStart) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveStart.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveStart) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RunSessionInteractiveStart) GetAgentRef() *AgentRef {
+	if x != nil {
+		return x.AgentRef
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveStart) GetInput() []byte {
+	if x != nil {
+		return x.Input
+	}
+	return nil
+}
+
+type RunSessionInteractiveUserMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveUserMessage) Reset() {
+	*x = RunSessionInteractiveUserMessage{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveUserMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveUserMessage) ProtoMessage() {}
+
+func (x *RunSessionInteractiveUserMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveUserMessage.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveUserMessage) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RunSessionInteractiveUserMessage) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type RunSessionInteractiveServerMsg struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*RunSessionInteractiveServerMsg_SessionStarted
+	//	*RunSessionInteractiveServerMsg_TextDelta
+	//	*RunSessionInteractiveServerMsg_AwaitingInput
+	//	*RunSessionInteractiveServerMsg_Completed
+	//	*RunSessionInteractiveServerMsg_Failed
+	Body          isRunSessionInteractiveServerMsg_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveServerMsg) Reset() {
+	*x = RunSessionInteractiveServerMsg{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveServerMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveServerMsg) ProtoMessage() {}
+
+func (x *RunSessionInteractiveServerMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveServerMsg.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveServerMsg) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RunSessionInteractiveServerMsg) GetBody() isRunSessionInteractiveServerMsg_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveServerMsg) GetSessionStarted() *RunSessionInteractiveSessionStarted {
+	if x != nil {
+		if x, ok := x.Body.(*RunSessionInteractiveServerMsg_SessionStarted); ok {
+			return x.SessionStarted
+		}
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveServerMsg) GetTextDelta() *RunSessionInteractiveTextDelta {
+	if x != nil {
+		if x, ok := x.Body.(*RunSessionInteractiveServerMsg_TextDelta); ok {
+			return x.TextDelta
+		}
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveServerMsg) GetAwaitingInput() *RunSessionInteractiveAwaitingInput {
+	if x != nil {
+		if x, ok := x.Body.(*RunSessionInteractiveServerMsg_AwaitingInput); ok {
+			return x.AwaitingInput
+		}
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveServerMsg) GetCompleted() *RunSessionInteractiveCompleted {
+	if x != nil {
+		if x, ok := x.Body.(*RunSessionInteractiveServerMsg_Completed); ok {
+			return x.Completed
+		}
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveServerMsg) GetFailed() *RunSessionInteractiveFailed {
+	if x != nil {
+		if x, ok := x.Body.(*RunSessionInteractiveServerMsg_Failed); ok {
+			return x.Failed
+		}
+	}
+	return nil
+}
+
+type isRunSessionInteractiveServerMsg_Body interface {
+	isRunSessionInteractiveServerMsg_Body()
+}
+
+type RunSessionInteractiveServerMsg_SessionStarted struct {
+	SessionStarted *RunSessionInteractiveSessionStarted `protobuf:"bytes,1,opt,name=session_started,json=sessionStarted,proto3,oneof"`
+}
+
+type RunSessionInteractiveServerMsg_TextDelta struct {
+	TextDelta *RunSessionInteractiveTextDelta `protobuf:"bytes,2,opt,name=text_delta,json=textDelta,proto3,oneof"`
+}
+
+type RunSessionInteractiveServerMsg_AwaitingInput struct {
+	AwaitingInput *RunSessionInteractiveAwaitingInput `protobuf:"bytes,3,opt,name=awaiting_input,json=awaitingInput,proto3,oneof"`
+}
+
+type RunSessionInteractiveServerMsg_Completed struct {
+	Completed *RunSessionInteractiveCompleted `protobuf:"bytes,4,opt,name=completed,proto3,oneof"`
+}
+
+type RunSessionInteractiveServerMsg_Failed struct {
+	Failed *RunSessionInteractiveFailed `protobuf:"bytes,5,opt,name=failed,proto3,oneof"`
+}
+
+func (*RunSessionInteractiveServerMsg_SessionStarted) isRunSessionInteractiveServerMsg_Body() {}
+
+func (*RunSessionInteractiveServerMsg_TextDelta) isRunSessionInteractiveServerMsg_Body() {}
+
+func (*RunSessionInteractiveServerMsg_AwaitingInput) isRunSessionInteractiveServerMsg_Body() {}
+
+func (*RunSessionInteractiveServerMsg_Completed) isRunSessionInteractiveServerMsg_Body() {}
+
+func (*RunSessionInteractiveServerMsg_Failed) isRunSessionInteractiveServerMsg_Body() {}
+
+type RunSessionInteractiveSessionStarted struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SessionId      string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AgentVersionId string                 `protobuf:"bytes,2,opt,name=agent_version_id,json=agentVersionId,proto3" json:"agent_version_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveSessionStarted) Reset() {
+	*x = RunSessionInteractiveSessionStarted{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveSessionStarted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveSessionStarted) ProtoMessage() {}
+
+func (x *RunSessionInteractiveSessionStarted) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveSessionStarted.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveSessionStarted) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RunSessionInteractiveSessionStarted) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *RunSessionInteractiveSessionStarted) GetAgentVersionId() string {
+	if x != nil {
+		return x.AgentVersionId
+	}
+	return ""
+}
+
+type RunSessionInteractiveTextDelta struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Delta         string                 `protobuf:"bytes,1,opt,name=delta,proto3" json:"delta,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveTextDelta) Reset() {
+	*x = RunSessionInteractiveTextDelta{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveTextDelta) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveTextDelta) ProtoMessage() {}
+
+func (x *RunSessionInteractiveTextDelta) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveTextDelta.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveTextDelta) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RunSessionInteractiveTextDelta) GetDelta() string {
+	if x != nil {
+		return x.Delta
+	}
+	return ""
+}
+
+type RunSessionInteractiveAwaitingInput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StopReason    string                 `protobuf:"bytes,1,opt,name=stop_reason,json=stopReason,proto3" json:"stop_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveAwaitingInput) Reset() {
+	*x = RunSessionInteractiveAwaitingInput{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveAwaitingInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveAwaitingInput) ProtoMessage() {}
+
+func (x *RunSessionInteractiveAwaitingInput) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveAwaitingInput.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveAwaitingInput) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RunSessionInteractiveAwaitingInput) GetStopReason() string {
+	if x != nil {
+		return x.StopReason
+	}
+	return ""
+}
+
+type RunSessionInteractiveCompleted struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	StopReason string                 `protobuf:"bytes,1,opt,name=stop_reason,json=stopReason,proto3" json:"stop_reason,omitempty"`
+	// JSON object with the final session output for this run.
+	Output        []byte `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveCompleted) Reset() {
+	*x = RunSessionInteractiveCompleted{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveCompleted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveCompleted) ProtoMessage() {}
+
+func (x *RunSessionInteractiveCompleted) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveCompleted.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveCompleted) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RunSessionInteractiveCompleted) GetStopReason() string {
+	if x != nil {
+		return x.StopReason
+	}
+	return ""
+}
+
+func (x *RunSessionInteractiveCompleted) GetOutput() []byte {
+	if x != nil {
+		return x.Output
+	}
+	return nil
+}
+
+type RunSessionInteractiveFailed struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunSessionInteractiveFailed) Reset() {
+	*x = RunSessionInteractiveFailed{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunSessionInteractiveFailed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunSessionInteractiveFailed) ProtoMessage() {}
+
+func (x *RunSessionInteractiveFailed) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunSessionInteractiveFailed.ProtoReflect.Descriptor instead.
+func (*RunSessionInteractiveFailed) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *RunSessionInteractiveFailed) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 type DeployRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Manifest []byte                 `protobuf:"bytes,1,opt,name=manifest,proto3" json:"manifest,omitempty"`
@@ -296,7 +842,7 @@ type DeployRequest struct {
 
 func (x *DeployRequest) Reset() {
 	*x = DeployRequest{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[5]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -308,7 +854,7 @@ func (x *DeployRequest) String() string {
 func (*DeployRequest) ProtoMessage() {}
 
 func (x *DeployRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[5]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -321,7 +867,7 @@ func (x *DeployRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployRequest.ProtoReflect.Descriptor instead.
 func (*DeployRequest) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{5}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeployRequest) GetManifest() []byte {
@@ -352,7 +898,7 @@ type DeployResponse struct {
 
 func (x *DeployResponse) Reset() {
 	*x = DeployResponse{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[6]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -364,7 +910,7 @@ func (x *DeployResponse) String() string {
 func (*DeployResponse) ProtoMessage() {}
 
 func (x *DeployResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[6]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -377,7 +923,7 @@ func (x *DeployResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployResponse.ProtoReflect.Descriptor instead.
 func (*DeployResponse) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{6}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DeployResponse) GetAgentId() string {
@@ -432,7 +978,7 @@ type ListAgentsRequest struct {
 
 func (x *ListAgentsRequest) Reset() {
 	*x = ListAgentsRequest{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[7]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -444,7 +990,7 @@ func (x *ListAgentsRequest) String() string {
 func (*ListAgentsRequest) ProtoMessage() {}
 
 func (x *ListAgentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[7]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -457,7 +1003,7 @@ func (x *ListAgentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentsRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentsRequest) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{7}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListAgentsRequest) GetNamespace() string {
@@ -481,7 +1027,7 @@ type AgentSummary struct {
 
 func (x *AgentSummary) Reset() {
 	*x = AgentSummary{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[8]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -493,7 +1039,7 @@ func (x *AgentSummary) String() string {
 func (*AgentSummary) ProtoMessage() {}
 
 func (x *AgentSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[8]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -506,7 +1052,7 @@ func (x *AgentSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentSummary.ProtoReflect.Descriptor instead.
 func (*AgentSummary) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{8}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *AgentSummary) GetId() string {
@@ -553,7 +1099,7 @@ type ListAgentsResponse struct {
 
 func (x *ListAgentsResponse) Reset() {
 	*x = ListAgentsResponse{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[9]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -565,7 +1111,7 @@ func (x *ListAgentsResponse) String() string {
 func (*ListAgentsResponse) ProtoMessage() {}
 
 func (x *ListAgentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[9]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -578,7 +1124,7 @@ func (x *ListAgentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentsResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentsResponse) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{9}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListAgentsResponse) GetAgents() []*AgentSummary {
@@ -597,7 +1143,7 @@ type ListAgentVersionsRequest struct {
 
 func (x *ListAgentVersionsRequest) Reset() {
 	*x = ListAgentVersionsRequest{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[10]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -609,7 +1155,7 @@ func (x *ListAgentVersionsRequest) String() string {
 func (*ListAgentVersionsRequest) ProtoMessage() {}
 
 func (x *ListAgentVersionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[10]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -622,7 +1168,7 @@ func (x *ListAgentVersionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentVersionsRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentVersionsRequest) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{10}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListAgentVersionsRequest) GetAgentRef() *AgentRef {
@@ -646,7 +1192,7 @@ type AgentVersionSummary struct {
 
 func (x *AgentVersionSummary) Reset() {
 	*x = AgentVersionSummary{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[11]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -658,7 +1204,7 @@ func (x *AgentVersionSummary) String() string {
 func (*AgentVersionSummary) ProtoMessage() {}
 
 func (x *AgentVersionSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[11]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -671,7 +1217,7 @@ func (x *AgentVersionSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentVersionSummary.ProtoReflect.Descriptor instead.
 func (*AgentVersionSummary) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{11}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AgentVersionSummary) GetId() string {
@@ -718,7 +1264,7 @@ type ListAgentVersionsResponse struct {
 
 func (x *ListAgentVersionsResponse) Reset() {
 	*x = ListAgentVersionsResponse{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[12]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -730,7 +1276,7 @@ func (x *ListAgentVersionsResponse) String() string {
 func (*ListAgentVersionsResponse) ProtoMessage() {}
 
 func (x *ListAgentVersionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[12]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -743,7 +1289,7 @@ func (x *ListAgentVersionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentVersionsResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentVersionsResponse) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{12}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListAgentVersionsResponse) GetVersions() []*AgentVersionSummary {
@@ -762,7 +1308,7 @@ type DeprecateAgentVersionRequest struct {
 
 func (x *DeprecateAgentVersionRequest) Reset() {
 	*x = DeprecateAgentVersionRequest{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[13]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -774,7 +1320,7 @@ func (x *DeprecateAgentVersionRequest) String() string {
 func (*DeprecateAgentVersionRequest) ProtoMessage() {}
 
 func (x *DeprecateAgentVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[13]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -787,7 +1333,7 @@ func (x *DeprecateAgentVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeprecateAgentVersionRequest.ProtoReflect.Descriptor instead.
 func (*DeprecateAgentVersionRequest) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{13}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DeprecateAgentVersionRequest) GetAgentRef() *AgentRef {
@@ -806,7 +1352,7 @@ type DeprecateAgentVersionResponse struct {
 
 func (x *DeprecateAgentVersionResponse) Reset() {
 	*x = DeprecateAgentVersionResponse{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[14]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -818,7 +1364,7 @@ func (x *DeprecateAgentVersionResponse) String() string {
 func (*DeprecateAgentVersionResponse) ProtoMessage() {}
 
 func (x *DeprecateAgentVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[14]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -831,7 +1377,7 @@ func (x *DeprecateAgentVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeprecateAgentVersionResponse.ProtoReflect.Descriptor instead.
 func (*DeprecateAgentVersionResponse) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{14}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *DeprecateAgentVersionResponse) GetVersionId() string {
@@ -850,7 +1396,7 @@ type ArchiveAgentRequest struct {
 
 func (x *ArchiveAgentRequest) Reset() {
 	*x = ArchiveAgentRequest{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[15]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -862,7 +1408,7 @@ func (x *ArchiveAgentRequest) String() string {
 func (*ArchiveAgentRequest) ProtoMessage() {}
 
 func (x *ArchiveAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[15]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -875,7 +1421,7 @@ func (x *ArchiveAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveAgentRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveAgentRequest) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{15}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ArchiveAgentRequest) GetAgentRef() *AgentRef {
@@ -893,7 +1439,7 @@ type ArchiveAgentResponse struct {
 
 func (x *ArchiveAgentResponse) Reset() {
 	*x = ArchiveAgentResponse{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[16]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -905,7 +1451,7 @@ func (x *ArchiveAgentResponse) String() string {
 func (*ArchiveAgentResponse) ProtoMessage() {}
 
 func (x *ArchiveAgentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[16]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -918,7 +1464,7 @@ func (x *ArchiveAgentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveAgentResponse.ProtoReflect.Descriptor instead.
 func (*ArchiveAgentResponse) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{16}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{25}
 }
 
 var File_phrony_runtime_v1_runtime_proto protoreflect.FileDescriptor
@@ -941,7 +1487,39 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12(\n" +
 	"\x10agent_version_id\x18\x02 \x01(\tR\x0eagentVersionId\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\"\xd1\x01\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\"\xc9\x01\n" +
+	"\x1eRunSessionInteractiveClientMsg\x12E\n" +
+	"\x05start\x18\x01 \x01(\v2-.phrony.runtime.v1.RunSessionInteractiveStartH\x00R\x05start\x12X\n" +
+	"\fuser_message\x18\x02 \x01(\v23.phrony.runtime.v1.RunSessionInteractiveUserMessageH\x00R\vuserMessageB\x06\n" +
+	"\x04body\"l\n" +
+	"\x1aRunSessionInteractiveStart\x128\n" +
+	"\tagent_ref\x18\x01 \x01(\v2\x1b.phrony.runtime.v1.AgentRefR\bagentRef\x12\x14\n" +
+	"\x05input\x18\x02 \x01(\fR\x05input\"6\n" +
+	" RunSessionInteractiveUserMessage\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xdc\x03\n" +
+	"\x1eRunSessionInteractiveServerMsg\x12a\n" +
+	"\x0fsession_started\x18\x01 \x01(\v26.phrony.runtime.v1.RunSessionInteractiveSessionStartedH\x00R\x0esessionStarted\x12R\n" +
+	"\n" +
+	"text_delta\x18\x02 \x01(\v21.phrony.runtime.v1.RunSessionInteractiveTextDeltaH\x00R\ttextDelta\x12^\n" +
+	"\x0eawaiting_input\x18\x03 \x01(\v25.phrony.runtime.v1.RunSessionInteractiveAwaitingInputH\x00R\rawaitingInput\x12Q\n" +
+	"\tcompleted\x18\x04 \x01(\v21.phrony.runtime.v1.RunSessionInteractiveCompletedH\x00R\tcompleted\x12H\n" +
+	"\x06failed\x18\x05 \x01(\v2..phrony.runtime.v1.RunSessionInteractiveFailedH\x00R\x06failedB\x06\n" +
+	"\x04body\"n\n" +
+	"#RunSessionInteractiveSessionStarted\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12(\n" +
+	"\x10agent_version_id\x18\x02 \x01(\tR\x0eagentVersionId\"6\n" +
+	"\x1eRunSessionInteractiveTextDelta\x12\x14\n" +
+	"\x05delta\x18\x01 \x01(\tR\x05delta\"E\n" +
+	"\"RunSessionInteractiveAwaitingInput\x12\x1f\n" +
+	"\vstop_reason\x18\x01 \x01(\tR\n" +
+	"stopReason\"Y\n" +
+	"\x1eRunSessionInteractiveCompleted\x12\x1f\n" +
+	"\vstop_reason\x18\x01 \x01(\tR\n" +
+	"stopReason\x12\x16\n" +
+	"\x06output\x18\x02 \x01(\fR\x06output\"7\n" +
+	"\x1bRunSessionInteractiveFailed\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\"\xd1\x01\n" +
 	"\rDeployRequest\x12\x1a\n" +
 	"\bmanifest\x18\x01 \x01(\fR\bmanifest\x12`\n" +
 	"\x10resolved_secrets\x18\x02 \x03(\v25.phrony.runtime.v1.DeployRequest.ResolvedSecretsEntryR\x0fresolvedSecrets\x1aB\n" +
@@ -985,12 +1563,13 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"version_id\x18\x01 \x01(\tR\tversionId\"O\n" +
 	"\x13ArchiveAgentRequest\x128\n" +
 	"\tagent_ref\x18\x01 \x01(\v2\x1b.phrony.runtime.v1.AgentRefR\bagentRef\"\x16\n" +
-	"\x14ArchiveAgentResponse2\xb6\x05\n" +
+	"\x14ArchiveAgentResponse2\xba\x06\n" +
 	"\aRuntime\x12Y\n" +
 	"\n" +
 	"GetVersion\x12$.phrony.runtime.v1.GetVersionRequest\x1a%.phrony.runtime.v1.GetVersionResponse\x12Y\n" +
 	"\n" +
-	"RunSession\x12$.phrony.runtime.v1.RunSessionRequest\x1a%.phrony.runtime.v1.RunSessionResponse\x12M\n" +
+	"RunSession\x12$.phrony.runtime.v1.RunSessionRequest\x1a%.phrony.runtime.v1.RunSessionResponse\x12\x81\x01\n" +
+	"\x15RunSessionInteractive\x121.phrony.runtime.v1.RunSessionInteractiveClientMsg\x1a1.phrony.runtime.v1.RunSessionInteractiveServerMsg(\x010\x01\x12M\n" +
 	"\x06Deploy\x12 .phrony.runtime.v1.DeployRequest\x1a!.phrony.runtime.v1.DeployResponse\x12Y\n" +
 	"\n" +
 	"ListAgents\x12$.phrony.runtime.v1.ListAgentsRequest\x1a%.phrony.runtime.v1.ListAgentsResponse\x12n\n" +
@@ -1010,54 +1589,73 @@ func file_phrony_runtime_v1_runtime_proto_rawDescGZIP() []byte {
 	return file_phrony_runtime_v1_runtime_proto_rawDescData
 }
 
-var file_phrony_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_phrony_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_phrony_runtime_v1_runtime_proto_goTypes = []any{
-	(*GetVersionRequest)(nil),             // 0: phrony.runtime.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),            // 1: phrony.runtime.v1.GetVersionResponse
-	(*AgentRef)(nil),                      // 2: phrony.runtime.v1.AgentRef
-	(*RunSessionRequest)(nil),             // 3: phrony.runtime.v1.RunSessionRequest
-	(*RunSessionResponse)(nil),            // 4: phrony.runtime.v1.RunSessionResponse
-	(*DeployRequest)(nil),                 // 5: phrony.runtime.v1.DeployRequest
-	(*DeployResponse)(nil),                // 6: phrony.runtime.v1.DeployResponse
-	(*ListAgentsRequest)(nil),             // 7: phrony.runtime.v1.ListAgentsRequest
-	(*AgentSummary)(nil),                  // 8: phrony.runtime.v1.AgentSummary
-	(*ListAgentsResponse)(nil),            // 9: phrony.runtime.v1.ListAgentsResponse
-	(*ListAgentVersionsRequest)(nil),      // 10: phrony.runtime.v1.ListAgentVersionsRequest
-	(*AgentVersionSummary)(nil),           // 11: phrony.runtime.v1.AgentVersionSummary
-	(*ListAgentVersionsResponse)(nil),     // 12: phrony.runtime.v1.ListAgentVersionsResponse
-	(*DeprecateAgentVersionRequest)(nil),  // 13: phrony.runtime.v1.DeprecateAgentVersionRequest
-	(*DeprecateAgentVersionResponse)(nil), // 14: phrony.runtime.v1.DeprecateAgentVersionResponse
-	(*ArchiveAgentRequest)(nil),           // 15: phrony.runtime.v1.ArchiveAgentRequest
-	(*ArchiveAgentResponse)(nil),          // 16: phrony.runtime.v1.ArchiveAgentResponse
-	nil,                                   // 17: phrony.runtime.v1.DeployRequest.ResolvedSecretsEntry
+	(*GetVersionRequest)(nil),                   // 0: phrony.runtime.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),                  // 1: phrony.runtime.v1.GetVersionResponse
+	(*AgentRef)(nil),                            // 2: phrony.runtime.v1.AgentRef
+	(*RunSessionRequest)(nil),                   // 3: phrony.runtime.v1.RunSessionRequest
+	(*RunSessionResponse)(nil),                  // 4: phrony.runtime.v1.RunSessionResponse
+	(*RunSessionInteractiveClientMsg)(nil),      // 5: phrony.runtime.v1.RunSessionInteractiveClientMsg
+	(*RunSessionInteractiveStart)(nil),          // 6: phrony.runtime.v1.RunSessionInteractiveStart
+	(*RunSessionInteractiveUserMessage)(nil),    // 7: phrony.runtime.v1.RunSessionInteractiveUserMessage
+	(*RunSessionInteractiveServerMsg)(nil),      // 8: phrony.runtime.v1.RunSessionInteractiveServerMsg
+	(*RunSessionInteractiveSessionStarted)(nil), // 9: phrony.runtime.v1.RunSessionInteractiveSessionStarted
+	(*RunSessionInteractiveTextDelta)(nil),      // 10: phrony.runtime.v1.RunSessionInteractiveTextDelta
+	(*RunSessionInteractiveAwaitingInput)(nil),  // 11: phrony.runtime.v1.RunSessionInteractiveAwaitingInput
+	(*RunSessionInteractiveCompleted)(nil),      // 12: phrony.runtime.v1.RunSessionInteractiveCompleted
+	(*RunSessionInteractiveFailed)(nil),         // 13: phrony.runtime.v1.RunSessionInteractiveFailed
+	(*DeployRequest)(nil),                       // 14: phrony.runtime.v1.DeployRequest
+	(*DeployResponse)(nil),                      // 15: phrony.runtime.v1.DeployResponse
+	(*ListAgentsRequest)(nil),                   // 16: phrony.runtime.v1.ListAgentsRequest
+	(*AgentSummary)(nil),                        // 17: phrony.runtime.v1.AgentSummary
+	(*ListAgentsResponse)(nil),                  // 18: phrony.runtime.v1.ListAgentsResponse
+	(*ListAgentVersionsRequest)(nil),            // 19: phrony.runtime.v1.ListAgentVersionsRequest
+	(*AgentVersionSummary)(nil),                 // 20: phrony.runtime.v1.AgentVersionSummary
+	(*ListAgentVersionsResponse)(nil),           // 21: phrony.runtime.v1.ListAgentVersionsResponse
+	(*DeprecateAgentVersionRequest)(nil),        // 22: phrony.runtime.v1.DeprecateAgentVersionRequest
+	(*DeprecateAgentVersionResponse)(nil),       // 23: phrony.runtime.v1.DeprecateAgentVersionResponse
+	(*ArchiveAgentRequest)(nil),                 // 24: phrony.runtime.v1.ArchiveAgentRequest
+	(*ArchiveAgentResponse)(nil),                // 25: phrony.runtime.v1.ArchiveAgentResponse
+	nil,                                         // 26: phrony.runtime.v1.DeployRequest.ResolvedSecretsEntry
 }
 var file_phrony_runtime_v1_runtime_proto_depIdxs = []int32{
 	2,  // 0: phrony.runtime.v1.RunSessionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	17, // 1: phrony.runtime.v1.DeployRequest.resolved_secrets:type_name -> phrony.runtime.v1.DeployRequest.ResolvedSecretsEntry
-	8,  // 2: phrony.runtime.v1.ListAgentsResponse.agents:type_name -> phrony.runtime.v1.AgentSummary
-	2,  // 3: phrony.runtime.v1.ListAgentVersionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	11, // 4: phrony.runtime.v1.ListAgentVersionsResponse.versions:type_name -> phrony.runtime.v1.AgentVersionSummary
-	2,  // 5: phrony.runtime.v1.DeprecateAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	2,  // 6: phrony.runtime.v1.ArchiveAgentRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	0,  // 7: phrony.runtime.v1.Runtime.GetVersion:input_type -> phrony.runtime.v1.GetVersionRequest
-	3,  // 8: phrony.runtime.v1.Runtime.RunSession:input_type -> phrony.runtime.v1.RunSessionRequest
-	5,  // 9: phrony.runtime.v1.Runtime.Deploy:input_type -> phrony.runtime.v1.DeployRequest
-	7,  // 10: phrony.runtime.v1.Runtime.ListAgents:input_type -> phrony.runtime.v1.ListAgentsRequest
-	10, // 11: phrony.runtime.v1.Runtime.ListAgentVersions:input_type -> phrony.runtime.v1.ListAgentVersionsRequest
-	13, // 12: phrony.runtime.v1.Runtime.DeprecateAgentVersion:input_type -> phrony.runtime.v1.DeprecateAgentVersionRequest
-	15, // 13: phrony.runtime.v1.Runtime.ArchiveAgent:input_type -> phrony.runtime.v1.ArchiveAgentRequest
-	1,  // 14: phrony.runtime.v1.Runtime.GetVersion:output_type -> phrony.runtime.v1.GetVersionResponse
-	4,  // 15: phrony.runtime.v1.Runtime.RunSession:output_type -> phrony.runtime.v1.RunSessionResponse
-	6,  // 16: phrony.runtime.v1.Runtime.Deploy:output_type -> phrony.runtime.v1.DeployResponse
-	9,  // 17: phrony.runtime.v1.Runtime.ListAgents:output_type -> phrony.runtime.v1.ListAgentsResponse
-	12, // 18: phrony.runtime.v1.Runtime.ListAgentVersions:output_type -> phrony.runtime.v1.ListAgentVersionsResponse
-	14, // 19: phrony.runtime.v1.Runtime.DeprecateAgentVersion:output_type -> phrony.runtime.v1.DeprecateAgentVersionResponse
-	16, // 20: phrony.runtime.v1.Runtime.ArchiveAgent:output_type -> phrony.runtime.v1.ArchiveAgentResponse
-	14, // [14:21] is the sub-list for method output_type
-	7,  // [7:14] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	6,  // 1: phrony.runtime.v1.RunSessionInteractiveClientMsg.start:type_name -> phrony.runtime.v1.RunSessionInteractiveStart
+	7,  // 2: phrony.runtime.v1.RunSessionInteractiveClientMsg.user_message:type_name -> phrony.runtime.v1.RunSessionInteractiveUserMessage
+	2,  // 3: phrony.runtime.v1.RunSessionInteractiveStart.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	9,  // 4: phrony.runtime.v1.RunSessionInteractiveServerMsg.session_started:type_name -> phrony.runtime.v1.RunSessionInteractiveSessionStarted
+	10, // 5: phrony.runtime.v1.RunSessionInteractiveServerMsg.text_delta:type_name -> phrony.runtime.v1.RunSessionInteractiveTextDelta
+	11, // 6: phrony.runtime.v1.RunSessionInteractiveServerMsg.awaiting_input:type_name -> phrony.runtime.v1.RunSessionInteractiveAwaitingInput
+	12, // 7: phrony.runtime.v1.RunSessionInteractiveServerMsg.completed:type_name -> phrony.runtime.v1.RunSessionInteractiveCompleted
+	13, // 8: phrony.runtime.v1.RunSessionInteractiveServerMsg.failed:type_name -> phrony.runtime.v1.RunSessionInteractiveFailed
+	26, // 9: phrony.runtime.v1.DeployRequest.resolved_secrets:type_name -> phrony.runtime.v1.DeployRequest.ResolvedSecretsEntry
+	17, // 10: phrony.runtime.v1.ListAgentsResponse.agents:type_name -> phrony.runtime.v1.AgentSummary
+	2,  // 11: phrony.runtime.v1.ListAgentVersionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	20, // 12: phrony.runtime.v1.ListAgentVersionsResponse.versions:type_name -> phrony.runtime.v1.AgentVersionSummary
+	2,  // 13: phrony.runtime.v1.DeprecateAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	2,  // 14: phrony.runtime.v1.ArchiveAgentRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	0,  // 15: phrony.runtime.v1.Runtime.GetVersion:input_type -> phrony.runtime.v1.GetVersionRequest
+	3,  // 16: phrony.runtime.v1.Runtime.RunSession:input_type -> phrony.runtime.v1.RunSessionRequest
+	5,  // 17: phrony.runtime.v1.Runtime.RunSessionInteractive:input_type -> phrony.runtime.v1.RunSessionInteractiveClientMsg
+	14, // 18: phrony.runtime.v1.Runtime.Deploy:input_type -> phrony.runtime.v1.DeployRequest
+	16, // 19: phrony.runtime.v1.Runtime.ListAgents:input_type -> phrony.runtime.v1.ListAgentsRequest
+	19, // 20: phrony.runtime.v1.Runtime.ListAgentVersions:input_type -> phrony.runtime.v1.ListAgentVersionsRequest
+	22, // 21: phrony.runtime.v1.Runtime.DeprecateAgentVersion:input_type -> phrony.runtime.v1.DeprecateAgentVersionRequest
+	24, // 22: phrony.runtime.v1.Runtime.ArchiveAgent:input_type -> phrony.runtime.v1.ArchiveAgentRequest
+	1,  // 23: phrony.runtime.v1.Runtime.GetVersion:output_type -> phrony.runtime.v1.GetVersionResponse
+	4,  // 24: phrony.runtime.v1.Runtime.RunSession:output_type -> phrony.runtime.v1.RunSessionResponse
+	8,  // 25: phrony.runtime.v1.Runtime.RunSessionInteractive:output_type -> phrony.runtime.v1.RunSessionInteractiveServerMsg
+	15, // 26: phrony.runtime.v1.Runtime.Deploy:output_type -> phrony.runtime.v1.DeployResponse
+	18, // 27: phrony.runtime.v1.Runtime.ListAgents:output_type -> phrony.runtime.v1.ListAgentsResponse
+	21, // 28: phrony.runtime.v1.Runtime.ListAgentVersions:output_type -> phrony.runtime.v1.ListAgentVersionsResponse
+	23, // 29: phrony.runtime.v1.Runtime.DeprecateAgentVersion:output_type -> phrony.runtime.v1.DeprecateAgentVersionResponse
+	25, // 30: phrony.runtime.v1.Runtime.ArchiveAgent:output_type -> phrony.runtime.v1.ArchiveAgentResponse
+	23, // [23:31] is the sub-list for method output_type
+	15, // [15:23] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_phrony_runtime_v1_runtime_proto_init() }
@@ -1065,13 +1663,24 @@ func file_phrony_runtime_v1_runtime_proto_init() {
 	if File_phrony_runtime_v1_runtime_proto != nil {
 		return
 	}
+	file_phrony_runtime_v1_runtime_proto_msgTypes[5].OneofWrappers = []any{
+		(*RunSessionInteractiveClientMsg_Start)(nil),
+		(*RunSessionInteractiveClientMsg_UserMessage)(nil),
+	}
+	file_phrony_runtime_v1_runtime_proto_msgTypes[8].OneofWrappers = []any{
+		(*RunSessionInteractiveServerMsg_SessionStarted)(nil),
+		(*RunSessionInteractiveServerMsg_TextDelta)(nil),
+		(*RunSessionInteractiveServerMsg_AwaitingInput)(nil),
+		(*RunSessionInteractiveServerMsg_Completed)(nil),
+		(*RunSessionInteractiveServerMsg_Failed)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_phrony_runtime_v1_runtime_proto_rawDesc), len(file_phrony_runtime_v1_runtime_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
