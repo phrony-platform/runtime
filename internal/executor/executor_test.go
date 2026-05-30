@@ -75,6 +75,54 @@ func mustTestEncryptor(t *testing.T) *secrets.Encryptor {
 	return enc
 }
 
+func TestExecutor_LoadVersion_nilExecutor(t *testing.T) {
+	var ex *Executor
+	_, err := ex.LoadVersion(context.Background(), "v")
+	if err == nil {
+		t.Fatal("LoadVersion() = nil, want error")
+	}
+}
+
+func TestExecutor_LoadVersion_noDatabase(t *testing.T) {
+	ex := &Executor{Enc: mustTestEncryptor(t)}
+	_, err := ex.LoadVersion(context.Background(), "v")
+	if err == nil {
+		t.Fatal("LoadVersion() = nil, want error")
+	}
+}
+
+func TestExecutor_LoadVersion_emptyID(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	ex := &Executor{Enc: mustTestEncryptor(t), Q: store.New(db)}
+	_, err = ex.LoadVersion(context.Background(), "")
+	if err == nil {
+		t.Fatal("LoadVersion() = nil, want error")
+	}
+}
+
+func TestExecutor_LoadVersion_invalidManifest(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectQuery(`SELECT manifest`).
+		WithArgs("version-uuid").
+		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow([]byte(`not json`)))
+
+	ex := &Executor{Enc: mustTestEncryptor(t), Q: store.New(db)}
+	_, err = ex.LoadVersion(context.Background(), "version-uuid")
+	if err == nil {
+		t.Fatal("LoadVersion() = nil, want error")
+	}
+}
+
 func TestExecutor_LoadVersion_notFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -128,6 +176,68 @@ func TestStreamCompletion_streamsDeltas(t *testing.T) {
 	}
 }
 
+func TestStreamCompletion_providerFailure(t *testing.T) {
+	v := testVersion(&failStubProvider{})
+	ch := make(chan Event, 4)
+	err := v.StreamCompletion(context.Background(), RunParams{
+		Input: json.RawMessage(`{"message":"hello"}`),
+	}, ch)
+	if err == nil {
+		t.Fatal("StreamCompletion() = nil, want error")
+	}
+	var failed bool
+	for ev := range ch {
+		if ev.Type == EventFailed {
+			failed = true
+		}
+	}
+	if !failed {
+		t.Fatal("missing failed event")
+	}
+}
+
+func TestStreamCompletion_skipsEmptyDeltas(t *testing.T) {
+	v := testVersion(&emptyDeltaStubProvider{})
+	ch := make(chan Event, 8)
+	if err := v.StreamCompletion(context.Background(), RunParams{
+		Input: json.RawMessage(`{"message":"hello"}`),
+	}, ch); err != nil {
+		t.Fatalf("StreamCompletion: %v", err)
+	}
+	var deltas int
+	for ev := range ch {
+		if ev.Type == EventTextDelta {
+			deltas++
+		}
+	}
+	if deltas != 1 {
+		t.Fatalf("text deltas = %d, want 1 (empty deltas skipped)", deltas)
+	}
+}
+
+func TestStreamCompletion_prependsHistory(t *testing.T) {
+	v := testVersion(&deltaStubProvider{})
+	ch := make(chan Event, 8)
+	history := []provider.Message{{Role: provider.RoleUser, Content: "prior"}}
+	if err := v.StreamCompletion(context.Background(), RunParams{
+		Input:   json.RawMessage(`{"message":"hello"}`),
+		History: history,
+	}, ch); err != nil {
+		t.Fatalf("StreamCompletion: %v", err)
+	}
+	for range ch {
+	}
+}
+
+func TestStreamCompletion_nilVersion(t *testing.T) {
+	var v *Version
+	ch := make(chan Event, 1)
+	err := v.StreamCompletion(context.Background(), RunParams{}, ch)
+	if err == nil {
+		t.Fatal("StreamCompletion() = nil, want error")
+	}
+}
+
 func TestStreamCompletion_enforcesTokenLimit(t *testing.T) {
 	max := 3
 	stub := &deltaStubProvider{}
@@ -163,19 +273,16 @@ func TestStreamCompletion_enforcesTokenLimit(t *testing.T) {
 }
 
 func testVersion(p provider.Provider) *Version {
-	return &Version{
-		AgentVersionID: "version-uuid",
-		Agent: &manifest.Agent{
-			Spec: manifest.AgentSpec{
-				Instructions: manifest.InstructionsSpec{Text: "System."},
-				Model: manifest.ModelConfig{
-					Provider: provider.IDAnthropic,
-					Name:     "claude-sonnet-4-5",
-				},
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Instructions: manifest.InstructionsSpec{Text: "System."},
+			Model: manifest.ModelConfig{
+				Provider: provider.IDAnthropic,
+				Name:     "claude-sonnet-4-5",
 			},
 		},
-		provider: p,
 	}
+	return NewVersionWithProvider("version-uuid", agent, p)
 }
 
 type deltaStubProvider struct{}
@@ -186,6 +293,28 @@ func (d *deltaStubProvider) Complete(ctx context.Context, req provider.Completio
 	defer close(ch)
 	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "Hi "}
 	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "there"}
+	ch <- provider.CompletionEvent{Type: provider.EventCompleted, StopReason: "end_turn"}
+	return nil
+}
+
+type failStubProvider struct{}
+
+func (f *failStubProvider) ID() string { return provider.IDAnthropic }
+
+func (f *failStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
+	defer close(ch)
+	ch <- provider.CompletionEvent{Type: provider.EventFailed, Err: errors.New("provider down")}
+	return nil
+}
+
+type emptyDeltaStubProvider struct{}
+
+func (e *emptyDeltaStubProvider) ID() string { return provider.IDAnthropic }
+
+func (e *emptyDeltaStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
+	defer close(ch)
+	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: ""}
+	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "ok"}
 	ch <- provider.CompletionEvent{Type: provider.EventCompleted, StopReason: "end_turn"}
 	return nil
 }

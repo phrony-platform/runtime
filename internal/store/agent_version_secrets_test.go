@@ -33,6 +33,31 @@ func TestInsertAgentVersionSecret(t *testing.T) {
 	}
 }
 
+func TestAgentVersionSecret(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
+		WithArgs("version-id", "anthropic").
+		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
+			AddRow(1, []byte{1}, []byte{2}))
+
+	q := New(db)
+	row, err := q.AgentVersionSecret(context.Background(), "version-id", "anthropic")
+	if err != nil {
+		t.Fatalf("AgentVersionSecret: %v", err)
+	}
+	if row.KeyVersion != 1 {
+		t.Fatalf("key_version = %d, want 1", row.KeyVersion)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestListSecretsForVersion(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

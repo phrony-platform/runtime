@@ -12,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	grpc_health_v1 "github.com/phrony-platform/runtime/gen/grpc/health/v1"
 	"github.com/phrony-platform/runtime/internal/core"
+	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/secrets"
 )
 
@@ -150,9 +151,7 @@ func startTestRuntimeAddrForRun(t *testing.T) string {
 	mock.ExpectQuery(`FROM agent_versions av`).
 		WithArgs("demo", "echo-agent").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", sqlmock.AnyArg(), "pending").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	expectInteractiveRunSessionMocks(mock, "version-uuid", sqlmock.AnyArg())
 
 	db := sqlx.NewDb(sqlDB, "pgx")
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -184,9 +183,7 @@ func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
 	mock.ExpectQuery(`FROM agent_versions av`).
 		WithArgs("demo", "echo-agent", "1.2.0").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "archived_at"}).AddRow("version-uuid", nil, nil))
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", sqlmock.AnyArg(), "pending").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	expectInteractiveRunSessionMocks(mock, "version-uuid", sqlmock.AnyArg())
 
 	db := sqlx.NewDb(sqlDB, "pgx")
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -204,6 +201,17 @@ func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
 
 	waitForGRPC(t, lis.Addr().String())
 	return lis.Addr().String()
+}
+
+func expectInteractiveRunSessionMocks(mock sqlmock.Sqlmock, versionID string, input any) {
+	mock.ExpectQuery(`INSERT INTO sessions`).
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	mock.ExpectQuery(`SELECT manifest`).
+		WithArgs(versionID).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`UPDATE sessions`).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
 }
 
 func startTestRuntimeAddrForAgentsList(t *testing.T) string {

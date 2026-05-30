@@ -34,24 +34,33 @@ func runSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, inp
 		return err
 	}
 
-	req := &runtimev1.RunSessionRequest{AgentRef: ref}
-
+	var inputBytes []byte
 	if input != "" {
 		if !json.Valid([]byte(input)) {
 			return fmt.Errorf("input must be valid JSON")
 		}
-		req.Input = []byte(input)
+		inputBytes = []byte(input)
+	}
+
+	start := &runtimev1.RunSessionInteractiveStart{
+		AgentRef: ref,
+		Input:    inputBytes,
 	}
 
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
-		resp, err := rt.RunSession(cmd.Context(), req)
+		stream, err := rt.RunSessionInteractive(cmd.Context())
 		if err != nil {
 			return clierr.WrapRPC("run session", err)
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "session %s created (status: %s)\n",
-			resp.GetSessionId(), resp.GetStatus())
-		return nil
+		return runInteractiveSession(
+			cmd.Context(),
+			stream,
+			start,
+			cmd.InOrStdin(),
+			cmd.OutOrStdout(),
+			cmd.ErrOrStderr(),
+		)
 	})
 }
 

@@ -43,6 +43,15 @@ type Version struct {
 	provider       provider.Provider
 }
 
+// NewVersionWithProvider constructs a Version for tests that inject a provider implementation.
+func NewVersionWithProvider(agentVersionID string, agent *manifest.Agent, p provider.Provider) *Version {
+	return &Version{
+		AgentVersionID: agentVersionID,
+		Agent:          agent,
+		provider:       p,
+	}
+}
+
 // LoadVersion loads the ref-only manifest and provider credentials for a deployed version.
 func (e *Executor) LoadVersion(ctx context.Context, agentVersionID string) (*Version, error) {
 	if e == nil {

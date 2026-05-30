@@ -1,9 +1,11 @@
 package executor
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/phrony-platform/runtime/internal/manifest"
 )
@@ -32,6 +34,42 @@ func TestLimitTracker_maxLoopIterations(t *testing.T) {
 	}
 	if err := tracker.beginIteration(); err == nil {
 		t.Fatal("second iteration: want limit error")
+	}
+}
+
+func TestLimitError_Error(t *testing.T) {
+	var nilErr *LimitError
+	if nilErr.Error() != "run limit exceeded" {
+		t.Fatalf("nil LimitError = %q", nilErr.Error())
+	}
+	err := &LimitError{Kind: LimitMaxTokensPerRun, OnLimit: "halt"}
+	if !strings.Contains(err.Error(), "max_tokens_per_run") {
+		t.Fatalf("error = %q", err.Error())
+	}
+}
+
+func TestLimitTracker_maxWallClockSeconds(t *testing.T) {
+	max := 0
+	tracker := newLimitTracker(&manifest.Limits{MaxWallClockSeconds: &max})
+	tracker.startedAt = time.Now().Add(-2 * time.Second)
+	max = 1
+	tracker.limits.MaxWallClockSeconds = &max
+	if err := tracker.checkWallClock(); err == nil {
+		t.Fatal("checkWallClock() = nil, want limit error")
+	}
+}
+
+func TestLimitTracker_contextTimeout(t *testing.T) {
+	max := 1
+	tracker := newLimitTracker(&manifest.Limits{MaxWallClockSeconds: &max})
+	ctx, cancel := tracker.context(context.Background())
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected deadline on context")
+	}
+	if time.Until(deadline) > time.Second {
+		t.Fatalf("deadline too far: %v", deadline)
 	}
 }
 

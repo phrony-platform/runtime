@@ -11,6 +11,7 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/secrets"
+	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 )
 
@@ -71,6 +72,70 @@ func TestPersistAgentVersionSecrets_noEncryptor(t *testing.T) {
 		"anthropic": []byte("sk-test"),
 	})
 	assertGRPCCode(t, err, codes.FailedPrecondition)
+}
+
+func TestValidateResolvedSecrets_unknownResolved(t *testing.T) {
+	agent := &manifest.Agent{
+		Secrets: map[string]manifest.SecretDefinition{
+			"anthropic": {FromEnv: "ANTHROPIC_API_KEY"},
+		},
+	}
+	err := validateResolvedSecrets(agent, map[string][]byte{
+		"anthropic": []byte("sk-a"),
+		"extra":     []byte("sk-x"),
+	})
+	assertGRPCCode(t, err, codes.InvalidArgument)
+}
+
+func TestValidateResolvedSecrets_emptyValue(t *testing.T) {
+	agent := &manifest.Agent{
+		Secrets: map[string]manifest.SecretDefinition{
+			"anthropic": {FromEnv: "ANTHROPIC_API_KEY"},
+		},
+	}
+	err := validateResolvedSecrets(agent, map[string][]byte{
+		"anthropic": {},
+	})
+	assertGRPCCode(t, err, codes.InvalidArgument)
+}
+
+func TestPersistAgentVersionSecrets_resolvedWithoutManifestSecrets(t *testing.T) {
+	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t)}
+	err := srv.persistAgentVersionSecrets(context.Background(), nil, "version-uuid", &manifest.Agent{}, map[string][]byte{
+		"anthropic": []byte("sk-test"),
+	})
+	assertGRPCCode(t, err, codes.InvalidArgument)
+}
+
+func TestPersistAgentVersionSecrets_noSecretsBlock(t *testing.T) {
+	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t)}
+	err := srv.persistAgentVersionSecrets(context.Background(), nil, "version-uuid", &manifest.Agent{}, nil)
+	if err != nil {
+		t.Fatalf("persistAgentVersionSecrets: %v", err)
+	}
+}
+
+func TestPersistAgentVersionSecrets_encryptsAndInserts(t *testing.T) {
+	agent := &manifest.Agent{
+		Secrets: map[string]manifest.SecretDefinition{
+			"anthropic": {FromEnv: "ANTHROPIC_API_KEY"},
+		},
+	}
+	db, mock := testSQLxDB(t)
+	mock.ExpectExec(`INSERT INTO agent_version_secrets`).
+		WithArgs("version-uuid", "anthropic", 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t), db: db}
+	err := srv.persistAgentVersionSecrets(context.Background(), store.New(db), "version-uuid", agent, map[string][]byte{
+		"anthropic": []byte("sk-test-key"),
+	})
+	if err != nil {
+		t.Fatalf("persistAgentVersionSecrets: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
 }
 
 func TestPersistAgentVersionSecrets_missingResolved(t *testing.T) {

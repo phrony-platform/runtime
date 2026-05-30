@@ -86,11 +86,15 @@ func TestRunCommand_success(t *testing.T) {
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{"run", "demo/echo-agent", "--runtime-addr", addr})
 
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected session failure after start, got nil")
 	}
-	if !strings.Contains(out.String(), "session ") || !strings.Contains(out.String(), "created") {
-		t.Fatalf("output = %q, want created session", out.String())
+	if !strings.Contains(out.String(), "session ") || !strings.Contains(out.String(), "started") {
+		t.Fatalf("output = %q, want started session", out.String())
+	}
+	if !strings.Contains(err.Error(), "session failed") {
+		t.Fatalf("err = %v, want session failed", err)
 	}
 }
 
@@ -103,11 +107,12 @@ func TestRunCommand_withVersionFlag(t *testing.T) {
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{"run", "demo/echo-agent", "-v", "1.2.0", "--runtime-addr", addr})
 
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected session failure after start, got nil")
 	}
-	if !strings.Contains(out.String(), "created") {
-		t.Fatalf("output = %q, want created session", out.String())
+	if !strings.Contains(out.String(), "started") {
+		t.Fatalf("output = %q, want started session", out.String())
 	}
 }
 
@@ -123,8 +128,9 @@ func TestRunCommand_withInput(t *testing.T) {
 		"--runtime-addr", addr,
 	})
 
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected session failure after start, got nil")
 	}
 }
 

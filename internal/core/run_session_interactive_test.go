@@ -12,7 +12,11 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/executor"
+	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 )
@@ -110,6 +114,174 @@ func TestUserTextFromSessionInput(t *testing.T) {
 	if text != "hello" {
 		t.Fatalf("text = %q, want hello", text)
 	}
+}
+
+func TestUserTextFromSessionInput_textField(t *testing.T) {
+	text, err := userTextFromSessionInput(json.RawMessage(`{"text":" follow-up "}`))
+	if err != nil {
+		t.Fatalf("userTextFromSessionInput: %v", err)
+	}
+	if text != "follow-up" {
+		t.Fatalf("text = %q, want follow-up", text)
+	}
+}
+
+func TestUserTextFromSessionInput_empty(t *testing.T) {
+	text, err := userTextFromSessionInput(nil)
+	if err != nil {
+		t.Fatalf("userTextFromSessionInput: %v", err)
+	}
+	if text != "" {
+		t.Fatalf("text = %q, want empty", text)
+	}
+}
+
+func TestUserTextFromSessionInput_invalidMessageType(t *testing.T) {
+	_, err := userTextFromSessionInput(json.RawMessage(`{"message":42}`))
+	if err == nil {
+		t.Fatal("userTextFromSessionInput() = nil, want error")
+	}
+}
+
+func TestUserTextFromSessionInput_notObject(t *testing.T) {
+	_, err := userTextFromSessionInput(json.RawMessage(`"raw"`))
+	if err == nil {
+		t.Fatal("userTextFromSessionInput() = nil, want error")
+	}
+}
+
+func TestAppendTurnHistory(t *testing.T) {
+	h := appendTurnHistory(nil, "user", "assistant")
+	if len(h) != 2 {
+		t.Fatalf("len(history) = %d, want 2", len(h))
+	}
+	if h[0].Content != "user" || h[1].Content != "assistant" {
+		t.Fatalf("history = %+v", h)
+	}
+
+	h = appendTurnHistory(h, "", "")
+	if len(h) != 2 {
+		t.Fatalf("empty turn should not append, len = %d", len(h))
+	}
+}
+
+func TestInteractiveSessionState_runTurn_streamsDeltas(t *testing.T) {
+	stream := &mockInteractiveStream{ctx: context.Background()}
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Instructions: manifest.InstructionsSpec{Text: "System."},
+			Model: manifest.ModelConfig{
+				Provider: provider.IDAnthropic,
+				Name:     "claude-sonnet-4-5",
+			},
+		},
+	}
+	st := &interactiveSessionState{
+		sessionID: "sess-1",
+		version:   executor.NewVersionWithProvider("version-uuid", agent, &interactiveDeltaStubProvider{}),
+	}
+
+	stopReason, text, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
+	if err != nil {
+		t.Fatalf("runTurn: %v", err)
+	}
+	if stopReason != "end_turn" {
+		t.Fatalf("stop_reason = %q, want end_turn", stopReason)
+	}
+	if text != "Hi there" {
+		t.Fatalf("assistant text = %q", text)
+	}
+	var deltas int
+	for _, msg := range stream.sent {
+		if msg.GetTextDelta() != nil {
+			deltas++
+		}
+	}
+	if deltas != 2 {
+		t.Fatalf("text_delta messages = %d, want 2", deltas)
+	}
+}
+
+func TestInteractiveSessionState_runTurn_providerFailure(t *testing.T) {
+	stream := &mockInteractiveStream{ctx: context.Background()}
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"},
+		},
+	}
+	st := &interactiveSessionState{
+		version: executor.NewVersionWithProvider("v", agent, &interactiveFailStubProvider{}),
+	}
+	_, _, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
+	if err == nil {
+		t.Fatal("runTurn() = nil, want error")
+	}
+}
+
+func TestRuntime_completeInteractiveSession(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	output := json.RawMessage(`{"message":"ok","stop_reason":"end_turn"}`)
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("sess-1", model.SessionStatusCompleted, output, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+
+	stream := &mockInteractiveStream{ctx: context.Background()}
+	srv := &runtimeServer{db: db}
+	err := srv.completeInteractiveSession(context.Background(), store.New(db), stream, "sess-1", "end_turn", output)
+	if err != nil {
+		t.Fatalf("completeInteractiveSession: %v", err)
+	}
+	if stream.sent[0].GetCompleted() == nil {
+		t.Fatal("expected completed message")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestRuntime_failInteractiveSession(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	errMsg := "load failed"
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("sess-1", model.SessionStatusFailed, nil, errMsg).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+
+	stream := &mockInteractiveStream{ctx: context.Background()}
+	srv := &runtimeServer{db: db}
+	err := srv.failInteractiveSession(context.Background(), store.New(db), stream, "sess-1", fmt.Errorf("load failed"))
+	if err != nil {
+		t.Fatalf("failInteractiveSession: %v", err)
+	}
+	if stream.sent[0].GetFailed() == nil {
+		t.Fatal("expected failed message")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+type interactiveDeltaStubProvider struct{}
+
+func (d *interactiveDeltaStubProvider) ID() string { return provider.IDAnthropic }
+
+func (d *interactiveDeltaStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
+	defer close(ch)
+	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "Hi "}
+	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "there"}
+	ch <- provider.CompletionEvent{Type: provider.EventCompleted, StopReason: "end_turn"}
+	return nil
+}
+
+type interactiveFailStubProvider struct{}
+
+func (d *interactiveFailStubProvider) ID() string { return provider.IDAnthropic }
+
+func (d *interactiveFailStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
+	defer close(ch)
+	ch <- provider.CompletionEvent{Type: provider.EventFailed, Err: fmt.Errorf("model unavailable")}
+	return nil
 }
 
 type mockInteractiveStream struct {

@@ -82,6 +82,87 @@ func TestAPIKeyForModel_noSecrets(t *testing.T) {
 	}
 }
 
+func TestAPIKeyForModel_success(t *testing.T) {
+	enc := mustTestEncryptor(t)
+	plaintext := []byte("sk-test-key")
+	sealed, err := enc.Encrypt("version-uuid", "anthropic", plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
+		WithArgs("version-uuid", "anthropic").
+		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
+			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
+
+	key, err := APIKeyForModel(context.Background(), enc, store.New(db), "version-uuid", testAgentWithSecrets())
+	if err != nil {
+		t.Fatalf("APIKeyForModel: %v", err)
+	}
+	if key != "sk-test-key" {
+		t.Fatalf("key = %q, want sk-test-key", key)
+	}
+}
+
+func TestAPIKeyForModel_nilAgent(t *testing.T) {
+	_, err := APIKeyForModel(context.Background(), mustTestEncryptor(t), nil, "v", nil)
+	if err == nil {
+		t.Fatal("APIKeyForModel() = nil, want error")
+	}
+}
+
+func TestAPIKeyForModel_noEncryptor(t *testing.T) {
+	_, err := APIKeyForModel(context.Background(), nil, nil, "v", testAgentWithSecrets())
+	if err == nil {
+		t.Fatal("APIKeyForModel() = nil, want error")
+	}
+}
+
+func TestAPIKeyForModel_emptySecret(t *testing.T) {
+	enc := mustTestEncryptor(t)
+	sealed, err := enc.Encrypt("version-uuid", "anthropic", []byte("   "))
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
+		WithArgs("version-uuid", "anthropic").
+		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
+			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
+
+	_, err = APIKeyForModel(context.Background(), enc, store.New(db), "version-uuid", testAgentWithSecrets())
+	if err == nil {
+		t.Fatal("APIKeyForModel() = nil, want error")
+	}
+}
+
+func TestRegistry_RegisterNil(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(nil)
+	if _, ok := reg.Get(IDAnthropic); ok {
+		t.Fatal("nil provider should not register")
+	}
+}
+
+func TestRegistry_GetMissing(t *testing.T) {
+	reg := NewRegistry()
+	if _, ok := reg.Get("missing"); ok {
+		t.Fatal("Get() = true, want false")
+	}
+}
+
 func TestAPIKeyForModel_missingRow(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
