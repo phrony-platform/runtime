@@ -21,7 +21,10 @@ func (brokenListener) Addr() net.Addr {
 
 func TestServe_gracefulShutdown(t *testing.T) {
 	db := testServeDB(t)
-	srv := NewServer(db)
+	srv, err := NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -45,7 +48,10 @@ func TestServe_gracefulShutdown(t *testing.T) {
 
 func TestServe_grpcServeFailed(t *testing.T) {
 	db := testServeDB(t)
-	srv := NewServer(db)
+	srv, err := NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 
 	prev := listenTCP
 	listenTCP = func(string) (net.Listener, error) {
@@ -74,7 +80,10 @@ func TestServe_grpcServeFailed(t *testing.T) {
 
 func TestServe_listenFailed(t *testing.T) {
 	db := testServeDB(t)
-	srv := NewServer(db)
+	srv, err := NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 
 	prev := listenTCP
 	listenTCP = func(addr string) (net.Listener, error) {
@@ -82,7 +91,7 @@ func TestServe_listenFailed(t *testing.T) {
 	}
 	t.Cleanup(func() { listenTCP = prev })
 
-	err := srv.Serve(context.Background(), "127.0.0.1:-1")
+	err = srv.Serve(context.Background(), "127.0.0.1:-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

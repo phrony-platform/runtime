@@ -18,7 +18,7 @@ type serveDeps struct {
 	loadSettings  func() (common.Settings, error)
 	openDB        func(common.Settings) (*sqlx.DB, error)
 	migrate       func(*sqlx.DB) error
-	newServer     func(*sqlx.DB) *core.Server
+	newServer     func(*sqlx.DB) (*core.Server, error)
 	notifyContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
 }
 
@@ -53,7 +53,10 @@ func runServeWithDeps(ctx context.Context, skipMigrate bool, deps serveDeps) err
 		slog.Info("database migrated")
 	}
 
-	srv := deps.newServer(db)
+	srv, err := deps.newServer(db)
+	if err != nil {
+		return fmt.Errorf("init server: %w", err)
+	}
 
 	ctx, stop := deps.notifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()

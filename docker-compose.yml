@@ -20,6 +20,8 @@ services:
     environment:
       RUNTIME_DATABASE_URL: postgres://phrony_runtime:phrony_runtime@postgres:5432/phrony_runtime?sslmode=disable
       RUNTIME_GRPC_ADDR: 0.0.0.0:7777
+      # Dev-only placeholder; replace per environment (openssl rand -base64 32)
+      RUNTIME_SECRETS_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     depends_on:
       postgres:
         condition: service_healthy

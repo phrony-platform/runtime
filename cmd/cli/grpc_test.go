@@ -35,7 +35,10 @@ func startTestRuntimeAddr(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = lis.Close() })
 
-	srv := core.NewServer(db)
+	srv, err := core.NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 	go func() { _ = srv.GRPC().Serve(lis) }()
 	t.Cleanup(func() { srv.GRPC().Stop() })
 
@@ -75,7 +78,10 @@ func startTestRuntimeAddrForDeploy(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = lis.Close() })
 
-	srv := core.NewServer(db)
+	srv, err := core.NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 	go func() { _ = srv.GRPC().Serve(lis) }()
 	t.Cleanup(func() { srv.GRPC().Stop() })
 
@@ -106,7 +112,10 @@ func startTestRuntimeAddrForRun(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = lis.Close() })
 
-	srv := core.NewServer(db)
+	srv, err := core.NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 	go func() { _ = srv.GRPC().Serve(lis) }()
 	t.Cleanup(func() { srv.GRPC().Stop() })
 
@@ -137,7 +146,10 @@ func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = lis.Close() })
 
-	srv := core.NewServer(db)
+	srv, err := core.NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 	go func() { _ = srv.GRPC().Serve(lis) }()
 	t.Cleanup(func() { srv.GRPC().Stop() })
 
@@ -240,7 +252,10 @@ func startRuntimeOnDB(t *testing.T, sqlDB *sql.DB) string {
 	}
 	t.Cleanup(func() { _ = lis.Close() })
 
-	srv := core.NewServer(db)
+	srv, err := core.NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 	go func() { _ = srv.GRPC().Serve(lis) }()
 	t.Cleanup(func() { srv.GRPC().Stop() })
 

@@ -7,6 +7,7 @@ import (
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/jmoiron/sqlx"
+	"github.com/phrony-platform/runtime/internal/secrets"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,7 +15,8 @@ import (
 
 type runtimeServer struct {
 	runtimev1.UnimplementedRuntimeServer
-	db *sqlx.DB
+	db         *sqlx.DB
+	secretsEnc *secrets.Encryptor
 }
 
 // queries returns a store handle backed by the configured database, or a

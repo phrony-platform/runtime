@@ -45,6 +45,8 @@ message RunSessionResponse {
 
 message DeployRequest {
   bytes manifest = 1;
+  // Resolved secret values keyed by secrets.<name>. Never logged or stored in manifest JSONB.
+  map<string, bytes> resolved_secrets = 2;
 }
 
 message DeployResponse {

@@ -69,7 +69,10 @@ func startTestListener(t *testing.T, db *sqlx.DB) net.Listener {
 		t.Fatalf("listen: %v", err)
 	}
 
-	srv := NewServer(db)
+	srv, err := NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 	go func() {
 		_ = srv.GRPC().Serve(lis)
 	}()

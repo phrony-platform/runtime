@@ -76,15 +76,24 @@ func (s *runtimeServer) Deploy(ctx context.Context, req *runtimev1.DeployRequest
 		return nil, err
 	}
 
+	storedManifest, err := manifestForStorage(agent, raw)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "encode manifest: %v", err)
+	}
+
 	versionID, err = q.InsertAgentVersion(ctx, store.InsertAgentVersionParams{
 		ID:          versionID,
 		AgentID:     agentID,
 		Version:     agent.Metadata.Version,
 		ContentHash: hash,
-		Manifest:    json.RawMessage(raw),
+		Manifest:    storedManifest,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "persist agent version: %v", err)
+	}
+
+	if err := s.persistAgentVersionSecrets(ctx, q, versionID, agent, req.GetResolvedSecrets()); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -132,6 +141,18 @@ func deployValidationStatus(err error) error {
 func hashManifest(raw []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+// manifestForStorage returns ref-only manifest JSON (no resolved secret values).
+func manifestForStorage(agent *manifest.Agent, raw []byte) (json.RawMessage, error) {
+	if len(agent.Secrets) == 0 {
+		return json.RawMessage(raw), nil
+	}
+	stored, err := json.Marshal(agent)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(stored), nil
 }
 
 func marshalLabels(labels map[string]string) (json.RawMessage, error) {
