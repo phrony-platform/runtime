@@ -1,0 +1,118 @@
+package executor
+
+import (
+	"context"
+	"fmt"
+	"time"
+	"unicode/utf8"
+
+	"github.com/phrony-platform/runtime/internal/manifest"
+)
+
+const defaultOnLimit = "halt"
+
+// LimitKind identifies which run limit was exceeded.
+type LimitKind string
+
+const (
+	LimitMaxTokensPerRun     LimitKind = "max_tokens_per_run"
+	LimitMaxLoopIterations   LimitKind = "max_loop_iterations"
+	LimitMaxWallClockSeconds LimitKind = "max_wall_clock_seconds"
+)
+
+// LimitError is returned when a manifest run limit is hit.
+type LimitError struct {
+	Kind    LimitKind
+	OnLimit string
+}
+
+func (e *LimitError) Error() string {
+	if e == nil {
+		return "run limit exceeded"
+	}
+	on := e.OnLimit
+	if on == "" {
+		on = defaultOnLimit
+	}
+	return fmt.Sprintf("run limit %s exceeded (on_limit=%s)", e.Kind, on)
+}
+
+type limitTracker struct {
+	limits      *manifest.Limits
+	tokensUsed  int
+	iteration   int
+	startedAt   time.Time
+	onLimit     string
+}
+
+func newLimitTracker(limits *manifest.Limits) *limitTracker {
+	on := defaultOnLimit
+	if limits != nil && limits.OnLimit != "" {
+		on = limits.OnLimit
+	}
+	return &limitTracker{
+		limits:    limits,
+		startedAt: time.Now(),
+		onLimit:   on,
+	}
+}
+
+func (t *limitTracker) beginIteration() error {
+	if t == nil {
+		return nil
+	}
+	t.iteration++
+	if t.limits == nil || t.limits.MaxLoopIterations == nil {
+		return nil
+	}
+	max := *t.limits.MaxLoopIterations
+	if max > 0 && t.iteration > max {
+		return &LimitError{Kind: LimitMaxLoopIterations, OnLimit: t.onLimit}
+	}
+	return nil
+}
+
+func (t *limitTracker) addTokens(text string) error {
+	if t == nil || t.limits == nil || t.limits.MaxTokensPerRun == nil {
+		return nil
+	}
+	t.tokensUsed += estimateTokens(text)
+	max := *t.limits.MaxTokensPerRun
+	if max > 0 && t.tokensUsed > max {
+		return &LimitError{Kind: LimitMaxTokensPerRun, OnLimit: t.onLimit}
+	}
+	return nil
+}
+
+func (t *limitTracker) checkWallClock() error {
+	if t == nil || t.limits == nil || t.limits.MaxWallClockSeconds == nil {
+		return nil
+	}
+	max := *t.limits.MaxWallClockSeconds
+	if max <= 0 {
+		return nil
+	}
+	if time.Since(t.startedAt) > time.Duration(max)*time.Second {
+		return &LimitError{Kind: LimitMaxWallClockSeconds, OnLimit: t.onLimit}
+	}
+	return nil
+}
+
+func (t *limitTracker) context(ctx context.Context) (context.Context, context.CancelFunc) {
+	if t == nil || t.limits == nil || t.limits.MaxWallClockSeconds == nil {
+		return ctx, func() {}
+	}
+	max := *t.limits.MaxWallClockSeconds
+	if max <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, time.Duration(max)*time.Second)
+}
+
+func estimateTokens(text string) int {
+	if text == "" {
+		return 0
+	}
+	n := utf8.RuneCountInString(text)
+	return (n + 3) / 4
+}
