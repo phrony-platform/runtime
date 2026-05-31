@@ -7,6 +7,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/version"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -17,8 +18,8 @@ func TestRuntime_GetVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetVersion: %v", err)
 	}
-	if resp.GetVersion() != RuntimeVersion {
-		t.Fatalf("version = %q, want %q", resp.GetVersion(), RuntimeVersion)
+	if resp.GetVersion() != version.Version {
+		t.Fatalf("version = %q, want %q", resp.GetVersion(), version.Version)
 	}
 	if resp.GetSchemaVersion() != "" {
 		t.Fatalf("schema_version = %q, want empty without db", resp.GetSchemaVersion())

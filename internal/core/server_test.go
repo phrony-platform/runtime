@@ -13,6 +13,7 @@ import (
 
 	phronyhealth "github.com/phrony-platform/runtime/gen/grpc/health/v1"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/version"
 )
 
 func TestNewServer_registersServices(t *testing.T) {
@@ -45,8 +46,8 @@ func TestNewServer_registersServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetVersion: %v", err)
 	}
-	if versionResp.GetVersion() != RuntimeVersion {
-		t.Fatalf("version = %q, want %q", versionResp.GetVersion(), RuntimeVersion)
+	if versionResp.GetVersion() != version.Version {
+		t.Fatalf("version = %q, want %q", versionResp.GetVersion(), version.Version)
 	}
 	if versionResp.GetSchemaVersion() != "1" {
 		t.Fatalf("schema_version = %q, want 1", versionResp.GetSchemaVersion())

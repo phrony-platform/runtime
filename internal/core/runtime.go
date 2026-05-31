@@ -11,6 +11,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/secrets"
 	"github.com/phrony-platform/runtime/internal/store"
+	"github.com/phrony-platform/runtime/internal/version"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -35,7 +36,7 @@ func (s *runtimeServer) queries() (*store.Queries, error) {
 }
 
 func (s *runtimeServer) GetVersion(ctx context.Context, _ *runtimev1.GetVersionRequest) (*runtimev1.GetVersionResponse, error) {
-	resp := &runtimev1.GetVersionResponse{Version: RuntimeVersion}
+	resp := &runtimev1.GetVersionResponse{Version: version.Version}
 	if schemaVersion, ok := s.lookupSchemaVersion(ctx); ok {
 		resp.SchemaVersion = schemaVersion
 	}

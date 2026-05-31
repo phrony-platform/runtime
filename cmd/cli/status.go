@@ -6,6 +6,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/phrony-platform/runtime/internal/cliout"
 	"github.com/phrony-platform/runtime/internal/common"
+	"github.com/phrony-platform/runtime/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +39,7 @@ func runStatus(cmd *cobra.Command, runtimeAddr *string) error {
 
 	return cliout.WriteStatus(cmd.OutOrStdout(), cliout.StatusPanel{
 		RuntimeAddr:    common.ResolveRuntimeAddr(*runtimeAddr),
-		CLIVersion:     CLIVersion,
+		CLIVersion:     version.Version,
 		RuntimeVersion: versionResp.GetVersion(),
 		SchemaVersion:  versionResp.GetSchemaVersion(),
 		Health:         healthResp.GetStatus().String(),

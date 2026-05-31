@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrony-platform/runtime/internal/core"
+	"github.com/phrony-platform/runtime/internal/version"
 )
 
 const validAgentManifestYAML = `apiVersion: phrony.dev/v1
@@ -48,10 +48,10 @@ func TestStatusCommand_success(t *testing.T) {
 	if !strings.Contains(outStr, "ÆÆÆÆÆ") {
 		t.Fatalf("output = %q, want ASCII logo", outStr)
 	}
-	if !strings.Contains(outStr, CLIVersion) {
+	if !strings.Contains(outStr, version.Version) {
 		t.Fatalf("output = %q, want CLI version", outStr)
 	}
-	if !strings.Contains(outStr, core.RuntimeVersion) {
+	if !strings.Contains(outStr, version.Version) {
 		t.Fatalf("output = %q, want runtime version", outStr)
 	}
 	if !strings.Contains(outStr, "Schema meta") || !strings.Contains(outStr, "2") {
