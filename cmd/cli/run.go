@@ -8,14 +8,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRunCommand(runtimeAddr *string) *cobra.Command {
+func newSessionCommand(runtimeAddr *string) *cobra.Command {
 	var version, input string
 	var noTUI bool
 
 	cmd := &cobra.Command{
-		Use:   "run AGENT[@VERSION]",
-		Short: "Start a run for the active deployed agent",
-		Long:  "Start a new run for AGENT (namespace/name). Uses the active deployment; an explicit @version must match the active deployment.",
+		Use:   "session AGENT[@VERSION]",
+		Short: "Start a session for the active deployed agent",
+		Long:  "Start a new session for AGENT (namespace/name). Uses the active deployment; an explicit @version must match the active deployment.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNewSession(cmd, runtimeAddr, args[0], version, input, noTUI)

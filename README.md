@@ -90,8 +90,8 @@ In another terminal, load `.env` again, then:
 phrony status
 phrony validate path/to/agent.yaml
 phrony deploy path/to/agent.yaml
-phrony run <namespace>/<name>
-phrony run <namespace>/<name> -v 1.2.0
+phrony session <namespace>/<name>
+phrony session <namespace>/<name> -v 1.2.0
 ```
 
 Pass `--runtime-addr` to override `PHRONY_RUNTIME_ADDR`.
@@ -101,7 +101,7 @@ Pass `--runtime-addr` to override `PHRONY_RUNTIME_ADDR`.
 | Binary | Role |
 |--------|------|
 | `phrony-runtime` | Daemon: migrations, gRPC server, manifest deploy, session execution |
-| `phrony` | Operator CLI over gRPC (`status`, `run`, `deploy`) and local manifest checks (`validate`) |
+| `phrony` | Operator CLI over gRPC (`status`, `session`, `deploy`) and local manifest checks (`validate`) |
 
 The Node-based Phrony CLI (manifest authoring and packaging) is separate; this repo is the official Phrony Agent Spec runtime daemon and its Go operator tools.
 

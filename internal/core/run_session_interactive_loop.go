@@ -219,6 +219,7 @@ func sendSessionStarted(
 	ver *executor.Version,
 	history []provider.Message,
 	sessionStartedAt time.Time,
+	sessionEndedAt *time.Time,
 ) error {
 	modelProvider := ""
 	modelName := ""
@@ -239,6 +240,10 @@ func sendSessionStarted(
 	if sessionStartedAt.IsZero() {
 		sessionStartedAt = time.Now()
 	}
+	var sessionEndedAtUnixMs int64
+	if sessionEndedAt != nil && !sessionEndedAt.IsZero() {
+		sessionEndedAtUnixMs = sessionEndedAt.UnixMilli()
+	}
 	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
 			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
@@ -250,6 +255,7 @@ func sendSessionStarted(
 				MaxTokensPerRun:        maxTokensPerRun,
 				MaxWallClockSeconds:    maxWallClockSeconds,
 				SessionStartedAtUnixMs: sessionStartedAt.UnixMilli(),
+				SessionEndedAtUnixMs:   sessionEndedAtUnixMs,
 			},
 		},
 	})

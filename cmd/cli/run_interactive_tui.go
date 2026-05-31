@@ -46,6 +46,7 @@ type runTUI struct {
 	maxTokensPerRun     int32
 	maxWallClockSeconds int32
 	sessionStartedAt    time.Time
+	sessionEndedAt      time.Time
 	statusHint          string
 	turnStartedAt  time.Time
 
@@ -344,6 +345,9 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		if ms := started.GetSessionStartedAtUnixMs(); ms > 0 {
 			m.sessionStartedAt = time.UnixMilli(ms)
 		}
+		if ms := started.GetSessionEndedAtUnixMs(); ms > 0 {
+			m.sessionEndedAt = time.UnixMilli(ms)
+		}
 		if err := m.appendConversationHistory(started.GetHistory()); err != nil {
 			return err
 		}
@@ -381,6 +385,11 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 			}
 		}
 		m.setLastTurnStats(completed.GetStats(), completed.GetStopReason())
+		if ms := completed.GetSessionEndedAtUnixMs(); ms > 0 {
+			m.sessionEndedAt = time.UnixMilli(ms)
+		} else if m.sessionEndedAt.IsZero() {
+			m.sessionEndedAt = time.Now()
+		}
 		m.status = "done"
 		m.awaitingInput = false
 		m.input.Blur()
@@ -397,6 +406,13 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		return fmt.Errorf("run session: unexpected server message")
 	}
 	return nil
+}
+
+func (m *runTUI) wallClockNow() time.Time {
+	if !m.sessionEndedAt.IsZero() {
+		return m.sessionEndedAt
+	}
+	return time.Now()
 }
 
 func (m *runTUI) turnElapsed() time.Duration {

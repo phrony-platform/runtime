@@ -7,6 +7,8 @@
 package core
 
 import (
+	"encoding/json"
+
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/provider"
 )
@@ -30,6 +32,18 @@ func interactiveSessionStats(turn int, turnUsage, sessionUsage provider.TokenUsa
 		TurnUsage:    tokenUsageToProto(turnUsage),
 		SessionUsage: tokenUsageToProto(sessionUsage),
 	}
+}
+
+// interactiveStatsFromSessionOutput builds wire stats for completed-session attach replay.
+func interactiveStatsFromSessionOutput(history []provider.Message, output json.RawMessage) *runtimev1.InteractiveSessionStats {
+	turnUsage, sessionUsage := usageFromSessionOutputJSON(output)
+	turnCount := 0
+	for _, m := range history {
+		if m.Role == provider.RoleAssistant {
+			turnCount++
+		}
+	}
+	return interactiveSessionStats(turnCount, turnUsage, sessionUsage)
 }
 
 func historyToProto(messages []provider.Message) []*runtimev1.InteractiveConversationMessage {

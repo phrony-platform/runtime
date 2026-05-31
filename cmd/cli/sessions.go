@@ -10,48 +10,48 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRunsCommand(runtimeAddr *string) *cobra.Command {
+func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "runs",
-		Short: "List, inspect, attach to, and cancel agent runs",
+		Use:   "sessions",
+		Short: "List, inspect, attach to, and cancel agent sessions",
 	}
 
 	ls := &cobra.Command{
 		Use:   "ls [AGENT]",
-		Short: "List runs (optionally filter by agent)",
+		Short: "List sessions (optionally filter by agent)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var agentName string
 			if len(args) > 0 {
 				agentName = args[0]
 			}
 			status, _ := cmd.Flags().GetString("status")
-			return runRunsList(cmd, runtimeAddr, agentName, status)
+			return runSessionsList(cmd, runtimeAddr, agentName, status)
 		},
 	}
-	ls.Flags().String("status", "", "filter by run status (pending, running, awaiting_input, completed, failed, cancelled)")
+	ls.Flags().String("status", "", "filter by session status (pending, running, awaiting_input, completed, failed, cancelled)")
 
 	inspect := &cobra.Command{
-		Use:   "inspect RUN_ID",
-		Short: "Show metadata for a run",
+		Use:   "inspect SESSION_ID",
+		Short: "Show metadata for a session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRunsInspect(cmd, runtimeAddr, args[0])
+			return runSessionsInspect(cmd, runtimeAddr, args[0])
 		},
 	}
 
 	cancel := &cobra.Command{
-		Use:   "cancel RUN_ID",
-		Short: "Cancel an in-progress run",
+		Use:   "cancel SESSION_ID",
+		Short: "Cancel an in-progress session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRunsCancel(cmd, runtimeAddr, args[0])
+			return runSessionsCancel(cmd, runtimeAddr, args[0])
 		},
 	}
 
 	attach := &cobra.Command{
-		Use:   "attach RUN_ID",
-		Short: "Attach to an existing run",
-		Long:  "Connect to an existing run by id. Resume when status is awaiting_input; completed and failed runs are read-only.",
+		Use:   "attach SESSION_ID",
+		Short: "Attach to an existing session",
+		Long:  "Connect to an existing session by id. Resume when status is awaiting_input; completed and failed sessions are read-only.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			noTUI, _ := cmd.Flags().GetBool("no-tui")
@@ -67,7 +67,7 @@ func newRunsCommand(runtimeAddr *string) *cobra.Command {
 	return cmd
 }
 
-func runRunsList(cmd *cobra.Command, runtimeAddr *string, agentName, status string) error {
+func runSessionsList(cmd *cobra.Command, runtimeAddr *string, agentName, status string) error {
 	var ref *runtimev1.AgentRef
 	if agentName != "" {
 		var err error
@@ -83,7 +83,7 @@ func runRunsList(cmd *cobra.Command, runtimeAddr *string, agentName, status stri
 			Status:   status,
 		})
 		if err != nil {
-			return clierr.WrapRPC("list runs", err)
+			return clierr.WrapRPC("list sessions", err)
 		}
 
 		headers := []string{"ID", "STATUS", "UPDATED_AT", "RESUMABLE"}
@@ -104,14 +104,14 @@ func runRunsList(cmd *cobra.Command, runtimeAddr *string, agentName, status stri
 	})
 }
 
-func runRunsInspect(cmd *cobra.Command, runtimeAddr *string, runID string) error {
+func runSessionsInspect(cmd *cobra.Command, runtimeAddr *string, sessionID string) error {
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
 		resp, err := rt.ListSessions(cmd.Context(), &runtimev1.ListSessionsRequest{})
 		if err != nil {
-			return clierr.WrapRPC("list runs", err)
+			return clierr.WrapRPC("list sessions", err)
 		}
 		for _, s := range resp.GetSessions() {
-			if s.GetId() != runID {
+			if s.GetId() != sessionID {
 				continue
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "id:               %s\n", s.GetId())
@@ -121,18 +121,18 @@ func runRunsInspect(cmd *cobra.Command, runtimeAddr *string, runID string) error
 			fmt.Fprintf(cmd.OutOrStdout(), "updated_at:       %s\n", s.GetUpdatedAt())
 			return nil
 		}
-		return fmt.Errorf("run %s not found", runID)
+		return fmt.Errorf("session %s not found", sessionID)
 	})
 }
 
-func runRunsCancel(cmd *cobra.Command, runtimeAddr *string, runID string) error {
+func runSessionsCancel(cmd *cobra.Command, runtimeAddr *string, sessionID string) error {
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
 		if _, err := rt.CancelSession(cmd.Context(), &runtimev1.CancelSessionRequest{
-			SessionId: runID,
+			SessionId: sessionID,
 		}); err != nil {
-			return clierr.WrapRPC("cancel run", err)
+			return clierr.WrapRPC("cancel session", err)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "cancelled %s\n", runID)
+		fmt.Fprintf(cmd.OutOrStdout(), "cancelled %s\n", sessionID)
 		return nil
 	})
 }

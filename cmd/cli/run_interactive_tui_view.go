@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -194,7 +193,7 @@ func (m *runTUI) statusBarView() string {
 		return ""
 	}
 	segments := []string{m.statusIndicator()}
-	if wc := formatWallClockLimit(m.sessionStartedAt, m.maxWallClockSeconds, time.Now()); wc != "" {
+	if wc := formatWallClockLimit(m.sessionStartedAt, m.maxWallClockSeconds, m.wallClockNow()); wc != "" {
 		segments = append(segments, tuiStatusMutedStyle.Render(wc))
 	}
 	if m.statusHint != "" {

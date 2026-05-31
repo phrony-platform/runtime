@@ -107,6 +107,8 @@ message RunSessionInteractiveSessionStarted {
   int32 max_wall_clock_seconds = 7;
   // Wall-clock anchor for the run (session created_at when attaching, stream start for new sessions).
   int64 session_started_at_unix_ms = 8;
+  // When set, the run has ended; clients should freeze wall-clock display at this time (session updated_at on attach).
+  int64 session_ended_at_unix_ms = 9;
 }
 
 message RunSessionInteractiveTextDelta {
@@ -139,6 +141,8 @@ message RunSessionInteractiveCompleted {
   // JSON object with the final session output for this run.
   bytes output = 2;
   InteractiveSessionStats stats = 3;
+  // Wall-clock time when the run ended (for freezing elapsed display in clients).
+  int64 session_ended_at_unix_ms = 4;
 }
 
 message RunSessionInteractiveFailed {

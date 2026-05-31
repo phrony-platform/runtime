@@ -118,6 +118,7 @@ func (s *runtimeServer) completeInteractiveSession(
 	turn int,
 	turnUsage, sessionUsage provider.TokenUsage,
 ) error {
+	endedAt := time.Now()
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 		ID:     sessionID,
 		Status: model.SessionStatusCompleted,
@@ -128,9 +129,10 @@ func (s *runtimeServer) completeInteractiveSession(
 	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
 			Completed: &runtimev1.RunSessionInteractiveCompleted{
-				StopReason: stopReason,
-				Output:     output,
-				Stats:      interactiveSessionStats(turn, turnUsage, sessionUsage),
+				StopReason:           stopReason,
+				Output:               output,
+				Stats:                interactiveSessionStats(turn, turnUsage, sessionUsage),
+				SessionEndedAtUnixMs: endedAt.UnixMilli(),
 			},
 		},
 	})

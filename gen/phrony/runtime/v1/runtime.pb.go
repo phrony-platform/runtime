@@ -696,8 +696,10 @@ type RunSessionInteractiveSessionStarted struct {
 	MaxWallClockSeconds int32 `protobuf:"varint,7,opt,name=max_wall_clock_seconds,json=maxWallClockSeconds,proto3" json:"max_wall_clock_seconds,omitempty"`
 	// Wall-clock anchor for the run (session created_at when attaching, stream start for new sessions).
 	SessionStartedAtUnixMs int64 `protobuf:"varint,8,opt,name=session_started_at_unix_ms,json=sessionStartedAtUnixMs,proto3" json:"session_started_at_unix_ms,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// When set, the run has ended; clients should freeze wall-clock display at this time (session updated_at on attach).
+	SessionEndedAtUnixMs int64 `protobuf:"varint,9,opt,name=session_ended_at_unix_ms,json=sessionEndedAtUnixMs,proto3" json:"session_ended_at_unix_ms,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *RunSessionInteractiveSessionStarted) Reset() {
@@ -782,6 +784,13 @@ func (x *RunSessionInteractiveSessionStarted) GetMaxWallClockSeconds() int32 {
 func (x *RunSessionInteractiveSessionStarted) GetSessionStartedAtUnixMs() int64 {
 	if x != nil {
 		return x.SessionStartedAtUnixMs
+	}
+	return 0
+}
+
+func (x *RunSessionInteractiveSessionStarted) GetSessionEndedAtUnixMs() int64 {
+	if x != nil {
+		return x.SessionEndedAtUnixMs
 	}
 	return 0
 }
@@ -1024,10 +1033,12 @@ type RunSessionInteractiveCompleted struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	StopReason string                 `protobuf:"bytes,1,opt,name=stop_reason,json=stopReason,proto3" json:"stop_reason,omitempty"`
 	// JSON object with the final session output for this run.
-	Output        []byte                   `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
-	Stats         *InteractiveSessionStats `protobuf:"bytes,3,opt,name=stats,proto3" json:"stats,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Output []byte                   `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+	Stats  *InteractiveSessionStats `protobuf:"bytes,3,opt,name=stats,proto3" json:"stats,omitempty"`
+	// Wall-clock time when the run ended (for freezing elapsed display in clients).
+	SessionEndedAtUnixMs int64 `protobuf:"varint,4,opt,name=session_ended_at_unix_ms,json=sessionEndedAtUnixMs,proto3" json:"session_ended_at_unix_ms,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *RunSessionInteractiveCompleted) Reset() {
@@ -1079,6 +1090,13 @@ func (x *RunSessionInteractiveCompleted) GetStats() *InteractiveSessionStats {
 		return x.Stats
 	}
 	return nil
+}
+
+func (x *RunSessionInteractiveCompleted) GetSessionEndedAtUnixMs() int64 {
+	if x != nil {
+		return x.SessionEndedAtUnixMs
+	}
+	return 0
 }
 
 type RunSessionInteractiveFailed struct {
@@ -2798,7 +2816,7 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"stopReason\x12<\n" +
 	"\n" +
 	"turn_usage\x18\x04 \x01(\v2\x1d.phrony.runtime.v1.TokenUsageR\tturnUsage\x12(\n" +
-	"\x10turn_duration_ms\x18\x05 \x01(\x03R\x0eturnDurationMs\"\x9f\x03\n" +
+	"\x10turn_duration_ms\x18\x05 \x01(\x03R\x0eturnDurationMs\"\xd7\x03\n" +
 	"#RunSessionInteractiveSessionStarted\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12(\n" +
@@ -2809,7 +2827,8 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\ahistory\x18\x05 \x03(\v21.phrony.runtime.v1.InteractiveConversationMessageR\ahistory\x12+\n" +
 	"\x12max_tokens_per_run\x18\x06 \x01(\x05R\x0fmaxTokensPerRun\x123\n" +
 	"\x16max_wall_clock_seconds\x18\a \x01(\x05R\x13maxWallClockSeconds\x12:\n" +
-	"\x1asession_started_at_unix_ms\x18\b \x01(\x03R\x16sessionStartedAtUnixMs\"6\n" +
+	"\x1asession_started_at_unix_ms\x18\b \x01(\x03R\x16sessionStartedAtUnixMs\x126\n" +
+	"\x18session_ended_at_unix_ms\x18\t \x01(\x03R\x14sessionEndedAtUnixMs\"6\n" +
 	"\x1eRunSessionInteractiveTextDelta\x12\x14\n" +
 	"\x05delta\x18\x01 \x01(\tR\x05delta\"\x95\x01\n" +
 	"\n" +
@@ -2827,12 +2846,13 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\vstop_reason\x18\x01 \x01(\tR\n" +
 	"stopReason\x12@\n" +
 	"\x05stats\x18\x02 \x01(\v2*.phrony.runtime.v1.InteractiveSessionStatsR\x05stats\x120\n" +
-	"\x14input_blocked_reason\x18\x03 \x01(\tR\x12inputBlockedReason\"\x9b\x01\n" +
+	"\x14input_blocked_reason\x18\x03 \x01(\tR\x12inputBlockedReason\"\xd3\x01\n" +
 	"\x1eRunSessionInteractiveCompleted\x12\x1f\n" +
 	"\vstop_reason\x18\x01 \x01(\tR\n" +
 	"stopReason\x12\x16\n" +
 	"\x06output\x18\x02 \x01(\fR\x06output\x12@\n" +
-	"\x05stats\x18\x03 \x01(\v2*.phrony.runtime.v1.InteractiveSessionStatsR\x05stats\"7\n" +
+	"\x05stats\x18\x03 \x01(\v2*.phrony.runtime.v1.InteractiveSessionStatsR\x05stats\x126\n" +
+	"\x18session_ended_at_unix_ms\x18\x04 \x01(\x03R\x14sessionEndedAtUnixMs\"7\n" +
 	"\x1bRunSessionInteractiveFailed\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\"\xe9\x01\n" +
 	"\x0ePublishRequest\x12\x1a\n" +

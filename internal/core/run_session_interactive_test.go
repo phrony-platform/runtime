@@ -313,7 +313,7 @@ func (m *mockInteractiveStream) SetTrailer(metadata.MD)       {}
 func TestRuntime_RunSessionInteractive_attachCompleted(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
-	output := []byte(`{"message":"done","stop_reason":"end_turn"}`)
+	output := []byte(`{"message":"done","stop_reason":"end_turn","turn_usage":{"input_tokens":10,"output_tokens":5},"session_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
 		WillReturnRows(sqlmock.NewRows([]string{
@@ -350,6 +350,13 @@ func TestRuntime_RunSessionInteractive_attachCompleted(t *testing.T) {
 			completed = true
 			if string(msg.GetCompleted().GetOutput()) != string(output) {
 				t.Fatalf("output = %s", msg.GetCompleted().GetOutput())
+			}
+			stats := msg.GetCompleted().GetStats()
+			if stats == nil || stats.GetSessionUsage() == nil {
+				t.Fatalf("completed stats = %+v, want session_usage", stats)
+			}
+			if stats.GetSessionUsage().GetInputTokens() != 10 || stats.GetSessionUsage().GetOutputTokens() != 5 {
+				t.Fatalf("session_usage = %+v", stats.GetSessionUsage())
 			}
 		}
 	}

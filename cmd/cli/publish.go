@@ -14,7 +14,7 @@ func newPublishCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "publish MANIFEST",
 		Short: "Publish an agent manifest to the runtime",
-		Long:  "Validate and publish an immutable agent version. Use deploy to activate a published version for runs.",
+		Long:  "Validate and publish an immutable agent version. Use deploy to activate a published version for sessions.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPublish(cmd, runtimeAddr, args[0])

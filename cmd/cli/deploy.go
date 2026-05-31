@@ -13,7 +13,7 @@ func newDeployCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "deploy AGENT@VERSION",
 		Short: "Activate a published agent version",
-		Long:  "Record a deployment so the given version becomes the active version for runs in this runtime.",
+		Long:  "Record a deployment so the given version becomes the active version for sessions in this runtime.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDeployActivate(cmd, runtimeAddr, args[0])

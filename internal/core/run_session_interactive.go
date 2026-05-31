@@ -92,7 +92,7 @@ func (s *runtimeServer) runSessionInteractiveNew(
 	}
 
 	sessionStartedAt := time.Now()
-	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver, nil, sessionStartedAt); err != nil {
+	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver, nil, sessionStartedAt, nil); err != nil {
 		return err
 	}
 
@@ -143,7 +143,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return status.Errorf(codes.Internal, "decode session history: %v", err)
 	}
 	history = enrichHistoryFromSessionOutput(history, session.Output)
-	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history, session.CreatedAt); err != nil {
+	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, sessionEndedAtForAttach(&session)); err != nil {
 		return err
 	}
 
@@ -172,8 +172,10 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
 				Completed: &runtimev1.RunSessionInteractiveCompleted{
-					StopReason: stopReasonFromSessionOutput(output),
-					Output:     output,
+					StopReason:           stopReasonFromSessionOutput(output),
+					Output:               output,
+					Stats:                interactiveStatsFromSessionOutput(history, output),
+					SessionEndedAtUnixMs: session.UpdatedAt.UnixMilli(),
 				},
 			},
 		}); err != nil {
@@ -242,4 +244,19 @@ func (s *runtimeServer) runSessionInteractiveAttachBlocked(
 		return err
 	}
 	return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, nil)
+}
+
+// sessionEndedAtForAttach returns updated_at for terminal attach replays so clients freeze wall-clock display.
+func sessionEndedAtForAttach(session *store.Session) *time.Time {
+	switch session.Status {
+	case model.SessionStatusCompleted:
+		return &session.UpdatedAt
+	case model.SessionStatusFailed:
+		if session.Error != nil && executor.IsLimitErrorMessage(*session.Error) {
+			return nil
+		}
+		return &session.UpdatedAt
+	default:
+		return nil
+	}
 }

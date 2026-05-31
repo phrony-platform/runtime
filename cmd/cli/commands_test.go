@@ -66,7 +66,7 @@ func TestRunCommand_missingAgentArg(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"run"})
+	root.SetArgs([]string{"session"})
 
 	err := root.Execute()
 	if err == nil {
@@ -85,7 +85,7 @@ func TestSessionsAttachCommand_completedReadOnly(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"runs", "attach", "sess-completed", "--runtime-addr", addr})
+	root.SetArgs([]string{"sessions", "attach", "sess-completed", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -103,7 +103,7 @@ func TestRunsAttachCommand_missingSessionArg(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"runs", "attach"})
+	root.SetArgs([]string{"sessions", "attach"})
 
 	err := root.Execute()
 	if err == nil {
@@ -121,7 +121,7 @@ func TestRunsLsCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"runs", "ls", "demo/echo-agent", "--runtime-addr", addr})
+	root.SetArgs([]string{"sessions", "ls", "demo/echo-agent", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -142,7 +142,7 @@ func TestSessionsAttachCommand_failedReadOnly(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"runs", "attach", "sess-failed", "--runtime-addr", addr})
+	root.SetArgs([]string{"sessions", "attach", "sess-failed", "--runtime-addr", addr})
 
 	err := root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "session failed") {
@@ -162,7 +162,7 @@ func TestRunsLsCommand_statusFilter(t *testing.T) {
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{
-		"runs", "ls", "demo/echo-agent",
+		"sessions", "ls", "demo/echo-agent",
 		"--status", "awaiting_input",
 		"--runtime-addr", addr,
 	})
@@ -186,7 +186,7 @@ func TestRunsLsCommand_allRuns(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"runs", "ls", "--runtime-addr", addr})
+	root.SetArgs([]string{"sessions", "ls", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -204,7 +204,7 @@ func TestRunCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"run", "demo/echo-agent", "--runtime-addr", addr})
+	root.SetArgs([]string{"session", "demo/echo-agent", "--runtime-addr", addr})
 
 	err := root.Execute()
 	if err == nil {
@@ -222,7 +222,7 @@ func TestRunCommand_withVersionFlag(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"run", "demo/echo-agent", "-v", "1.2.0", "--runtime-addr", addr})
+	root.SetArgs([]string{"session", "demo/echo-agent", "-v", "1.2.0", "--runtime-addr", addr})
 
 	err := root.Execute()
 	if err == nil {
@@ -240,7 +240,7 @@ func TestRunCommand_withInput(t *testing.T) {
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{
-		"run", "demo/echo-agent",
+		"session", "demo/echo-agent",
 		"--input", `{"message":"hello"}`,
 		"--runtime-addr", addr,
 	})
@@ -255,7 +255,7 @@ func TestRunCommand_invalidAgentName(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"run", "echo-agent"})
+	root.SetArgs([]string{"session", "echo-agent"})
 
 	err := root.Execute()
 	if err == nil {
@@ -270,7 +270,7 @@ func TestRunCommand_invalidInput(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"run", "demo/echo-agent", "--input", "not-json"})
+	root.SetArgs([]string{"session", "demo/echo-agent", "--input", "not-json"})
 
 	err := root.Execute()
 	if err == nil {
@@ -741,7 +741,7 @@ func TestRunsCancelCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"runs", "cancel", "run_abc", "--runtime-addr", addr})
+	root.SetArgs([]string{"sessions", "cancel", "run_abc", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)

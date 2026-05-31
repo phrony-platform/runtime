@@ -60,6 +60,27 @@ func TestRunTUI_statusBarView_wallClock(t *testing.T) {
 	}
 }
 
+func TestRunTUI_statusBarView_wallClockFrozenWhenEnded(t *testing.T) {
+	start := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	ended := start.Add(18 * time.Second)
+
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 100
+	m.maxWallClockSeconds = 60
+	m.sessionStartedAt = start
+	m.sessionEndedAt = ended
+	m.status = "done"
+	m.readOnly = true
+
+	bar := m.statusBarView()
+	if !strings.Contains(bar, "18s / 60s") {
+		t.Fatalf("statusBar = %q, want frozen 18s elapsed", bar)
+	}
+	if strings.Contains(bar, "30s / 60s") {
+		t.Fatalf("statusBar = %q, wall clock should not use current time", bar)
+	}
+}
+
 func TestRunTUI_handleServerMsg_turnWithStats(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
 	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
@@ -197,10 +218,15 @@ func TestRunTUI_attachCompletedReadOnly(t *testing.T) {
 	m.height = 24
 	m.layout()
 
+	endedAt := time.Date(2026, 3, 1, 12, 0, 18, 0, time.UTC)
+	startedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
 			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
-				SessionId: "sess-done",
+				SessionId:              "sess-done",
+				SessionStartedAtUnixMs: startedAt.UnixMilli(),
+				SessionEndedAtUnixMs:   endedAt.UnixMilli(),
+				MaxWallClockSeconds:    60,
 				History: []*runtimev1.InteractiveConversationMessage{
 					{Role: "user", Content: "hello"},
 					{Role: "assistant", Content: "done"},
@@ -212,10 +238,28 @@ func TestRunTUI_attachCompletedReadOnly(t *testing.T) {
 	}
 	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
-			Completed: &runtimev1.RunSessionInteractiveCompleted{StopReason: "end_turn"},
+			Completed: &runtimev1.RunSessionInteractiveCompleted{
+				StopReason: "end_turn",
+				Stats: &runtimev1.InteractiveSessionStats{
+					Turn: 1,
+					SessionUsage: &runtimev1.TokenUsage{
+						InputTokens: 10, OutputTokens: 5, TotalTokens: 15,
+					},
+				},
+				SessionEndedAtUnixMs: endedAt.UnixMilli(),
+			},
 		},
 	}); err != nil {
 		t.Fatalf("completed: %v", err)
+	}
+	if !m.sessionEndedAt.Equal(endedAt) {
+		t.Fatalf("sessionEndedAt = %v, want %v", m.sessionEndedAt, endedAt)
+	}
+	if !strings.Contains(m.statusBarView(), "18s / 60s") {
+		t.Fatalf("statusBar = %q, want frozen wall clock from session end", m.statusBarView())
+	}
+	if !strings.Contains(m.statusBarView(), "session") || !strings.Contains(m.statusBarView(), "10") {
+		t.Fatalf("statusBar = %q, want session token usage", m.statusBarView())
 	}
 	if !m.readOnly {
 		t.Fatal("expected readOnly attach replay")
