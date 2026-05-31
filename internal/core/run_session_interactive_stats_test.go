@@ -23,10 +23,10 @@ func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"hi"}`), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil).
+		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusCompleted, sqlmock.AnyArg(), nil).
+		WithArgs(sqlmock.AnyArg(), model.SessionStatusCompleted, sqlmock.AnyArg(), nil, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
 
 	agent := &manifest.Agent{

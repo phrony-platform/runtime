@@ -220,7 +220,7 @@ func TestRuntime_completeInteractiveSession(t *testing.T) {
 	now := time.Now()
 	output := json.RawMessage(`{"message":"ok","stop_reason":"end_turn"}`)
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusCompleted, output, nil).
+		WithArgs("sess-1", model.SessionStatusCompleted, output, nil, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	stream := &mockInteractiveStream{ctx: context.Background()}
@@ -242,7 +242,7 @@ func TestRuntime_failInteractiveSession(t *testing.T) {
 	now := time.Now()
 	errMsg := "load failed"
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusFailed, nil, errMsg).
+		WithArgs("sess-1", model.SessionStatusFailed, nil, errMsg, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	stream := &mockInteractiveStream{ctx: context.Background()}

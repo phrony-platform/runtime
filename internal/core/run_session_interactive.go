@@ -103,13 +103,6 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 			return status.Errorf(codes.Internal, "encode session output: %v", err)
 		}
 
-		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-			ID:     sessionID,
-			Status: model.SessionStatusAwaitingInput,
-			Output: outputJSON,
-		}); err != nil {
-			return status.Errorf(codes.Internal, "update session: %v", err)
-		}
 		userText, err := userTextFromSessionInput(turnInput)
 		if err != nil {
 			return s.failInteractiveSession(ctx, q, stream, sessionID, err)
@@ -117,6 +110,19 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		state.history = appendTurnHistory(state.history, userText, assistantText)
 		state.turnCount++
 		state.sessionUsage.Add(turnUsage)
+
+		historyJSON, err := encodeHistory(state.history)
+		if err != nil {
+			return status.Errorf(codes.Internal, "encode session history: %v", err)
+		}
+		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+			ID:      sessionID,
+			Status:  model.SessionStatusAwaitingInput,
+			Output:  outputJSON,
+			History: historyJSON,
+		}); err != nil {
+			return status.Errorf(codes.Internal, "update session: %v", err)
+		}
 
 		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
