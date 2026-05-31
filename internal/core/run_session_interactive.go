@@ -58,8 +58,7 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		return status.Errorf(codes.Internal, "persist session: %v", err)
 	}
 
-	ex := &executor.Executor{Enc: s.secretsEnc, Q: q}
-	ver, err := ex.LoadVersion(ctx, agentVersionID)
+	ver, err := s.loadSessionVersion(ctx, q, agentVersionID)
 	if err != nil {
 		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 	}
@@ -298,4 +297,12 @@ func userTextFromSessionInput(input json.RawMessage) (string, error) {
 		return strings.TrimSpace(s), nil
 	}
 	return strings.TrimSpace(string(input)), nil
+}
+
+func (s *runtimeServer) loadSessionVersion(ctx context.Context, q *store.Queries, agentVersionID string) (*executor.Version, error) {
+	if s.loadSessionVersionFn != nil {
+		return s.loadSessionVersionFn(ctx, q, agentVersionID)
+	}
+	ex := &executor.Executor{Enc: s.secretsEnc, Q: q}
+	return ex.LoadVersion(ctx, agentVersionID)
 }

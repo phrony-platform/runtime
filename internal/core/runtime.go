@@ -7,6 +7,7 @@ import (
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/jmoiron/sqlx"
+	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/secrets"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
@@ -17,6 +18,8 @@ type runtimeServer struct {
 	runtimev1.UnimplementedRuntimeServer
 	db         *sqlx.DB
 	secretsEnc *secrets.Encryptor
+	// loadSessionVersionFn overrides version loading for interactive sessions (tests only).
+	loadSessionVersionFn func(context.Context, *store.Queries, string) (*executor.Version, error)
 }
 
 // queries returns a store handle backed by the configured database, or a

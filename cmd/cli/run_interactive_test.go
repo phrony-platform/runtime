@@ -185,6 +185,56 @@ func TestRunInteractiveSession_awaitingInputEOFCompletes(t *testing.T) {
 	}
 }
 
+func TestRunInteractiveSession_plainModeShowsTokenStats(t *testing.T) {
+	t.Setenv("PHRONY_NO_TUI", "1")
+	stream := &mockInteractiveClientStream{
+		recv: []*runtimev1.RunSessionInteractiveServerMsg{
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+				SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{SessionId: "sess-1"},
+			}},
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
+				AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
+					StopReason: "end_turn",
+					Stats: &runtimev1.InteractiveSessionStats{
+						Turn: 1,
+						TurnUsage: &runtimev1.TokenUsage{
+							InputTokens:  12,
+							OutputTokens: 4,
+							TotalTokens:  16,
+						},
+						SessionUsage: &runtimev1.TokenUsage{
+							InputTokens:  12,
+							OutputTokens: 4,
+							TotalTokens:  16,
+						},
+					},
+				},
+			}},
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
+				Completed: &runtimev1.RunSessionInteractiveCompleted{},
+			}},
+		},
+	}
+
+	var stdout bytes.Buffer
+	if err := runInteractiveSession(
+		context.Background(),
+		stream,
+		&runtimev1.RunSessionInteractiveStart{},
+		strings.NewReader(""),
+		&stdout,
+		&bytes.Buffer{},
+	); err != nil {
+		t.Fatalf("runInteractiveSession: %v", err)
+	}
+	got := stdout.String()
+	for _, want := range []string{"turn 1", "turn tokens", "12 in / 4 out"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestRunInteractiveSession_failed(t *testing.T) {
 	stream := &mockInteractiveClientStream{
 		recv: []*runtimev1.RunSessionInteractiveServerMsg{
