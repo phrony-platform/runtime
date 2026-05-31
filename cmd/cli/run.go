@@ -13,25 +13,28 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 	var noTUI bool
 
 	cmd := &cobra.Command{
-		Use:   "run AGENT",
-		Short: "Start a session for a deployed agent",
-		Long:  "Start a new session for AGENT (namespace/name).",
+		Use:   "run AGENT[@VERSION]",
+		Short: "Start a run for the active deployed agent",
+		Long:  "Start a new run for AGENT (namespace/name). Uses the active deployment; an explicit @version must match the active deployment.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNewSession(cmd, runtimeAddr, args[0], version, input, noTUI)
 		},
 	}
-	cmd.Flags().StringVarP(&version, "version", "v", "", "deployed agent version (semver from manifest metadata.version)")
+	cmd.Flags().StringVarP(&version, "version", "v", "", "active agent version (alternative to AGENT@version)")
 	cmd.Flags().StringVar(&input, "input", "", "session input as a JSON object")
 	cmd.Flags().BoolVar(&noTUI, "no-tui", false, "disable interactive terminal UI (use plain stream output)")
 
 	return cmd
 }
 
-func runNewSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, input string, noTUI bool) error {
-	ref, err := agentRef(agentName, version)
+func runNewSession(cmd *cobra.Command, runtimeAddr *string, agentRefArg, version, input string, noTUI bool) error {
+	ref, err := parseAgentRef(agentRefArg)
 	if err != nil {
 		return err
+	}
+	if ref.GetVersion() == "" && version != "" {
+		ref.Version = version
 	}
 
 	var inputBytes []byte

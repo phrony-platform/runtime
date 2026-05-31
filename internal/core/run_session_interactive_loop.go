@@ -127,6 +127,17 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 		}
 
 		select {
+		case <-loopCtx.Done():
+			if errors.Is(loopCtx.Err(), context.Canceled) {
+				wasCancelled, cerr := sessionWasCancelled(ctx, q, sessionID)
+				if cerr != nil {
+					return cerr
+				}
+				if wasCancelled {
+					return nil
+				}
+			}
+			return loopCtx.Err()
 		case <-wallC:
 			wallC = nil
 			if err := state.notifyWallClockLimit(stream, lastStopReason, lastTurnUsage); err != nil {

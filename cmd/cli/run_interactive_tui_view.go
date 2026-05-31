@@ -254,6 +254,10 @@ func (m *runTUI) footerView() string {
 			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Enter send  ·  Ctrl+D end  ·  Ctrl+C quit",
 		)
 		return m.inputPanelView() + "\n" + help
+	case m.readOnly:
+		return tuiHelpStyle.Render(
+			"Session finished — scroll to review  ·  PgUp/PgDn  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+C quit",
+		)
 	case m.status == "done":
 		return tuiHelpStyle.Render("Session finished — press Ctrl+C to exit")
 	default:

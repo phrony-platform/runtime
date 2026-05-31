@@ -65,9 +65,7 @@ func TestRuntime_RunSessionInteractive_noDatabase(t *testing.T) {
 
 func TestRuntime_RunSessionInteractive_sessionStartedThenFailedOnLoad(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte("{}"), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
@@ -488,7 +486,7 @@ func TestRuntime_RunSessionInteractive_attachAwaitingInputContinues(t *testing.T
 
 func TestRuntime_RunSessionInteractive_attachAlreadyActive(t *testing.T) {
 	srv := &runtimeServer{activeSessions: &sync.Map{}}
-	_ = srv.registerActiveSession("sess-1")
+	_ = srv.registerActiveSession("sess-1", func() {})
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -698,9 +696,7 @@ func TestRuntime_RunSessionInteractive_attachRunningRejected(t *testing.T) {
 
 func TestRuntime_RunSessionInteractive_invalidInput(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),

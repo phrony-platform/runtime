@@ -59,6 +59,7 @@ func (s *runtimeServer) ListAgentVersions(ctx context.Context, req *runtimev1.Li
 			ContentHash:  row.ContentHash,
 			DeployedAt:   formatTime(row.DeployedAt),
 			DeprecatedAt: formatOptionalTime(row.DeprecatedAt),
+			RetiredAt:    formatOptionalTime(row.RetiredAt),
 		})
 	}
 	return &runtimev1.ListAgentVersionsResponse{Versions: out}, nil

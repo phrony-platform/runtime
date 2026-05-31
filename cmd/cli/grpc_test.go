@@ -148,9 +148,11 @@ func startTestRuntimeAddrForRun(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery(`FROM agent_versions av`).
+	mock.ExpectQuery(`FROM deployments d`).
 		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow("version-uuid", "1.2.0", nil, nil, nil))
 	expectInteractiveRunSessionMocks(mock, "version-uuid", sqlmock.AnyArg())
 
 	db := sqlx.NewDb(sqlDB, "pgx")
@@ -180,9 +182,11 @@ func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent", "1.2.0").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "archived_at"}).AddRow("version-uuid", nil, nil))
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow("version-uuid", "1.2.0", nil, nil, nil))
 	expectInteractiveRunSessionMocks(mock, "version-uuid", sqlmock.AnyArg())
 
 	db := sqlx.NewDb(sqlDB, "pgx")
@@ -247,8 +251,8 @@ func startTestRuntimeAddrForVersionsList(t *testing.T) string {
 			AddRow(agentID, "demo", "echo-agent", nil))
 	mock.ExpectQuery(`FROM agent_versions`).
 		WithArgs(agentID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "version", "content_hash", "deployed_at", "deprecated_at"}).
-			AddRow("ver-1", "1.2.0", "abc", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "version", "content_hash", "deployed_at", "deprecated_at", "retired_at"}).
+			AddRow("ver-1", "1.2.0", "abc", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil, nil))
 
 	return startRuntimeOnDB(t, sqlDB)
 }
@@ -300,6 +304,166 @@ func startTestRuntimeAddrForArchive(t *testing.T) string {
 	return startRuntimeOnDB(t, sqlDB)
 }
 
+func startTestRuntimeAddrForActive(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	deployed := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"version", "created_at", "actor"}).
+			AddRow("1.2.0", deployed, "alice"))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForHistory(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	agentID := "agent-uuid"
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow(agentID, "demo", "echo-agent", nil))
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs(agentID).
+		WillReturnRows(sqlmock.NewRows([]string{"version", "action", "actor", "created_at"}).
+			AddRow("1.2.0", "deploy", "alice", now).
+			AddRow("1.0.0", "rollback", "bob", now.Add(-time.Hour)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForRollback(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	agentID := "agent-uuid"
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow(agentID, "demo", "echo-agent", nil))
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow("ver-2", "1.2.0", nil, nil, nil))
+	mock.ExpectQuery(`WITH active AS`).
+		WithArgs(agentID).
+		WillReturnRows(sqlmock.NewRows([]string{"agent_version_id"}).AddRow("ver-1"))
+	mock.ExpectQuery(`SELECT version FROM agent_versions`).
+		WithArgs("ver-1").
+		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow("1.0.0"))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO deployments`).
+		WithArgs(sqlmock.AnyArg(), agentID, "ver-1", "rollback", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("dep-3"))
+	mock.ExpectCommit()
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForRetire(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	agentID := "agent-uuid"
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow(agentID, "demo", "echo-agent", nil))
+	mock.ExpectQuery(`UPDATE agent_versions`).
+		WithArgs(agentID, "1.0.0").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ver-old"))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForRunsCancel(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("run_abc").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("run_abc"))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForDeployActivate(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	agentID := "agent-uuid"
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow(agentID, "demo", "echo-agent", nil))
+	mock.ExpectQuery(`SELECT av.id, av.deprecated_at`).
+		WithArgs("demo", "echo-agent", "1.2.0").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "retired_at", "archived_at"}).
+			AddRow("ver-1", nil, nil, nil))
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs("demo", "echo-agent").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO deployments`).
+		WithArgs(sqlmock.AnyArg(), agentID, "ver-1", "deploy", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("dep-1"))
+	mock.ExpectCommit()
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForRunsListAll(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("", "").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
+			AddRow("sess-await", "version-uuid", "awaiting_input", time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 13, 0, 0, 0, time.UTC)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
 func startTestRuntimeAddrForSessionsList(t *testing.T) string {
 	t.Helper()
 
@@ -309,9 +473,11 @@ func startTestRuntimeAddrForSessionsList(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery(`FROM agent_versions av`).
+	mock.ExpectQuery(`FROM deployments d`).
 		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow("version-uuid", "1.2.0", nil, nil, nil))
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("version-uuid", "").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
@@ -342,9 +508,11 @@ func startTestRuntimeAddrForSessionsListFiltered(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery(`FROM agent_versions av`).
+	mock.ExpectQuery(`FROM deployments d`).
 		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow("version-uuid", "1.2.0", nil, nil, nil))
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("version-uuid", "awaiting_input").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).

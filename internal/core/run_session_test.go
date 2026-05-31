@@ -5,18 +5,16 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"google.golang.org/grpc/codes"
 )
 
 func TestRuntime_RunSession_latestVersion(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte("{}"), runSessionStatusPending).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
@@ -28,8 +26,8 @@ func TestRuntime_RunSession_latestVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunSession: %v", err)
 	}
-	if _, err := uuid.Parse(resp.GetSessionId()); err != nil {
-		t.Fatalf("session_id = %q, want UUID: %v", resp.GetSessionId(), err)
+	if !strings.HasPrefix(resp.GetSessionId(), "run_") {
+		t.Fatalf("session_id = %q, want run_ prefix", resp.GetSessionId())
 	}
 	if resp.GetAgentVersionId() != "version-uuid" {
 		t.Fatalf("agent_version_id = %q, want version-uuid", resp.GetAgentVersionId())
@@ -41,9 +39,7 @@ func TestRuntime_RunSession_latestVersion(t *testing.T) {
 
 func TestRuntime_RunSession_specificVersion(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent", "1.2.0").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "archived_at"}).AddRow("version-uuid", nil, nil))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"q":"hi"}`), runSessionStatusPending).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
@@ -81,7 +77,7 @@ func TestRuntime_RunSession_noDatabase(t *testing.T) {
 
 func TestRuntime_RunSession_agentNotFound(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
+	mock.ExpectQuery(`FROM deployments d`).
 		WithArgs("demo", "missing").
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`FROM agents`).
@@ -95,17 +91,56 @@ func TestRuntime_RunSession_agentNotFound(t *testing.T) {
 	assertGRPCCode(t, err, codes.NotFound)
 }
 
-func TestRuntime_RunSession_versionNotFound(t *testing.T) {
+func TestRuntime_RunSession_versionNotActive(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent", "9.9.9").
-		WillReturnError(sql.ErrNoRows)
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 
 	srv := &runtimeServer{db: db}
 	_, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
 		AgentRef: &runtimev1.AgentRef{Namespace: "demo", Name: "echo-agent", Version: "9.9.9"},
 	})
-	assertGRPCCode(t, err, codes.NotFound)
+	assertGRPCCode(t, err, codes.FailedPrecondition)
+	if !strings.Contains(statusMessage(t, err), "not the active deployment") {
+		t.Fatalf("error = %v, want non-active version message", err)
+	}
+}
+
+func TestRuntime_RunSession_noActiveDeployment(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs("demo", "echo-agent").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`FROM agents`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "archived_at"}).
+			AddRow("agent-1", "demo", "echo-agent", nil))
+
+	srv := &runtimeServer{db: db}
+	_, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
+		AgentRef: &runtimev1.AgentRef{Namespace: "demo", Name: "echo-agent"},
+	})
+	assertGRPCCode(t, err, codes.FailedPrecondition)
+	if !strings.Contains(statusMessage(t, err), "no active deployment") {
+		t.Fatalf("error = %v, want no active deployment", err)
+	}
+}
+
+func TestRuntime_RunSession_retiredActiveVersion(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow("version-uuid", "1.0.0", nil, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), nil))
+
+	srv := &runtimeServer{db: db}
+	_, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
+		AgentRef: &runtimev1.AgentRef{Namespace: "demo", Name: "echo-agent"},
+	})
+	assertGRPCCode(t, err, codes.FailedPrecondition)
+	if !strings.Contains(statusMessage(t, err), "retired") {
+		t.Fatalf("error = %v, want retired", err)
+	}
 }
 
 func TestRuntime_RunSession_invalidInput(t *testing.T) {

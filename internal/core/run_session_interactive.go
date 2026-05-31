@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
@@ -69,7 +68,7 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		return err
 	}
 
-	sessionID := uuid.NewString()
+	sessionID := newRunSessionID()
 	if _, err := q.InsertSession(ctx, store.InsertSessionParams{
 		ID:             sessionID,
 		AgentVersionID: agentVersionID,
@@ -79,14 +78,17 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		return status.Errorf(codes.Internal, "persist session: %v", err)
 	}
 
-	if err := s.registerActiveSession(sessionID); err != nil {
+	sessionCtx, sessionCancel := context.WithCancel(ctx)
+	defer sessionCancel()
+
+	if err := s.registerActiveSession(sessionID, sessionCancel); err != nil {
 		return err
 	}
 	defer s.unregisterActiveSession(sessionID)
 
-	ver, err := s.loadSessionVersion(ctx, q, agentVersionID)
+	ver, err := s.loadSessionVersion(sessionCtx, q, agentVersionID)
 	if err != nil {
-		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+		return s.failInteractiveSession(sessionCtx, q, stream, sessionID, err)
 	}
 
 	sessionStartedAt := time.Now()
@@ -99,7 +101,7 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		version:          ver,
 		sessionStartedAt: sessionStartedAt,
 	}
-	return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, inputJSON)
+	return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, inputJSON)
 }
 
 func (s *runtimeServer) runSessionInteractiveAttach(
@@ -123,12 +125,15 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return status.Error(codes.FailedPrecondition, "session is pending execution")
 	}
 
-	if err := s.registerActiveSession(sessionID); err != nil {
+	sessionCtx, sessionCancel := context.WithCancel(ctx)
+	defer sessionCancel()
+
+	if err := s.registerActiveSession(sessionID, sessionCancel); err != nil {
 		return err
 	}
 	defer s.unregisterActiveSession(sessionID)
 
-	ver, err := s.loadSessionVersion(ctx, q, session.AgentVersionID)
+	ver, err := s.loadSessionVersion(sessionCtx, q, session.AgentVersionID)
 	if err != nil {
 		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 	}
@@ -157,7 +162,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		if err := state.sessionLimitErrorBeforeTurn(); err != nil {
 			blockedReason = limitErrorMessage(err)
 		}
-		return s.runSessionInteractiveAttachBlocked(ctx, stream, q, sessionID, session, state, lastTurnUsage, blockedReason, false)
+		return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, q, sessionID, session, state, lastTurnUsage, blockedReason, false)
 
 	case model.SessionStatusCompleted:
 		output := session.Output
@@ -192,7 +197,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 				sessionUsage:     sessionUsage,
 				sessionStartedAt: session.CreatedAt,
 			}
-			return s.runSessionInteractiveAttachBlocked(ctx, stream, q, sessionID, session, state, lastTurnUsage, errMsg, true)
+			return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, q, sessionID, session, state, lastTurnUsage, errMsg, true)
 		}
 		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{

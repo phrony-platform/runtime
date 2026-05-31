@@ -128,10 +128,28 @@ type SessionListRow struct {
 	UpdatedAt      time.Time
 }
 
+const cancelSession = `
+UPDATE sessions
+SET status = 'cancelled', updated_at = NOW()
+WHERE id = $1
+  AND status NOT IN ('completed', 'failed', 'cancelled')
+RETURNING id
+`
+
+func (q *Queries) CancelSession(ctx context.Context, sessionID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, cancelSession, sessionID)
+	var id string
+	err := row.Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	return id, err
+}
+
 const listSessionsByAgentVersionID = `
 SELECT id, agent_version_id, status, created_at, updated_at
 FROM sessions
-WHERE agent_version_id = $1
+WHERE (NULLIF($1, '') IS NULL OR agent_version_id = NULLIF($1, '')::uuid)
   AND ($2 = '' OR status = $2)
 ORDER BY updated_at DESC
 `

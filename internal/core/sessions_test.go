@@ -15,9 +15,7 @@ import (
 func TestRuntime_ListSessions_success(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("version-uuid", "").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
@@ -47,7 +45,7 @@ func TestRuntime_ListSessions_success(t *testing.T) {
 
 func TestRuntime_ListSessions_agentNotFound(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
+	mock.ExpectQuery(`FROM deployments d`).
 		WithArgs("demo", "missing").
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`FROM agents`).
@@ -72,9 +70,7 @@ func TestRuntime_ListSessions_noDatabase(t *testing.T) {
 func TestRuntime_ListSessions_statusFilter(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("version-uuid", model.SessionStatusAwaitingInput).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).

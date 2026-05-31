@@ -66,9 +66,7 @@ func TestInteractiveSessionState_sessionWallClockLimitError(t *testing.T) {
 func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testing.T) {
 	max := 14
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"one"}`), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
@@ -130,9 +128,7 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.T) {
 	max := 1
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"one"}`), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))

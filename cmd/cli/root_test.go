@@ -21,9 +21,9 @@ func TestValidateCommand_requiresManifestArg(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_requiresManifestArg(t *testing.T) {
+func TestPublishCommand_requiresManifestArg(t *testing.T) {
 	root := NewRootCommand()
-	root.SetArgs([]string{"deploy"})
+	root.SetArgs([]string{"publish"})
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 
@@ -32,6 +32,21 @@ func TestDeployCommand_requiresManifestArg(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "accepts 1 arg") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDeployCommand_requiresVersionedAgentRef(t *testing.T) {
+	root := NewRootCommand()
+	root.SetArgs([]string{"deploy", "demo/echo-agent"})
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "@version") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

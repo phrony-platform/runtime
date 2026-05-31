@@ -17,9 +17,7 @@ import (
 
 func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"hi"}`), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))

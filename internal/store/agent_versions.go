@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 const latestAgentVersionID = `
@@ -29,7 +30,7 @@ func (q *Queries) LatestAgentVersionID(ctx context.Context, namespace, name stri
 }
 
 const agentVersionIDByLabel = `
-SELECT av.id, av.deprecated_at, a.archived_at
+SELECT av.id, av.deprecated_at, av.retired_at, a.archived_at
 FROM agent_versions av
 INNER JOIN agents a ON a.id = av.agent_id
 WHERE a.namespace = $1 AND a.name = $2 AND av.version = $3
@@ -39,14 +40,15 @@ WHERE a.namespace = $1 AND a.name = $2 AND av.version = $3
 type AgentVersionLookupResult struct {
 	ID           string
 	Deprecated   bool
+	Retired      bool
 	AgentArchive bool
 }
 
 func (q *Queries) AgentVersionIDByLabel(ctx context.Context, namespace, name, version string) (AgentVersionLookupResult, error) {
 	row := q.db.QueryRowContext(ctx, agentVersionIDByLabel, namespace, name, version)
 	var id string
-	var deprecatedAt, archivedAt sql.NullTime
-	err := row.Scan(&id, &deprecatedAt, &archivedAt)
+	var deprecatedAt, retiredAt, archivedAt sql.NullTime
+	err := row.Scan(&id, &deprecatedAt, &retiredAt, &archivedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AgentVersionLookupResult{}, err
 	}
@@ -56,8 +58,46 @@ func (q *Queries) AgentVersionIDByLabel(ctx context.Context, namespace, name, ve
 	return AgentVersionLookupResult{
 		ID:           id,
 		Deprecated:   deprecatedAt.Valid,
+		Retired:      retiredAt.Valid,
 		AgentArchive: archivedAt.Valid,
 	}, nil
+}
+
+const agentVersionByLabel = `
+SELECT av.id, av.version, av.content_hash, av.manifest, av.deployed_at, av.deprecated_at, av.retired_at
+FROM agent_versions av
+INNER JOIN agents a ON a.id = av.agent_id
+WHERE a.namespace = $1 AND a.name = $2 AND av.version = $3
+`
+
+// AgentVersionByLabelResult is a published version with manifest and lifecycle metadata.
+type AgentVersionByLabelResult struct {
+	ID           string
+	Version      string
+	ContentHash  string
+	Manifest     json.RawMessage
+	PublishedAt  time.Time
+	DeprecatedAt sql.NullTime
+	RetiredAt    sql.NullTime
+}
+
+// GetAgentVersionByLabel returns manifest and metadata for a published version label.
+func (q *Queries) GetAgentVersionByLabel(ctx context.Context, namespace, name, version string) (AgentVersionByLabelResult, error) {
+	row := q.db.QueryRowContext(ctx, agentVersionByLabel, namespace, name, version)
+	var out AgentVersionByLabelResult
+	err := row.Scan(
+		&out.ID,
+		&out.Version,
+		&out.ContentHash,
+		&out.Manifest,
+		&out.PublishedAt,
+		&out.DeprecatedAt,
+		&out.RetiredAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AgentVersionByLabelResult{}, err
+	}
+	return out, err
 }
 
 const agentVersionByAgentAndLabel = `

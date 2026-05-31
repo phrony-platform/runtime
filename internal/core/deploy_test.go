@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestRuntime_Deploy_success(t *testing.T) {
+func TestRuntime_Publish_success(t *testing.T) {
 	manifestJSON := resolvedDeployManifestJSON(t)
 
 	db, mock := testSQLxDB(t)
@@ -33,7 +33,7 @@ func TestRuntime_Deploy_success(t *testing.T) {
 	mock.ExpectCommit()
 
 	srv := &runtimeServer{db: db}
-	resp, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON})
+	resp, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestJSON})
 	if err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
@@ -55,37 +55,37 @@ func TestRuntime_Deploy_success(t *testing.T) {
 	}
 }
 
-func TestRuntime_Deploy_emptyManifest(t *testing.T) {
+func TestRuntime_Publish_emptyManifest(t *testing.T) {
 	srv := &runtimeServer{db: testServeDB(t)}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{})
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{})
 	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
-func TestRuntime_Deploy_invalidManifest(t *testing.T) {
+func TestRuntime_Publish_invalidManifest(t *testing.T) {
 	srv := &runtimeServer{db: testServeDB(t)}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: []byte(`{"apiVersion":"phrony.dev/v1"}`)})
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: []byte(`{"apiVersion":"phrony.dev/v1"}`)})
 	assertGRPCCode(t, err, codes.InvalidArgument)
 	if !strings.Contains(statusMessage(t, err), "invalid manifest") {
 		t.Fatalf("error = %v, want invalid manifest", err)
 	}
 }
 
-func TestRuntime_Deploy_noDatabase(t *testing.T) {
+func TestRuntime_Publish_noDatabase(t *testing.T) {
 	srv := &runtimeServer{}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: []byte(`{}`)})
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: []byte(`{}`)})
 	assertGRPCCode(t, err, codes.FailedPrecondition)
 }
 
-func TestRuntime_Deploy_malformedJSON(t *testing.T) {
+func TestRuntime_Publish_malformedJSON(t *testing.T) {
 	srv := &runtimeServer{db: testServeDB(t)}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: []byte(`{`)})
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: []byte(`{`)})
 	assertGRPCCode(t, err, codes.InvalidArgument)
 	if !strings.Contains(statusMessage(t, err), "parse manifest") {
 		t.Fatalf("error = %v, want parse manifest", err)
 	}
 }
 
-func TestRuntime_Deploy_withLabels(t *testing.T) {
+func TestRuntime_Publish_withLabels(t *testing.T) {
 	manifestJSON := resolvedDeployManifestJSON(t, deployManifestOpts{
 		labels: map[string]string{"team": "platform"},
 	})
@@ -105,7 +105,7 @@ func TestRuntime_Deploy_withLabels(t *testing.T) {
 	mock.ExpectCommit()
 
 	srv := &runtimeServer{db: db}
-	if _, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON}); err != nil {
+	if _, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestJSON}); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -113,12 +113,12 @@ func TestRuntime_Deploy_withLabels(t *testing.T) {
 	}
 }
 
-func TestRuntime_Deploy_beginTxFailed(t *testing.T) {
+func TestRuntime_Publish_beginTxFailed(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	mock.ExpectBegin().WillReturnError(errors.New("begin failed"))
 
 	srv := &runtimeServer{db: db}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{
 		Manifest: resolvedDeployManifestJSON(t),
 	})
 	assertGRPCCode(t, err, codes.Internal)
@@ -127,14 +127,14 @@ func TestRuntime_Deploy_beginTxFailed(t *testing.T) {
 	}
 }
 
-func TestRuntime_Deploy_upsertAgentFailed(t *testing.T) {
+func TestRuntime_Publish_upsertAgentFailed(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO agents`).WillReturnError(errors.New("upsert agent failed"))
 	mock.ExpectRollback()
 
 	srv := &runtimeServer{db: db}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{
 		Manifest: resolvedDeployManifestJSON(t),
 	})
 	assertGRPCCode(t, err, codes.Internal)
@@ -143,7 +143,7 @@ func TestRuntime_Deploy_upsertAgentFailed(t *testing.T) {
 	}
 }
 
-func TestRuntime_Deploy_sameVersionRejected(t *testing.T) {
+func TestRuntime_Publish_sameVersionRejected(t *testing.T) {
 	manifestJSON := resolvedDeployManifestJSON(t)
 	existingHash := "existing-hash"
 	manifestHash := hashManifest(manifestJSON)
@@ -159,7 +159,7 @@ func TestRuntime_Deploy_sameVersionRejected(t *testing.T) {
 	mock.ExpectRollback()
 
 	srv := &runtimeServer{db: db}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON})
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestJSON})
 	assertGRPCCode(t, err, codes.AlreadyExists)
 	msg := statusMessage(t, err)
 	if !strings.Contains(msg, "demo/echo-agent") || !strings.Contains(msg, `version "1.2.0"`) {
@@ -173,7 +173,7 @@ func TestRuntime_Deploy_sameVersionRejected(t *testing.T) {
 	}
 }
 
-func TestRuntime_Deploy_insertVersionFailed(t *testing.T) {
+func TestRuntime_Publish_insertVersionFailed(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO agents`).
@@ -186,7 +186,7 @@ func TestRuntime_Deploy_insertVersionFailed(t *testing.T) {
 	mock.ExpectRollback()
 
 	srv := &runtimeServer{db: db}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{
 		Manifest: resolvedDeployManifestJSON(t),
 	})
 	assertGRPCCode(t, err, codes.Internal)
@@ -195,7 +195,7 @@ func TestRuntime_Deploy_insertVersionFailed(t *testing.T) {
 	}
 }
 
-func TestRuntime_Deploy_commitFailed(t *testing.T) {
+func TestRuntime_Publish_commitFailed(t *testing.T) {
 	manifestJSON := resolvedDeployManifestJSON(t)
 
 	db, mock := testSQLxDB(t)
@@ -213,7 +213,7 @@ func TestRuntime_Deploy_commitFailed(t *testing.T) {
 	mock.ExpectRollback()
 
 	srv := &runtimeServer{db: db}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON})
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestJSON})
 	assertGRPCCode(t, err, codes.Internal)
 	if !strings.Contains(statusMessage(t, err), "commit") {
 		t.Fatalf("error = %v, want commit error", err)

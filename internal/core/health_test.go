@@ -94,3 +94,11 @@ func testSQLxDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	return sqlx.NewDb(sqlDB, "pgx"), mock
 }
+
+func expectActiveDeployment(mock sqlmock.Sqlmock, namespace, name, versionID, version string) {
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs(namespace, name).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow(versionID, version, nil, nil, nil))
+}

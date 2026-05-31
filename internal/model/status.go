@@ -12,4 +12,6 @@ const (
 	SessionStatusCompleted = "completed"
 	// SessionStatusFailed means the session ended with an error.
 	SessionStatusFailed = "failed"
+	// SessionStatusCancelled means the session was cancelled by an operator.
+	SessionStatusCancelled = "cancelled"
 )

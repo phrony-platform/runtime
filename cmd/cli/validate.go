@@ -11,7 +11,7 @@ import (
 func newValidateCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "validate MANIFEST",
-		Short: "Validate an agent manifest locally (no deploy)",
+		Short: "Validate an agent manifest locally (no publish)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runValidate(cmd, args[0])

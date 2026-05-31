@@ -133,10 +133,11 @@ func TestRuntime_ArchiveAgent_alreadyArchived(t *testing.T) {
 
 func TestRuntime_RunSession_deprecatedVersion(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM agent_versions av`).
-		WithArgs("demo", "echo-agent", "1.0.0").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "archived_at"}).
-			AddRow("version-uuid", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), nil))
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow("version-uuid", "1.0.0", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), nil, nil))
 
 	srv := &runtimeServer{db: db}
 	_, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
@@ -148,7 +149,7 @@ func TestRuntime_RunSession_deprecatedVersion(t *testing.T) {
 	}
 }
 
-func TestRuntime_Deploy_archivedAgentRejected(t *testing.T) {
+func TestRuntime_Publish_archivedAgentRejected(t *testing.T) {
 	manifestJSON := resolvedDeployManifestJSON(t)
 
 	db, mock := testSQLxDB(t)
@@ -162,7 +163,7 @@ func TestRuntime_Deploy_archivedAgentRejected(t *testing.T) {
 	mock.ExpectRollback()
 
 	srv := &runtimeServer{db: db}
-	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON})
+	_, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestJSON})
 	assertGRPCCode(t, err, codes.FailedPrecondition)
 	if !strings.Contains(statusMessage(t, err), "archived") {
 		t.Fatalf("error = %v, want archived", err)

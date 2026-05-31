@@ -13,10 +13,11 @@ func TestRuntime_unregisterActiveSession_nilMap(t *testing.T) {
 
 func TestRuntime_registerActiveSession_duplicate(t *testing.T) {
 	srv := &runtimeServer{}
-	if err := srv.registerActiveSession("sess-1"); err != nil {
+	noopCancel := func() {}
+	if err := srv.registerActiveSession("sess-1", noopCancel); err != nil {
 		t.Fatalf("registerActiveSession: %v", err)
 	}
-	err := srv.registerActiveSession("sess-1")
+	err := srv.registerActiveSession("sess-1", noopCancel)
 	assertGRPCCode(t, err, codes.FailedPrecondition)
 	srv.unregisterActiveSession("sess-1")
 }

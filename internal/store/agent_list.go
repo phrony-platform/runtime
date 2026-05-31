@@ -47,10 +47,11 @@ type AgentVersionListRow struct {
 	ContentHash  string
 	DeployedAt   time.Time
 	DeprecatedAt sql.NullTime
+	RetiredAt    sql.NullTime
 }
 
 const listAgentVersions = `
-SELECT id, version, content_hash, deployed_at, deprecated_at
+SELECT id, version, content_hash, deployed_at, deprecated_at, retired_at
 FROM agent_versions
 WHERE agent_id = $1
 ORDER BY deployed_at DESC
@@ -66,7 +67,7 @@ func (q *Queries) ListAgentVersions(ctx context.Context, agentID string) ([]Agen
 	var out []AgentVersionListRow
 	for rows.Next() {
 		var row AgentVersionListRow
-		if err := rows.Scan(&row.ID, &row.Version, &row.ContentHash, &row.DeployedAt, &row.DeprecatedAt); err != nil {
+		if err := rows.Scan(&row.ID, &row.Version, &row.ContentHash, &row.DeployedAt, &row.DeprecatedAt, &row.RetiredAt); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
@@ -119,6 +120,23 @@ SET deprecated_at = NOW()
 WHERE agent_id = $1 AND version = $2 AND deprecated_at IS NULL
 RETURNING id
 `
+
+const retireAgentVersion = `
+UPDATE agent_versions
+SET retired_at = NOW()
+WHERE agent_id = $1 AND version = $2 AND retired_at IS NULL
+RETURNING id
+`
+
+func (q *Queries) RetireAgentVersion(ctx context.Context, agentID, version string) (string, error) {
+	row := q.db.QueryRowContext(ctx, retireAgentVersion, agentID, version)
+	var id string
+	err := row.Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	return id, err
+}
 
 func (q *Queries) DeprecateAgentVersion(ctx context.Context, agentID, version string) (string, error) {
 	row := q.db.QueryRowContext(ctx, deprecateAgentVersion, agentID, version)

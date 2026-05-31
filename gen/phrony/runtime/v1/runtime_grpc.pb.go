@@ -22,7 +22,14 @@ const (
 	Runtime_GetVersion_FullMethodName            = "/phrony.runtime.v1.Runtime/GetVersion"
 	Runtime_RunSession_FullMethodName            = "/phrony.runtime.v1.Runtime/RunSession"
 	Runtime_RunSessionInteractive_FullMethodName = "/phrony.runtime.v1.Runtime/RunSessionInteractive"
+	Runtime_Publish_FullMethodName               = "/phrony.runtime.v1.Runtime/Publish"
 	Runtime_Deploy_FullMethodName                = "/phrony.runtime.v1.Runtime/Deploy"
+	Runtime_Rollback_FullMethodName              = "/phrony.runtime.v1.Runtime/Rollback"
+	Runtime_GetActiveVersion_FullMethodName      = "/phrony.runtime.v1.Runtime/GetActiveVersion"
+	Runtime_ListDeployments_FullMethodName       = "/phrony.runtime.v1.Runtime/ListDeployments"
+	Runtime_GetAgentVersion_FullMethodName       = "/phrony.runtime.v1.Runtime/GetAgentVersion"
+	Runtime_RetireAgentVersion_FullMethodName    = "/phrony.runtime.v1.Runtime/RetireAgentVersion"
+	Runtime_CancelSession_FullMethodName         = "/phrony.runtime.v1.Runtime/CancelSession"
 	Runtime_ListAgents_FullMethodName            = "/phrony.runtime.v1.Runtime/ListAgents"
 	Runtime_ListAgentVersions_FullMethodName     = "/phrony.runtime.v1.Runtime/ListAgentVersions"
 	Runtime_ListSessions_FullMethodName          = "/phrony.runtime.v1.Runtime/ListSessions"
@@ -41,7 +48,14 @@ type RuntimeClient interface {
 	// Bidirectional session stream: client sends start then user_message; server streams
 	// session_started, text_delta, awaiting_input, completed, or failed.
 	RunSessionInteractive(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg], error)
+	Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*PublishResponse, error)
 	Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error)
+	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
+	GetActiveVersion(ctx context.Context, in *GetActiveVersionRequest, opts ...grpc.CallOption) (*GetActiveVersionResponse, error)
+	ListDeployments(ctx context.Context, in *ListDeploymentsRequest, opts ...grpc.CallOption) (*ListDeploymentsResponse, error)
+	GetAgentVersion(ctx context.Context, in *GetAgentVersionRequest, opts ...grpc.CallOption) (*GetAgentVersionResponse, error)
+	RetireAgentVersion(ctx context.Context, in *RetireAgentVersionRequest, opts ...grpc.CallOption) (*RetireAgentVersionResponse, error)
+	CancelSession(ctx context.Context, in *CancelSessionRequest, opts ...grpc.CallOption) (*CancelSessionResponse, error)
 	ListAgents(ctx context.Context, in *ListAgentsRequest, opts ...grpc.CallOption) (*ListAgentsResponse, error)
 	ListAgentVersions(ctx context.Context, in *ListAgentVersionsRequest, opts ...grpc.CallOption) (*ListAgentVersionsResponse, error)
 	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
@@ -90,10 +104,80 @@ func (c *runtimeClient) RunSessionInteractive(ctx context.Context, opts ...grpc.
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Runtime_RunSessionInteractiveClient = grpc.BidiStreamingClient[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]
 
+func (c *runtimeClient) Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*PublishResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublishResponse)
+	err := c.cc.Invoke(ctx, Runtime_Publish_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeployResponse)
 	err := c.cc.Invoke(ctx, Runtime_Deploy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RollbackResponse)
+	err := c.cc.Invoke(ctx, Runtime_Rollback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) GetActiveVersion(ctx context.Context, in *GetActiveVersionRequest, opts ...grpc.CallOption) (*GetActiveVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActiveVersionResponse)
+	err := c.cc.Invoke(ctx, Runtime_GetActiveVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListDeployments(ctx context.Context, in *ListDeploymentsRequest, opts ...grpc.CallOption) (*ListDeploymentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDeploymentsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListDeployments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) GetAgentVersion(ctx context.Context, in *GetAgentVersionRequest, opts ...grpc.CallOption) (*GetAgentVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAgentVersionResponse)
+	err := c.cc.Invoke(ctx, Runtime_GetAgentVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RetireAgentVersion(ctx context.Context, in *RetireAgentVersionRequest, opts ...grpc.CallOption) (*RetireAgentVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RetireAgentVersionResponse)
+	err := c.cc.Invoke(ctx, Runtime_RetireAgentVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) CancelSession(ctx context.Context, in *CancelSessionRequest, opts ...grpc.CallOption) (*CancelSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelSessionResponse)
+	err := c.cc.Invoke(ctx, Runtime_CancelSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +245,14 @@ type RuntimeServer interface {
 	// Bidirectional session stream: client sends start then user_message; server streams
 	// session_started, text_delta, awaiting_input, completed, or failed.
 	RunSessionInteractive(grpc.BidiStreamingServer[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]) error
+	Publish(context.Context, *PublishRequest) (*PublishResponse, error)
 	Deploy(context.Context, *DeployRequest) (*DeployResponse, error)
+	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
+	GetActiveVersion(context.Context, *GetActiveVersionRequest) (*GetActiveVersionResponse, error)
+	ListDeployments(context.Context, *ListDeploymentsRequest) (*ListDeploymentsResponse, error)
+	GetAgentVersion(context.Context, *GetAgentVersionRequest) (*GetAgentVersionResponse, error)
+	RetireAgentVersion(context.Context, *RetireAgentVersionRequest) (*RetireAgentVersionResponse, error)
+	CancelSession(context.Context, *CancelSessionRequest) (*CancelSessionResponse, error)
 	ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error)
 	ListAgentVersions(context.Context, *ListAgentVersionsRequest) (*ListAgentVersionsResponse, error)
 	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
@@ -186,8 +277,29 @@ func (UnimplementedRuntimeServer) RunSession(context.Context, *RunSessionRequest
 func (UnimplementedRuntimeServer) RunSessionInteractive(grpc.BidiStreamingServer[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]) error {
 	return status.Error(codes.Unimplemented, "method RunSessionInteractive not implemented")
 }
+func (UnimplementedRuntimeServer) Publish(context.Context, *PublishRequest) (*PublishResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Publish not implemented")
+}
 func (UnimplementedRuntimeServer) Deploy(context.Context, *DeployRequest) (*DeployResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Deploy not implemented")
+}
+func (UnimplementedRuntimeServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Rollback not implemented")
+}
+func (UnimplementedRuntimeServer) GetActiveVersion(context.Context, *GetActiveVersionRequest) (*GetActiveVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActiveVersion not implemented")
+}
+func (UnimplementedRuntimeServer) ListDeployments(context.Context, *ListDeploymentsRequest) (*ListDeploymentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDeployments not implemented")
+}
+func (UnimplementedRuntimeServer) GetAgentVersion(context.Context, *GetAgentVersionRequest) (*GetAgentVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAgentVersion not implemented")
+}
+func (UnimplementedRuntimeServer) RetireAgentVersion(context.Context, *RetireAgentVersionRequest) (*RetireAgentVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RetireAgentVersion not implemented")
+}
+func (UnimplementedRuntimeServer) CancelSession(context.Context, *CancelSessionRequest) (*CancelSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelSession not implemented")
 }
 func (UnimplementedRuntimeServer) ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAgents not implemented")
@@ -268,6 +380,24 @@ func _Runtime_RunSessionInteractive_Handler(srv interface{}, stream grpc.ServerS
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Runtime_RunSessionInteractiveServer = grpc.BidiStreamingServer[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]
 
+func _Runtime_Publish_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).Publish(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_Publish_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).Publish(ctx, req.(*PublishRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Runtime_Deploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeployRequest)
 	if err := dec(in); err != nil {
@@ -282,6 +412,114 @@ func _Runtime_Deploy_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).Deploy(ctx, req.(*DeployRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_Rollback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RollbackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).Rollback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_Rollback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).Rollback(ctx, req.(*RollbackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_GetActiveVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActiveVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).GetActiveVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_GetActiveVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).GetActiveVersion(ctx, req.(*GetActiveVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListDeployments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDeploymentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListDeployments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListDeployments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListDeployments(ctx, req.(*ListDeploymentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_GetAgentVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAgentVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).GetAgentVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_GetAgentVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).GetAgentVersion(ctx, req.(*GetAgentVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RetireAgentVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetireAgentVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RetireAgentVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RetireAgentVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RetireAgentVersion(ctx, req.(*RetireAgentVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_CancelSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CancelSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CancelSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CancelSession(ctx, req.(*CancelSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -392,8 +630,36 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Runtime_RunSession_Handler,
 		},
 		{
+			MethodName: "Publish",
+			Handler:    _Runtime_Publish_Handler,
+		},
+		{
 			MethodName: "Deploy",
 			Handler:    _Runtime_Deploy_Handler,
+		},
+		{
+			MethodName: "Rollback",
+			Handler:    _Runtime_Rollback_Handler,
+		},
+		{
+			MethodName: "GetActiveVersion",
+			Handler:    _Runtime_GetActiveVersion_Handler,
+		},
+		{
+			MethodName: "ListDeployments",
+			Handler:    _Runtime_ListDeployments_Handler,
+		},
+		{
+			MethodName: "GetAgentVersion",
+			Handler:    _Runtime_GetAgentVersion_Handler,
+		},
+		{
+			MethodName: "RetireAgentVersion",
+			Handler:    _Runtime_RetireAgentVersion_Handler,
+		},
+		{
+			MethodName: "CancelSession",
+			Handler:    _Runtime_CancelSession_Handler,
 		},
 		{
 			MethodName: "ListAgents",

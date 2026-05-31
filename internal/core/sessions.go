@@ -15,9 +15,14 @@ func (s *runtimeServer) ListSessions(ctx context.Context, req *runtimev1.ListSes
 		return nil, err
 	}
 
-	agentVersionID, err := resolveAgentVersionID(ctx, s.db.DB, req.GetAgentRef())
-	if err != nil {
-		return nil, err
+	agentVersionID := ""
+	ref := req.GetAgentRef()
+	if ref != nil && ref.GetNamespace() != "" && ref.GetName() != "" {
+		var resolveErr error
+		agentVersionID, resolveErr = resolveAgentVersionID(ctx, s.db.DB, ref)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
 	}
 
 	rows, err := q.ListSessionsByAgentVersionID(ctx, store.ListSessionsByAgentVersionIDParams{

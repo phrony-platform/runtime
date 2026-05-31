@@ -55,9 +55,11 @@ type runTUI struct {
 	status             string
 	awaitingInput      bool
 	inputBlockedReason string
+	inputEverEnabled   bool
+	readOnly           bool
 	sendClosed         bool
-	streamErr     error
-	quitting      bool
+	streamErr          error
+	quitting           bool
 
 	// followTail auto-scrolls the transcript on new output while the user is at the bottom.
 	followTail bool
@@ -213,6 +215,10 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamServerMsg:
 		if msg.err != nil {
 			if msg.err == io.EOF {
+				if m.readOnly {
+					m.quitting = true
+					return m, tea.Quit
+				}
 				m.status = "done"
 				m.quitting = true
 				return m, tea.Quit
@@ -228,9 +234,12 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		}
-		if m.status == "done" {
+		if m.status == "done" && !m.readOnly {
 			m.quitting = true
 			return m, tea.Quit
+		}
+		if m.readOnly {
+			return m, nil
 		}
 		return m, m.recvStream()
 
@@ -375,6 +384,12 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		m.status = "done"
 		m.awaitingInput = false
 		m.input.Blur()
+		if strings.TrimSpace(m.start.GetSessionId()) != "" && !m.inputEverEnabled {
+			m.readOnly = true
+			if err := m.closeSend(); err != nil {
+				return err
+			}
+		}
 		m.layout()
 	case msg.GetFailed() != nil:
 		return fmt.Errorf("session failed: %s", msg.GetFailed().GetMessage())
@@ -408,6 +423,7 @@ func (m *runTUI) applyAwaitingInputState(inputBlockedReason string) {
 	}
 	m.status = "input"
 	m.awaitingInput = true
+	m.inputEverEnabled = true
 	m.input.Focus()
 }
 

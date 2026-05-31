@@ -107,10 +107,10 @@ func TestQueries_ListAgentVersions(t *testing.T) {
 	mock.ExpectQuery(`FROM agent_versions`).
 		WithArgs("agent-1").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "version", "content_hash", "deployed_at", "deprecated_at",
+			"id", "version", "content_hash", "deployed_at", "deprecated_at", "retired_at",
 		}).
-			AddRow("ver-2", "1.1.0", "hash-b", newer, nil).
-			AddRow("ver-1", "1.0.0", "hash-a", older, sql.NullTime{Valid: true, Time: newer}))
+			AddRow("ver-2", "1.1.0", "hash-b", newer, nil, nil).
+			AddRow("ver-1", "1.0.0", "hash-a", older, sql.NullTime{Valid: true, Time: newer}, nil))
 
 	q := New(sqlDB)
 	rows, err := q.ListAgentVersions(context.Background(), "agent-1")
@@ -138,7 +138,7 @@ func TestQueries_ListAgentVersions_empty(t *testing.T) {
 	mock.ExpectQuery(`FROM agent_versions`).
 		WithArgs("agent-none").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "version", "content_hash", "deployed_at", "deprecated_at",
+			"id", "version", "content_hash", "deployed_at", "deprecated_at", "retired_at",
 		}))
 
 	q := New(sqlDB)

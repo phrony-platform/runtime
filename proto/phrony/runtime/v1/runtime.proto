@@ -11,7 +11,14 @@ service Runtime {
   // Bidirectional session stream: client sends start then user_message; server streams
   // session_started, text_delta, awaiting_input, completed, or failed.
   rpc RunSessionInteractive(stream RunSessionInteractiveClientMsg) returns (stream RunSessionInteractiveServerMsg);
+  rpc Publish(PublishRequest) returns (PublishResponse);
   rpc Deploy(DeployRequest) returns (DeployResponse);
+  rpc Rollback(RollbackRequest) returns (RollbackResponse);
+  rpc GetActiveVersion(GetActiveVersionRequest) returns (GetActiveVersionResponse);
+  rpc ListDeployments(ListDeploymentsRequest) returns (ListDeploymentsResponse);
+  rpc GetAgentVersion(GetAgentVersionRequest) returns (GetAgentVersionResponse);
+  rpc RetireAgentVersion(RetireAgentVersionRequest) returns (RetireAgentVersionResponse);
+  rpc CancelSession(CancelSessionRequest) returns (CancelSessionResponse);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   rpc ListAgentVersions(ListAgentVersionsRequest) returns (ListAgentVersionsResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
@@ -26,8 +33,8 @@ message GetVersionResponse {
   string schema_version = 2;
 }
 
-// AgentRef identifies a deployed agent. When version is empty, the latest
-// deployed semver for that agent is used.
+// AgentRef identifies an agent. For run/deploy, an empty version resolves the active
+// deployment; an explicit version must match the active deployment.
 message AgentRef {
   string namespace = 1;
   string name = 2;
@@ -138,13 +145,15 @@ message RunSessionInteractiveFailed {
   string message = 1;
 }
 
-message DeployRequest {
+message PublishRequest {
   bytes manifest = 1;
   // Resolved secret values keyed by secrets.<name>. Never logged or stored in manifest JSONB.
   map<string, bytes> resolved_secrets = 2;
+  // Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
+  string actor = 3;
 }
 
-message DeployResponse {
+message PublishResponse {
   string agent_id = 1;
   string version_id = 2;
   string content_hash = 3;
@@ -152,6 +161,85 @@ message DeployResponse {
   string name = 5;
   string version = 6;
 }
+
+message DeployRequest {
+  AgentRef agent_ref = 1;
+  // Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
+  string actor = 2;
+}
+
+message DeployResponse {
+  string namespace = 1;
+  string name = 2;
+  string version = 3;
+  // Version that was active before this deployment; empty on first deploy.
+  string previous_version = 4;
+  string deployed_at = 5;  // RFC3339
+}
+
+message RollbackRequest {
+  AgentRef agent_ref = 1;
+  // Target version; when empty, rolls back to the previous active version.
+  string to_version = 2;
+  string actor = 3;
+}
+
+message RollbackResponse {
+  string version = 1;
+  string previous_version = 2;
+}
+
+message GetActiveVersionRequest {
+  AgentRef agent_ref = 1;
+}
+
+message GetActiveVersionResponse {
+  string version = 1;
+  string deployed_at = 2;  // RFC3339
+  string actor = 3;
+}
+
+message ListDeploymentsRequest {
+  AgentRef agent_ref = 1;
+}
+
+message DeploymentEntry {
+  string version = 1;
+  string action = 2;
+  string actor = 3;
+  string created_at = 4;  // RFC3339
+}
+
+message ListDeploymentsResponse {
+  repeated DeploymentEntry deployments = 1;
+}
+
+message GetAgentVersionRequest {
+  AgentRef agent_ref = 1;
+}
+
+message GetAgentVersionResponse {
+  bytes manifest = 1;
+  string content_hash = 2;
+  string version = 3;
+  string published_at = 4;   // RFC3339
+  string deprecated_at = 5;  // RFC3339, empty when active
+  string retired_at = 6;     // RFC3339, empty when not retired
+}
+
+message RetireAgentVersionRequest {
+  AgentRef agent_ref = 1;
+}
+
+message RetireAgentVersionResponse {
+  string version_id = 1;
+}
+
+message CancelSessionRequest {
+  string session_id = 1;
+}
+
+message CancelSessionResponse {}
 
 message ListAgentsRequest {
   // When set, only agents in this namespace are returned.
@@ -182,6 +270,8 @@ message AgentVersionSummary {
   string deployed_at = 4;
   // RFC3339 timestamp when deprecated; empty when runnable.
   string deprecated_at = 5;
+  // RFC3339 timestamp when retired; empty when not retired.
+  string retired_at = 6;
 }
 
 message ListAgentVersionsResponse {

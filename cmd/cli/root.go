@@ -33,12 +33,22 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&runtimeAddr, "runtime-addr", "", "runtime gRPC address (overrides PHRONY_RUNTIME_ADDR)")
 
 	root.AddCommand(
+		newInitCommand(),
 		newStatusCommand(&runtimeAddr),
-		newRunCommand(&runtimeAddr),
-		newDeployCommand(&runtimeAddr),
 		newValidateCommand(),
+		newDiffCommand(&runtimeAddr),
+		newPublishCommand(&runtimeAddr),
+		newVersionsCommand(&runtimeAddr),
+		newInspectCommand(&runtimeAddr),
+		newDeprecateCommand(&runtimeAddr),
+		newRetireCommand(&runtimeAddr),
+		newDeployCommand(&runtimeAddr),
+		newActiveCommand(&runtimeAddr),
+		newHistoryCommand(&runtimeAddr),
+		newRollbackCommand(&runtimeAddr),
+		newRunCommand(&runtimeAddr),
+		newRunsCommand(&runtimeAddr),
 		newAgentsCommand(&runtimeAddr),
-		newSessionsCommand(&runtimeAddr),
 	)
 
 	return root

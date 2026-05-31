@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/model"
@@ -33,7 +32,7 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 		return nil, err
 	}
 
-	sessionID := uuid.NewString()
+	sessionID := newRunSessionID()
 
 	if _, err := q.InsertSession(ctx, store.InsertSessionParams{
 		ID:             sessionID,
@@ -60,28 +59,11 @@ func resolveAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.Ag
 	q := store.New(db)
 	agentRef := agentref.Format(ns, name)
 
-	if ref.GetVersion() != "" {
-		lookup, err := q.AgentVersionIDByLabel(ctx, ns, name, ref.GetVersion())
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", status.Errorf(codes.NotFound, "no deployed version %q for agent %s", ref.GetVersion(), agentRef)
-		}
-		if err != nil {
-			return "", status.Errorf(codes.Internal, "resolve agent version: %v", err)
-		}
-		if lookup.AgentArchive {
-			return "", status.Errorf(codes.FailedPrecondition, "agent %s is archived and cannot be run", agentRef)
-		}
-		if lookup.Deprecated {
-			return "", status.Errorf(codes.FailedPrecondition, "agent %s version %q is deprecated and cannot be run", agentRef, ref.GetVersion())
-		}
-		return lookup.ID, nil
-	}
-
-	id, err := q.LatestAgentVersionID(ctx, ns, name)
+	active, err := q.ActiveAgentVersion(ctx, ns, name)
 	if errors.Is(err, sql.ErrNoRows) {
 		agent, lookupErr := q.AgentByNamespaceName(ctx, ns, name)
 		if errors.Is(lookupErr, sql.ErrNoRows) {
-			return "", status.Errorf(codes.NotFound, "no deployed version for agent %s", agentRef)
+			return "", status.Errorf(codes.NotFound, "agent %s not found", agentRef)
 		}
 		if lookupErr != nil {
 			return "", status.Errorf(codes.Internal, "resolve agent: %v", lookupErr)
@@ -89,12 +71,35 @@ func resolveAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.Ag
 		if agent.ArchivedAt.Valid {
 			return "", status.Errorf(codes.FailedPrecondition, "agent %s is archived and cannot be run", agentRef)
 		}
-		return "", status.Errorf(codes.NotFound, "no runnable version for agent %s", agentRef)
+		return "", status.Errorf(codes.FailedPrecondition, "no active deployment for agent %s", agentRef)
 	}
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "resolve agent: %v", err)
+		return "", status.Errorf(codes.Internal, "resolve active deployment: %v", err)
 	}
-	return id, nil
+
+	versionLabel := active.Version
+	if ref.GetVersion() != "" {
+		versionLabel = ref.GetVersion()
+		if active.Version != ref.GetVersion() {
+			return "", status.Errorf(codes.FailedPrecondition,
+				"version %q is not the active deployment (active: %q)", ref.GetVersion(), active.Version)
+		}
+	}
+
+	return validateActiveVersionForRun(active, agentRef, versionLabel)
+}
+
+func validateActiveVersionForRun(active store.ActiveAgentVersionResult, agentRef, versionLabel string) (string, error) {
+	if active.AgentArchived {
+		return "", status.Errorf(codes.FailedPrecondition, "agent %s is archived and cannot be run", agentRef)
+	}
+	if active.Retired {
+		return "", status.Errorf(codes.FailedPrecondition, "agent %s version %q is retired and cannot be run", agentRef, versionLabel)
+	}
+	if active.Deprecated {
+		return "", status.Errorf(codes.FailedPrecondition, "agent %s version %q is deprecated and cannot be run", agentRef, versionLabel)
+	}
+	return active.AgentVersionID, nil
 }
 
 func normalizeSessionInput(raw []byte) (json.RawMessage, error) {

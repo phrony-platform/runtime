@@ -44,7 +44,7 @@ func TestRuntime_Deploy_withSecrets(t *testing.T) {
 	mock.ExpectCommit()
 
 	srv := &runtimeServer{db: db, secretsEnc: enc}
-	resp, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{
+	resp, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{
 		Manifest: manifestJSON,
 		ResolvedSecrets: map[string][]byte{
 			"anthropic": []byte("sk-test-key"),

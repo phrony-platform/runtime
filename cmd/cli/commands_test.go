@@ -85,7 +85,7 @@ func TestSessionsAttachCommand_completedReadOnly(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"sessions", "attach", "sess-completed", "--runtime-addr", addr})
+	root.SetArgs([]string{"runs", "attach", "sess-completed", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -99,11 +99,11 @@ func TestSessionsAttachCommand_completedReadOnly(t *testing.T) {
 	}
 }
 
-func TestSessionsAttachCommand_missingSessionArg(t *testing.T) {
+func TestRunsAttachCommand_missingSessionArg(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"sessions", "attach"})
+	root.SetArgs([]string{"runs", "attach"})
 
 	err := root.Execute()
 	if err == nil {
@@ -114,14 +114,14 @@ func TestSessionsAttachCommand_missingSessionArg(t *testing.T) {
 	}
 }
 
-func TestSessionsListCommand_success(t *testing.T) {
+func TestRunsLsCommand_success(t *testing.T) {
 	addr := startTestRuntimeAddrForSessionsList(t)
 
 	var out bytes.Buffer
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"sessions", "ls", "demo/echo-agent", "--runtime-addr", addr})
+	root.SetArgs([]string{"runs", "ls", "demo/echo-agent", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -142,7 +142,7 @@ func TestSessionsAttachCommand_failedReadOnly(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"sessions", "attach", "sess-failed", "--runtime-addr", addr})
+	root.SetArgs([]string{"runs", "attach", "sess-failed", "--runtime-addr", addr})
 
 	err := root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "session failed") {
@@ -154,7 +154,7 @@ func TestSessionsAttachCommand_failedReadOnly(t *testing.T) {
 	}
 }
 
-func TestSessionsListCommand_statusFilter(t *testing.T) {
+func TestRunsLsCommand_statusFilter(t *testing.T) {
 	addr := startTestRuntimeAddrForSessionsListFiltered(t)
 
 	var out bytes.Buffer
@@ -162,7 +162,7 @@ func TestSessionsListCommand_statusFilter(t *testing.T) {
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{
-		"sessions", "ls", "demo/echo-agent",
+		"runs", "ls", "demo/echo-agent",
 		"--status", "awaiting_input",
 		"--runtime-addr", addr,
 	})
@@ -179,18 +179,21 @@ func TestSessionsListCommand_statusFilter(t *testing.T) {
 	}
 }
 
-func TestSessionsListCommand_missingAgentArg(t *testing.T) {
-	root := NewRootCommand()
-	root.SetOut(&bytes.Buffer{})
-	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"sessions", "ls"})
+func TestRunsLsCommand_allRuns(t *testing.T) {
+	addr := startTestRuntimeAddrForRunsListAll(t)
 
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"runs", "ls", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(err.Error(), "accepts 1 arg") {
-		t.Fatalf("unexpected error: %v", err)
+	got := out.String()
+	if !strings.Contains(got, "sess-await") {
+		t.Fatalf("output = %q, want sess-await", got)
 	}
 }
 
@@ -445,14 +448,14 @@ func TestValidateCommand_readManifestFailed(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_missingSecretEnv(t *testing.T) {
+func TestPublishCommand_missingSecretEnv(t *testing.T) {
 	manifest := writeDeployTestBundleWithSecrets(t, t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "")
 
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", manifest, "--runtime-addr", "127.0.0.1:1"})
+	root.SetArgs([]string{"publish", manifest, "--runtime-addr", "127.0.0.1:1"})
 
 	err := root.Execute()
 	if err == nil {
@@ -463,7 +466,7 @@ func TestDeployCommand_missingSecretEnv(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_success(t *testing.T) {
+func TestPublishCommand_success(t *testing.T) {
 	manifest := writeDeployTestBundle(t, t.TempDir())
 	addr := startTestRuntimeAddrForDeploy(t)
 
@@ -471,7 +474,7 @@ func TestDeployCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", manifest, "--runtime-addr", addr})
+	root.SetArgs([]string{"publish", manifest, "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -481,7 +484,7 @@ func TestDeployCommand_success(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_successWithSecrets(t *testing.T) {
+func TestPublishCommand_successWithSecrets(t *testing.T) {
 	manifest := writeDeployTestBundleWithSecrets(t, t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test-deploy")
 	addr := startTestRuntimeAddrForDeployWithSecrets(t)
@@ -490,7 +493,7 @@ func TestDeployCommand_successWithSecrets(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", manifest, "--runtime-addr", addr})
+	root.SetArgs([]string{"publish", manifest, "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -500,24 +503,24 @@ func TestDeployCommand_successWithSecrets(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_dialRuntimeFailed(t *testing.T) {
+func TestPublishCommand_dialRuntimeFailed(t *testing.T) {
 	manifest := writeDeployTestBundle(t, t.TempDir())
 
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", manifest, "--runtime-addr", "127.0.0.1:1"})
+	root.SetArgs([]string{"publish", manifest, "--runtime-addr", "127.0.0.1:1"})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "deploy") {
+	if !strings.Contains(err.Error(), "publish") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestDeployCommand_parseManifestFailed(t *testing.T) {
+func TestPublishCommand_parseManifestFailed(t *testing.T) {
 	manifest := filepath.Join(t.TempDir(), "agent.yaml")
 	if err := os.WriteFile(manifest, []byte("apiVersion: [\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -526,7 +529,7 @@ func TestDeployCommand_parseManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", manifest})
+	root.SetArgs([]string{"publish", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -537,7 +540,7 @@ func TestDeployCommand_parseManifestFailed(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_invalidManifest(t *testing.T) {
+func TestPublishCommand_invalidManifest(t *testing.T) {
 	manifest := filepath.Join(t.TempDir(), "agent.yaml")
 	if err := os.WriteFile(manifest, []byte("{}"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -546,7 +549,7 @@ func TestDeployCommand_invalidManifest(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", manifest})
+	root.SetArgs([]string{"publish", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -557,7 +560,7 @@ func TestDeployCommand_invalidManifest(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_unresolvedBundleRef(t *testing.T) {
+func TestPublishCommand_unresolvedBundleRef(t *testing.T) {
 	manifest := filepath.Join(t.TempDir(), "agent.yaml")
 	if err := os.WriteFile(manifest, []byte(validAgentManifestYAML), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -566,7 +569,7 @@ func TestDeployCommand_unresolvedBundleRef(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", manifest})
+	root.SetArgs([]string{"publish", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -598,40 +601,25 @@ func TestAgentsListCommand_success(t *testing.T) {
 	}
 }
 
-func TestAgentsVersionsListCommand_success(t *testing.T) {
+func TestVersionsListCommand_success(t *testing.T) {
 	addr := startTestRuntimeAddrForVersionsList(t)
 
 	var out bytes.Buffer
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"agents", "versions", "ls", "demo/echo-agent", "--runtime-addr", addr})
+	root.SetArgs([]string{"versions", "demo/echo-agent", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	outStr := out.String()
-	if !strings.Contains(outStr, "1.2.0") || !strings.Contains(outStr, "runnable") {
+	if !strings.Contains(outStr, "1.2.0") || !strings.Contains(outStr, "published") {
 		t.Fatalf("output = %q, want version row", outStr)
 	}
 }
 
-func TestAgentsVersionsListCommand_missingAgentArg(t *testing.T) {
-	root := NewRootCommand()
-	root.SetOut(&bytes.Buffer{})
-	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"agents", "versions", "ls"})
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "accepts 1 arg") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestAgentsDeprecateCommand_success(t *testing.T) {
+func TestDeprecateCommand_success(t *testing.T) {
 	addr := startTestRuntimeAddrForDeprecate(t)
 
 	var out bytes.Buffer
@@ -639,14 +627,147 @@ func TestAgentsDeprecateCommand_success(t *testing.T) {
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{
-		"agents", "deprecate", "demo/echo-agent", "-v", "1.2.0", "--runtime-addr", addr,
+		"deprecate", "demo/echo-agent@1.2.0", "--runtime-addr", addr,
 	})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(out.String(), "deprecated demo/echo-agent version 1.2.0") {
+	if !strings.Contains(out.String(), "deprecated demo/echo-agent@1.2.0") {
 		t.Fatalf("output = %q, want deprecation confirmation", out.String())
+	}
+}
+
+func TestDeployActivateCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForDeployActivate(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"deploy", "demo/echo-agent@1.2.0", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "deployed demo/echo-agent@1.2.0") {
+		t.Fatalf("output = %q, want deploy confirmation", out.String())
+	}
+}
+
+func TestActiveCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForActive(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"active", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "demo/echo-agent@1.2.0") {
+		t.Fatalf("output = %q, want active version", got)
+	}
+	if !strings.Contains(got, "alice") {
+		t.Fatalf("output = %q, want deploy actor", got)
+	}
+}
+
+func TestHistoryCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForHistory(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"history", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"1.2.0", "deploy", "alice", "1.0.0", "rollback", "bob", "VERSION"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestRollbackCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForRollback(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"rollback", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "rolled back demo/echo-agent to 1.0.0") {
+		t.Fatalf("output = %q, want rollback confirmation", got)
+	}
+	if !strings.Contains(got, "was: 1.2.0") {
+		t.Fatalf("output = %q, want previous version", got)
+	}
+}
+
+func TestRetireCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForRetire(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"retire", "demo/echo-agent@1.0.0", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "retired demo/echo-agent@1.0.0") {
+		t.Fatalf("output = %q, want retire confirmation", out.String())
+	}
+}
+
+func TestRunsCancelCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForRunsCancel(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"runs", "cancel", "run_abc", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "cancelled run_abc") {
+		t.Fatalf("output = %q, want cancel confirmation", out.String())
+	}
+}
+
+func TestInitCommand_success(t *testing.T) {
+	dir := t.TempDir()
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"init", dir})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "created") {
+		t.Fatalf("output = %q, want created message", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "agent.yaml")); err != nil {
+		t.Fatalf("agent.yaml: %v", err)
 	}
 }
 
@@ -682,11 +803,11 @@ func TestAgentsArchiveCommand_invalidAgentName(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_readManifestFailed(t *testing.T) {
+func TestPublishCommand_readManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", filepath.Join(t.TempDir(), "missing.json")})
+	root.SetArgs([]string{"publish", filepath.Join(t.TempDir(), "missing.json")})
 
 	err := root.Execute()
 	if err == nil {

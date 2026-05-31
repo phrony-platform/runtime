@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *runtimeServer) Deploy(ctx context.Context, req *runtimev1.DeployRequest) (*runtimev1.DeployResponse, error) {
+func (s *runtimeServer) Publish(ctx context.Context, req *runtimev1.PublishRequest) (*runtimev1.PublishResponse, error) {
 	if _, err := s.queries(); err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (s *runtimeServer) Deploy(ctx context.Context, req *runtimev1.DeployRequest
 		return nil, status.Errorf(codes.Internal, "commit transaction: %v", err)
 	}
 
-	return &runtimev1.DeployResponse{
+	return &runtimev1.PublishResponse{
 		AgentId:     agentID,
 		VersionId:   versionID,
 		ContentHash: hash,

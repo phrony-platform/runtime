@@ -22,6 +22,28 @@ func Parse(s string) (namespace, name string, err error) {
 	return namespace, name, nil
 }
 
+// ParseRef splits "namespace/name" or "namespace/name@version".
+func ParseRef(s string) (namespace, name, version string, err error) {
+	agentPart, version, hasVersion := strings.Cut(s, "@")
+	if hasVersion && version == "" {
+		return "", "", "", fmt.Errorf("agent version must not be empty after @ in %q", s)
+	}
+	namespace, name, err = Parse(agentPart)
+	if err != nil {
+		return "", "", "", err
+	}
+	return namespace, name, version, nil
+}
+
+// FormatVersioned returns "namespace/name@version" when version is set.
+func FormatVersioned(namespace, name, version string) string {
+	base := Format(namespace, name)
+	if version == "" {
+		return base
+	}
+	return base + "@" + version
+}
+
 // Format returns the canonical string form of an agent reference.
 func Format(namespace, name string) string {
 	if namespace == "" {

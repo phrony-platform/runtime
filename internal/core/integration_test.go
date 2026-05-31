@@ -41,23 +41,24 @@ func TestIntegration_MigrateAndDeploy(t *testing.T) {
 	manifestJSON := integrationManifestJSON(t, namespace, "Integration test agent.", "1.0.0")
 	srv := &runtimeServer{db: db}
 
-	resp, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON})
+	resp, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestJSON})
 	if err != nil {
-		t.Fatalf("Deploy: %v", err)
+		t.Fatalf("Publish: %v", err)
 	}
 	if resp.GetAgentId() == "" || resp.GetVersionId() == "" {
-		t.Fatalf("Deploy returned empty ids: %+v", resp)
+		t.Fatalf("Publish returned empty ids: %+v", resp)
 	}
 	if resp.GetContentHash() != hashManifest(manifestJSON) {
 		t.Fatalf("content_hash = %q, want %q", resp.GetContentHash(), hashManifest(manifestJSON))
 	}
 
 	versionV1ID := resp.GetVersionId()
+	integrationActivateVersion(t, srv, namespace, "echo-agent", "1.0.0")
 
 	updatedJSON := integrationManifestJSON(t, namespace, "Updated integration purpose.", "1.0.0")
-	_, err = srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: updatedJSON})
+	_, err = srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: updatedJSON})
 	if err == nil {
-		t.Fatal("Deploy redeploy same version: want error")
+		t.Fatal("Publish redeploy same version: want error")
 	}
 	if st, ok := status.FromError(err); !ok || st.Code() != codes.AlreadyExists {
 		t.Fatalf("redeploy same version: err = %v, want AlreadyExists", err)
@@ -91,13 +92,14 @@ func TestIntegration_MigrateAndDeploy(t *testing.T) {
 	t.Cleanup(func() { cleanupIntegrationSessions(t, db, runV1.GetSessionId()) })
 
 	manifestV2 := integrationManifestJSON(t, namespace, "Version two.", "2.0.0")
-	respV2, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestV2})
+	respV2, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestV2})
 	if err != nil {
-		t.Fatalf("Deploy v2: %v", err)
+		t.Fatalf("Publish v2: %v", err)
 	}
 	if respV2.GetVersionId() == versionV1ID {
 		t.Fatalf("v2 version_id = %q, want different from v1", respV2.GetVersionId())
 	}
+	integrationActivateVersion(t, srv, namespace, "echo-agent", "2.0.0")
 
 	runLatest, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
 		AgentRef: &runtimev1.AgentRef{
@@ -138,13 +140,14 @@ func TestIntegration_AgentLifecycle(t *testing.T) {
 	manifestJSON := integrationManifestJSON(t, namespace, "Lifecycle agent.", "1.0.0")
 	srv := &runtimeServer{db: db}
 
-	deployResp, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestJSON})
+	publishResp, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestJSON})
 	if err != nil {
-		t.Fatalf("Deploy: %v", err)
+		t.Fatalf("Publish: %v", err)
 	}
-	if deployResp.GetAgentId() == "" {
-		t.Fatal("Deploy returned empty agent_id")
+	if publishResp.GetAgentId() == "" {
+		t.Fatal("Publish returned empty agent_id")
 	}
+	integrationActivateVersion(t, srv, namespace, "echo-agent", "1.0.0")
 
 	listAgents, err := srv.ListAgents(context.Background(), &runtimev1.ListAgentsRequest{Namespace: namespace})
 	if err != nil {
@@ -185,8 +188,8 @@ func TestIntegration_AgentLifecycle(t *testing.T) {
 	}
 
 	manifestV2 := integrationManifestJSON(t, namespace, "Lifecycle v2.", "2.0.0")
-	if _, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestV2}); err != nil {
-		t.Fatalf("Deploy v2: %v", err)
+	if _, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestV2}); err != nil {
+		t.Fatalf("Publish v2: %v", err)
 	}
 
 	if _, err := srv.ArchiveAgent(context.Background(), &runtimev1.ArchiveAgentRequest{AgentRef: agentRef}); err != nil {
@@ -205,8 +208,58 @@ func TestIntegration_AgentLifecycle(t *testing.T) {
 		t.Fatalf("RunSession archived: err = %v, want FailedPrecondition", err)
 	}
 
-	if _, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{Manifest: manifestV2}); err == nil {
-		t.Fatal("Deploy to archived agent: want error")
+	if _, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestV2}); err == nil {
+		t.Fatal("Publish to archived agent: want error")
+	}
+}
+
+func TestIntegration_PublishWithoutDeployCannotRun(t *testing.T) {
+	dsn := os.Getenv("RUNTIME_DATABASE_URL")
+	if dsn == "" {
+		dsn = defaultIntegrationDSN
+	}
+
+	db, err := sqlx.Connect("pgx", dsn)
+	if err != nil {
+		t.Skipf("postgres not available: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	namespace := "itest-" + uuid.NewString()[:8]
+	t.Cleanup(func() { cleanupIntegrationAgents(t, db, namespace) })
+
+	manifestJSON := integrationManifestJSON(t, namespace, "Published but not deployed.", "3.0.0")
+	srv := &runtimeServer{db: db}
+
+	if _, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestJSON}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	_, err = srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
+		AgentRef: &runtimev1.AgentRef{Namespace: namespace, Name: "echo-agent"},
+	})
+	if err == nil {
+		t.Fatal("RunSession without deploy: want error")
+	}
+	if st, ok := status.FromError(err); !ok || st.Code() != codes.FailedPrecondition {
+		t.Fatalf("RunSession without deploy: err = %v, want FailedPrecondition", err)
+	}
+	if !strings.Contains(err.Error(), "no active deployment") {
+		t.Fatalf("RunSession without deploy: err = %v, want no active deployment", err)
+	}
+}
+
+func integrationActivateVersion(t *testing.T, srv *runtimeServer, namespace, name, version string) {
+	t.Helper()
+	_, err := srv.Deploy(context.Background(), &runtimev1.DeployRequest{
+		AgentRef: &runtimev1.AgentRef{Namespace: namespace, Name: name, Version: version},
+	})
+	if err != nil {
+		t.Fatalf("Deploy %s/%s@%s: %v", namespace, name, version, err)
 	}
 }
 
@@ -264,6 +317,9 @@ func cleanupIntegrationAgents(t *testing.T, db *sqlx.DB, namespace string) {
 		WHERE a.namespace = $1
 	)`, namespace); err != nil {
 		t.Logf("cleanup sessions: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM deployments WHERE agent_id IN (SELECT id FROM agents WHERE namespace = $1)`, namespace); err != nil {
+		t.Logf("cleanup deployments: %v", err)
 	}
 	if _, err := db.Exec(`DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE namespace = $1)`, namespace); err != nil {
 		t.Logf("cleanup agent_versions: %v", err)

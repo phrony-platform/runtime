@@ -67,6 +67,42 @@ func TestFromProto_valid(t *testing.T) {
 	}
 }
 
+func TestParseRef_withVersion(t *testing.T) {
+	ns, name, ver, err := ParseRef("demo/echo-agent@1.2.0")
+	if err != nil {
+		t.Fatalf("ParseRef: %v", err)
+	}
+	if ns != "demo" || name != "echo-agent" || ver != "1.2.0" {
+		t.Fatalf("got %q/%q@%q, want demo/echo-agent@1.2.0", ns, name, ver)
+	}
+}
+
+func TestParseRef_withoutVersion(t *testing.T) {
+	ns, name, ver, err := ParseRef("demo/echo-agent")
+	if err != nil {
+		t.Fatalf("ParseRef: %v", err)
+	}
+	if ns != "demo" || name != "echo-agent" || ver != "" {
+		t.Fatalf("got %q/%q@%q, want demo/echo-agent with empty version", ns, name, ver)
+	}
+}
+
+func TestParseRef_emptyVersion(t *testing.T) {
+	_, _, _, err := ParseRef("demo/echo-agent@")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestFormatVersioned(t *testing.T) {
+	if got := FormatVersioned("demo", "echo", "1.0.0"); got != "demo/echo@1.0.0" {
+		t.Fatalf("FormatVersioned = %q, want demo/echo@1.0.0", got)
+	}
+	if got := FormatVersioned("demo", "echo", ""); got != "demo/echo" {
+		t.Fatalf("FormatVersioned = %q, want demo/echo", got)
+	}
+}
+
 func TestFromProto_errors(t *testing.T) {
 	tests := []*runtimev1.AgentRef{
 		nil,

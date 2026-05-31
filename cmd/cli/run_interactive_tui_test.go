@@ -190,6 +190,56 @@ func TestRunTUI_handleServerMsg_sessionStartedWithHistory(t *testing.T) {
 	}
 }
 
+func TestRunTUI_attachCompletedReadOnly(t *testing.T) {
+	stream := &mockInteractiveClientStream{}
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-done"})
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
+				SessionId: "sess-done",
+				History: []*runtimev1.InteractiveConversationMessage{
+					{Role: "user", Content: "hello"},
+					{Role: "assistant", Content: "done"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("session_started: %v", err)
+	}
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
+			Completed: &runtimev1.RunSessionInteractiveCompleted{StopReason: "end_turn"},
+		},
+	}); err != nil {
+		t.Fatalf("completed: %v", err)
+	}
+	if !m.readOnly {
+		t.Fatal("expected readOnly attach replay")
+	}
+	if m.awaitingInput || m.input.Focused() {
+		t.Fatal("input should stay disabled on completed attach")
+	}
+	if !m.sendClosed {
+		t.Fatal("expected stream send closed after read-only completed")
+	}
+
+	model, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = model.(*runTUI)
+	if m.quitting {
+		t.Fatal("read-only completed attach should stay open for review")
+	}
+	if cmd != nil {
+		t.Fatal("expected no recv cmd after window resize on read-only completed")
+	}
+	if !strings.Contains(m.footerView(), "scroll to review") {
+		t.Fatalf("footer = %q, want scroll help", m.footerView())
+	}
+}
+
 func TestRunTUI_layout_viewportMatchesBox(t *testing.T) {
 	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
 	m.width = 80
