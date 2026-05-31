@@ -2,7 +2,9 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -10,6 +12,20 @@ import (
 )
 
 const defaultOnLimit = "halt"
+
+const limitErrorPrefix = "run limit "
+
+// IsLimitError reports whether err is a manifest run limit error.
+func IsLimitError(err error) bool {
+	var lim *LimitError
+	return errors.As(err, &lim)
+}
+
+// IsLimitErrorMessage reports whether msg is a persisted LimitError string (sessions store errors as text).
+func IsLimitErrorMessage(msg string) bool {
+	msg = strings.TrimSpace(msg)
+	return strings.HasPrefix(msg, limitErrorPrefix) && strings.Contains(msg, " exceeded")
+}
 
 // LimitKind identifies which run limit was exceeded.
 type LimitKind string

@@ -39,11 +39,11 @@ func TestInteractiveSessionState_sessionLoopIterationLimitError(t *testing.T) {
 	}
 }
 
-func TestIsRunLimitSessionError(t *testing.T) {
-	if !isRunLimitSessionError("run limit max_tokens_per_run exceeded (on_limit=halt)") {
+func TestExecutorIsLimitErrorMessage(t *testing.T) {
+	if !executor.IsLimitErrorMessage("run limit max_tokens_per_run exceeded (on_limit=halt)") {
 		t.Fatal("expected limit session error")
 	}
-	if isRunLimitSessionError("model unavailable") {
+	if executor.IsLimitErrorMessage("model unavailable") {
 		t.Fatal("unexpected limit match for generic error")
 	}
 }

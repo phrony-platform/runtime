@@ -182,7 +182,8 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		if session.Error != nil {
 			errMsg = *session.Error
 		}
-		if isRunLimitSessionError(errMsg) {
+		// Session.Error is stored as text only; match persisted LimitError messages on re-attach.
+		if executor.IsLimitErrorMessage(errMsg) {
 			lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
 			state := &interactiveSessionState{
 				sessionID:        sessionID,

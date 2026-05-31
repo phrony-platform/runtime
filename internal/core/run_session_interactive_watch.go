@@ -97,8 +97,7 @@ func (s *runtimeServer) handleInteractiveTurnError(
 	if turnErr == nil {
 		return false, nil
 	}
-	var lim *executor.LimitError
-	if errors.As(turnErr, &lim) {
+	if executor.IsLimitError(turnErr) {
 		state.blockInput(turnErr)
 		if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
 			return false, err

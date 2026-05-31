@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,32 @@ func TestLimitTracker_maxLoopIterations(t *testing.T) {
 	}
 	if err := tracker.beginIteration(); err == nil {
 		t.Fatal("second iteration: want limit error")
+	}
+}
+
+func TestIsLimitError(t *testing.T) {
+	if IsLimitError(nil) {
+		t.Fatal("nil error should not be a limit error")
+	}
+	if IsLimitError(errors.New("model unavailable")) {
+		t.Fatal("generic error should not be a limit error")
+	}
+	lim := &LimitError{Kind: LimitMaxTokensPerRun, OnLimit: "halt"}
+	if !IsLimitError(lim) {
+		t.Fatal("LimitError should be detected")
+	}
+	wrapped := fmt.Errorf("turn failed: %w", lim)
+	if !IsLimitError(wrapped) {
+		t.Fatal("wrapped LimitError should be detected")
+	}
+}
+
+func TestIsLimitErrorMessage(t *testing.T) {
+	if !IsLimitErrorMessage("run limit max_tokens_per_run exceeded (on_limit=halt)") {
+		t.Fatal("expected limit session error message")
+	}
+	if IsLimitErrorMessage("model unavailable") {
+		t.Fatal("unexpected limit match for generic error")
 	}
 }
 

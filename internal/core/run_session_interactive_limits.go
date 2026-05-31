@@ -3,18 +3,11 @@ package core
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/manifest"
 )
-
-// isRunLimitSessionError reports stored session errors produced by LimitError (including legacy failed sessions).
-func isRunLimitSessionError(msg string) bool {
-	msg = strings.TrimSpace(msg)
-	return strings.HasPrefix(msg, "run limit ") && strings.Contains(msg, " exceeded")
-}
 
 func limitErrorMessage(err error) string {
 	if err == nil {
