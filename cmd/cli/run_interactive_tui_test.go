@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 )
 
@@ -65,19 +67,29 @@ func TestRunTUI_handleServerMsg_turnWithStats(t *testing.T) {
 	if !m.awaitingInput {
 		t.Fatal("expected awaitingInput")
 	}
-	if !strings.Contains(m.statsLine, "turn 1") {
-		t.Fatalf("statsLine = %q, want turn 1", m.statsLine)
+	if m.lastStats == nil || m.lastStats.GetTurn() != 1 {
+		t.Fatalf("lastStats = %+v, want turn 1", m.lastStats)
 	}
-	if !strings.Contains(m.statsLine, "turn tokens") {
-		t.Fatalf("statsLine = %q, want turn tokens", m.statsLine)
+
+	conversation := m.conversationText()
+	if !strings.Contains(conversation, "#1") {
+		t.Fatalf("conversation = %q, want turn badge in message panel", conversation)
+	}
+	if !strings.Contains(conversation, "▲") || !strings.Contains(conversation, "50") {
+		t.Fatalf("conversation = %q, want token chips in message panel", conversation)
 	}
 
 	header := m.headerView()
 	if !strings.Contains(header, "anthropic/claude") {
 		t.Fatalf("header = %q, want model line", header)
 	}
-	if !strings.Contains(header, "50 in / 20 out") {
-		t.Fatalf("header = %q, want token counts", header)
+
+	statusBar := m.statusBarView()
+	if !strings.Contains(statusBar, "Ready") {
+		t.Fatalf("statusBar = %q, want Ready state", statusBar)
+	}
+	if !strings.Contains(statusBar, "70") {
+		t.Fatalf("statusBar = %q, want session token total", statusBar)
 	}
 
 	content := m.viewport.View()
@@ -98,7 +110,14 @@ func TestRunTUI_handleServerMsg_sessionStartedWithHistory(t *testing.T) {
 				SessionId: "sess-attach",
 				History: []*runtimev1.InteractiveConversationMessage{
 					{Role: "user", Content: "hello"},
-					{Role: "assistant", Content: "hi there"},
+					{
+						Role:       "assistant",
+						Content:    "hi there",
+						StopReason: "end_turn",
+						TurnUsage: &runtimev1.TokenUsage{
+							InputTokens: 12, OutputTokens: 4, TotalTokens: 16,
+						},
+					},
 				},
 			},
 		},
@@ -110,20 +129,26 @@ func TestRunTUI_handleServerMsg_sessionStartedWithHistory(t *testing.T) {
 	if !strings.Contains(text, "hello") || !strings.Contains(text, "hi there") {
 		t.Fatalf("conversation = %q, want prior turns", text)
 	}
+	if !strings.Contains(text, "▲") || !strings.Contains(text, "12") {
+		t.Fatalf("conversation = %q, want turn token chips from history", text)
+	}
 }
 
 func TestRunTUI_layout_viewportMatchesBox(t *testing.T) {
 	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
 	m.width = 80
 	m.height = 24
-	m.statsLine = "turn 1 · stop_reason=end_turn"
+	m.lastStats = &runtimev1.InteractiveSessionStats{Turn: 1}
 	m.layout()
 
 	if m.viewport.Width != m.bodyContentWidth() {
 		t.Fatalf("viewport.Width = %d, bodyContentWidth = %d", m.viewport.Width, m.bodyContentWidth())
 	}
-	if m.bodyContentWidth() != 76 {
-		t.Fatalf("bodyContentWidth() = %d, want 76", m.bodyContentWidth())
+	if m.bodyContentWidth() != 72 {
+		t.Fatalf("bodyContentWidth() = %d, want 72", m.bodyContentWidth())
+	}
+	if m.messageContentWidth() != 70 {
+		t.Fatalf("messageContentWidth() = %d, want 70", m.messageContentWidth())
 	}
 }
 
@@ -133,14 +158,19 @@ func TestRunTUI_sendUserMessage_clearsStatsAndStreams(t *testing.T) {
 	m.width = 80
 	m.height = 24
 	m.awaitingInput = true
-	m.statsLine = "turn 1 · turn tokens: 1 in / 1 out (2 total)"
+	m.lastStats = &runtimev1.InteractiveSessionStats{
+		Turn: 1,
+		TurnUsage: &runtimev1.TokenUsage{
+			InputTokens: 1, OutputTokens: 1, TotalTokens: 2,
+		},
+	}
 	m.input.Focus()
 
 	if err := m.sendUserMessage("hello"); err != nil {
 		t.Fatalf("sendUserMessage: %v", err)
 	}
-	if m.statsLine != "" {
-		t.Fatalf("statsLine = %q, want cleared while streaming", m.statsLine)
+	if m.lastStats != nil {
+		t.Fatalf("lastStats = %+v, want cleared while streaming", m.lastStats)
 	}
 	if m.status != "streaming" {
 		t.Fatalf("status = %q, want streaming", m.status)
@@ -164,8 +194,84 @@ func TestRunTUI_Update_windowSizeAndEmptyEnter(t *testing.T) {
 	m.input.SetValue("   ")
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(*runTUI)
-	if !strings.Contains(m.statsLine, "empty message") {
-		t.Fatalf("statsLine = %q, want empty message hint", m.statsLine)
+	if !strings.Contains(m.statusBarView(), "Type a message") {
+		t.Fatalf("statusBar = %q, want empty message hint", m.statusBarView())
+	}
+}
+
+func TestRunTUI_scrollWhileInput_preservesHistory(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 40
+	m.height = 12
+	m.awaitingInput = true
+	m.input.Focus()
+	for i := 0; i < 40; i++ {
+		m.transcript.WriteString(fmt.Sprintf("line %d\n", i))
+	}
+	m.layout()
+
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = model.(*runTUI)
+	if m.followTail {
+		t.Fatal("expected followTail false after scrolling up")
+	}
+	if m.viewport.AtBottom() {
+		t.Fatal("expected viewport not at bottom after pgup")
+	}
+
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlEnd})
+	m = model.(*runTUI)
+	if !m.followTail || !m.viewport.AtBottom() {
+		t.Fatal("expected jump to latest to re-enable follow tail")
+	}
+}
+
+func TestRunTUI_refreshViewport_respectsFollowTail(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 40
+	m.height = 12
+	for i := 0; i < 30; i++ {
+		m.transcript.WriteString(fmt.Sprintf("line %d\n", i))
+	}
+	m.layout()
+	m.followTail = false
+	m.viewport.LineUp(5)
+	offset := m.viewport.YOffset
+
+	m.transcript.WriteString("new line\n")
+	m.refreshViewport()
+	if m.viewport.YOffset != offset {
+		t.Fatalf("YOffset = %d, want %d when not following tail", m.viewport.YOffset, offset)
+	}
+
+	m.followTail = true
+	m.refreshViewport()
+	if !m.viewport.AtBottom() {
+		t.Fatal("expected GotoBottom when followTail is true")
+	}
+}
+
+func TestTuiScrollWhileInput_doesNotCaptureSpace(t *testing.T) {
+	if tuiScrollWhileInput(tea.KeyMsg{Type: tea.KeySpace}) {
+		t.Fatal("space should be typed into the message box, not scroll the chat")
+	}
+}
+
+func TestRunTUI_viewFitsTerminalWithInputFooter(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 80
+	m.height = 24
+	m.sessionID = "sess-1"
+	m.agentVersionID = "ver-1"
+	m.modelProvider = "anthropic"
+	m.modelName = "claude"
+	m.awaitingInput = true
+	m.input.Focus()
+	m.layout()
+
+	view := m.View()
+	if got := lipgloss.Height(view); got > m.height {
+		t.Fatalf("view height = %d, terminal height = %d", got, m.height)
 	}
 }
 
@@ -175,12 +281,11 @@ func TestRunTUI_View_includesWrappedBody(t *testing.T) {
 	m.height = 20
 	m.sessionID = "sess-1"
 	m.layout()
-	m.transcript.WriteString("Assistant\n")
-	m.transcript.WriteString(strings.Repeat("word ", 30))
+	m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", strings.Repeat("word ", 30), nil))
 	m.refreshViewport()
 
 	view := m.View()
-	if !strings.Contains(view, "Session") {
+	if !strings.Contains(view, "session sess-1") {
 		t.Fatalf("view = %q, want session header", view)
 	}
 	if strings.Count(view, "\n") < 3 {

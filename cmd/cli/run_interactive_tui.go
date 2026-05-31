@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,7 +37,11 @@ type runTUI struct {
 	agentVersionID string
 	modelProvider  string
 	modelName      string
-	statsLine      string
+
+	lastStats      *runtimev1.InteractiveSessionStats
+	lastStopReason string
+	statusHint     string
+	turnStartedAt  time.Time
 
 	transcript strings.Builder
 	streaming  strings.Builder
@@ -45,17 +51,58 @@ type runTUI struct {
 	sendClosed    bool
 	streamErr     error
 	quitting      bool
+
+	// followTail auto-scrolls the transcript on new output while the user is at the bottom.
+	followTail bool
+	// historyMetaTurns is the highest assistant turn number rendered from session history metadata.
+	historyMetaTurns int32
 }
 
 var (
 	tuiTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
 	tuiMetaStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	tuiStatsStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-	tuiUserStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
-	tuiAssistStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
-	tuiHelpStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	tuiErrorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	tuiBoxStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
+	tuiHeaderBarStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("234")).
+				Padding(0, 1)
+	tuiUserLabelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
+	tuiUserBlockStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("235")).
+				Padding(1, 2).
+				MarginBottom(1)
+	tuiAgentLabelStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("117"))
+	tuiAgentBlockStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("236")).
+				Padding(1, 2).
+				MarginBottom(1)
+	tuiHelpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	tuiErrorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	tuiBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(1, 2, 0, 2)
+	tuiStatusBarStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("235")).
+				Padding(0, 1)
+	tuiStatusLabelStyle = lipgloss.NewStyle().Bold(true)
+	tuiStatusSepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	tuiStatusMutedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	tuiInputBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("240")).
+				Padding(0, 1)
+	tuiInputBoxFocusStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("39")).
+				Padding(0, 1)
+	tuiInputTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("245")).
+				MarginBottom(0)
 )
 
 func runInteractiveSessionTUI(
@@ -64,7 +111,7 @@ func runInteractiveSessionTUI(
 	start *runtimev1.RunSessionInteractiveStart,
 ) error {
 	m := newRunTUI(ctx, stream, start)
-	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
 		return err
@@ -77,22 +124,81 @@ func runInteractiveSessionTUI(
 
 func newRunTUI(ctx context.Context, stream interactiveStream, start *runtimev1.RunSessionInteractiveStart) *runTUI {
 	ti := textinput.New()
-	ti.Placeholder = "Message the agent…"
+	ti.Placeholder = "Type your message…"
 	ti.CharLimit = 0
-	ti.Prompt = "> "
+	ti.Prompt = ""
+	ti.PromptStyle = lipgloss.NewStyle()
+	ti.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Italic(true)
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 	ti.Blur()
 
 	vp := viewport.New(0, 0)
+	vp.MouseWheelEnabled = true
 	vp.SetContent("Connecting…")
 
 	return &runTUI{
-		ctx:      ctx,
-		stream:   stream,
-		start:    start,
-		input:    ti,
-		viewport: vp,
-		status:   "connecting",
+		ctx:        ctx,
+		stream:     stream,
+		start:      start,
+		input:      ti,
+		viewport:   vp,
+		status:     "connecting",
+		followTail: true,
 	}
+}
+
+var tuiScrollKeys = viewport.KeyMap{
+	// Avoid binding printable keys (space, f, b, etc.) so the message box can accept normal text.
+	PageDown: key.NewBinding(key.WithKeys("pgdown")),
+	PageUp:   key.NewBinding(key.WithKeys("pgup")),
+	HalfPageUp: key.NewBinding(
+		key.WithKeys("ctrl+u"),
+	),
+	HalfPageDown: key.NewBinding(
+		key.WithKeys("ctrl+f"),
+	),
+	Up: key.NewBinding(
+		key.WithKeys("shift+up", "shift+k"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("shift+down", "shift+j"),
+	),
+}
+
+func tuiScrollWhileInput(msg tea.KeyMsg) bool {
+	return key.Matches(msg, tuiScrollKeys.PageDown, tuiScrollKeys.PageUp,
+		tuiScrollKeys.HalfPageUp, tuiScrollKeys.HalfPageDown,
+		tuiScrollKeys.Up, tuiScrollKeys.Down)
+}
+
+func (m *runTUI) scrollViewport(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "shift+up", "shift+k":
+			m.viewport.LineUp(1)
+		case "shift+down", "shift+j":
+			m.viewport.LineDown(1)
+		default:
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			if cmd != nil {
+				return cmd
+			}
+		}
+	default:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return cmd
+	}
+	m.followTail = m.viewport.AtBottom()
+	return nil
+}
+
+func (m *runTUI) jumpToLatest() {
+	m.viewport.GotoBottom()
+	m.followTail = true
 }
 
 func (m *runTUI) Init() tea.Cmd {
@@ -164,12 +270,20 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.recvStream()
 
+	case tea.MouseMsg:
+		return m, m.scrollViewport(msg)
+
 	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			m.quitting = true
+			return m, tea.Quit
+		}
+		if msg.String() == "ctrl+end" || msg.String() == "shift+g" {
+			m.jumpToLatest()
+			return m, nil
+		}
 		if m.awaitingInput {
 			switch msg.String() {
-			case "ctrl+c":
-				m.quitting = true
-				return m, tea.Quit
 			case "ctrl+d":
 				if err := m.closeSend(); err != nil {
 					m.streamErr = err
@@ -179,12 +293,13 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.awaitingInput = false
 				m.input.Blur()
 				m.status = "ending"
-				m.refreshViewport()
+				m.statusHint = ""
+				m.layout()
 				return m, m.recvStream()
 			}
-		} else if msg.String() == "ctrl+c" {
-			m.quitting = true
-			return m, tea.Quit
+			if tuiScrollWhileInput(msg) {
+				return m, m.scrollViewport(msg)
+			}
 		}
 	}
 
@@ -194,7 +309,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
 			text := strings.TrimSpace(m.input.Value())
 			if text == "" {
-				m.statsLine = "empty message — type text or press ctrl+d to end"
+				m.statusHint = "Type a message or press Ctrl+D to end the session"
 				m.refreshViewport()
 				return m, nil
 			}
@@ -207,16 +322,12 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
-	return m, cmd
+	return m, m.scrollViewport(msg)
 }
 
 func (m *runTUI) sendUserMessage(text string) error {
-	m.transcript.WriteString("\n\n")
-	m.transcript.WriteString(tuiUserStyle.Render("You"))
 	m.transcript.WriteString("\n")
-	m.transcript.WriteString(text)
+	m.transcript.WriteString(renderUserBlock(m.messageContentWidth(), text))
 
 	if err := m.stream.Send(&runtimev1.RunSessionInteractiveClientMsg{
 		Body: &runtimev1.RunSessionInteractiveClientMsg_UserMessage{
@@ -230,8 +341,12 @@ func (m *runTUI) sendUserMessage(text string) error {
 	m.input.Blur()
 	m.awaitingInput = false
 	m.status = "streaming"
-	m.statsLine = ""
-	m.refreshViewport()
+	m.lastStats = nil
+	m.lastStopReason = ""
+	m.statusHint = ""
+	m.turnStartedAt = time.Now()
+	m.followTail = true
+	m.layout()
 	return nil
 }
 
@@ -247,35 +362,45 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 			return err
 		}
 		m.status = "streaming"
-		m.refreshViewport()
+		m.layout()
 	case msg.GetTextDelta() != nil:
 		m.streaming.WriteString(msg.GetTextDelta().GetDelta())
 		m.refreshViewport()
 	case msg.GetAwaitingInput() != nil:
-		if err := m.flushStreamingTurn(); err != nil {
+		duration := m.turnElapsed()
+		awaiting := msg.GetAwaitingInput()
+		stats := awaiting.GetStats()
+		meta := turnMeta(stats, awaiting.GetStopReason(), duration)
+		added, err := m.flushStreamingTurn(meta)
+		if err != nil {
 			return err
 		}
-		awaiting := msg.GetAwaitingInput()
-		m.statsLine = formatSessionStatsLine(awaiting.GetStats(), awaiting.GetStopReason())
+		m.setLastTurnStats(stats, awaiting.GetStopReason())
+		if !added && meta != nil && stats != nil && stats.GetTurnUsage() != nil && stats.GetTurn() > m.historyMetaTurns {
+			m.transcript.WriteString("\n")
+			m.transcript.WriteString(renderAgentMetaStrip(m.messageContentWidth(), meta))
+		}
 		m.status = "input"
 		m.awaitingInput = true
 		m.input.Focus()
-		m.refreshViewport()
+		m.layout()
 	case msg.GetCompleted() != nil:
-		if err := m.flushStreamingTurn(); err != nil {
+		duration := m.turnElapsed()
+		completed := msg.GetCompleted()
+		meta := turnMeta(completed.GetStats(), completed.GetStopReason(), duration)
+		if _, err := m.flushStreamingTurn(meta); err != nil {
 			return err
 		}
-		completed := msg.GetCompleted()
 		if m.transcript.Len() == 0 {
-			if err := m.appendCompletedOutput(completed.GetOutput()); err != nil {
+			if err := m.appendCompletedOutput(completed.GetOutput(), meta); err != nil {
 				return err
 			}
 		}
-		m.statsLine = "session complete · " + formatSessionStatsLine(completed.GetStats(), completed.GetStopReason())
+		m.setLastTurnStats(completed.GetStats(), completed.GetStopReason())
 		m.status = "done"
 		m.awaitingInput = false
 		m.input.Blur()
-		m.refreshViewport()
+		m.layout()
 	case msg.GetFailed() != nil:
 		return fmt.Errorf("session failed: %s", msg.GetFailed().GetMessage())
 	default:
@@ -284,25 +409,40 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 	return nil
 }
 
+func (m *runTUI) turnElapsed() time.Duration {
+	if m.turnStartedAt.IsZero() {
+		return 0
+	}
+	return time.Since(m.turnStartedAt)
+}
+
+func (m *runTUI) setLastTurnStats(stats *runtimev1.InteractiveSessionStats, stopReason string) {
+	m.lastStats = stats
+	m.lastStopReason = stopReason
+	m.turnStartedAt = time.Time{}
+}
+
 func (m *runTUI) appendConversationHistory(msgs []*runtimev1.InteractiveConversationMessage) error {
+	var turn int32
 	for _, msg := range msgs {
 		role := msg.GetRole()
 		content := msg.GetContent()
 		switch role {
 		case "user":
-			m.transcript.WriteString("\n\n")
-			m.transcript.WriteString(tuiUserStyle.Render("You"))
 			m.transcript.WriteString("\n")
-			m.transcript.WriteString(content)
+			m.transcript.WriteString(renderUserBlock(m.messageContentWidth(), content))
 		case "assistant":
+			turn++
 			formatted, err := formatAssistantTranscript(content)
 			if err != nil {
 				return err
 			}
-			m.transcript.WriteString("\n\n")
-			m.transcript.WriteString(tuiAssistStyle.Render("Assistant"))
+			meta := turnMeta(statsFromHistoryMessage(msg, turn), msg.GetStopReason(), durationFromHistoryMessage(msg))
 			m.transcript.WriteString("\n")
-			m.transcript.Write(formatted)
+			m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", string(formatted), meta))
+			if meta != nil {
+				m.historyMetaTurns = turn
+			}
 		default:
 			return fmt.Errorf("run session: unknown history role %q", role)
 		}
@@ -328,7 +468,7 @@ func formatAssistantTranscript(content string) ([]byte, error) {
 	return []byte(content), nil
 }
 
-func (m *runTUI) appendCompletedOutput(raw []byte) error {
+func (m *runTUI) appendCompletedOutput(raw []byte, meta *turnDisplayMeta) error {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -336,49 +476,56 @@ func (m *runTUI) appendCompletedOutput(raw []byte) error {
 	if err != nil {
 		return err
 	}
-	m.transcript.WriteString("\n\n")
-	m.transcript.WriteString(tuiAssistStyle.Render("Result"))
 	m.transcript.WriteString("\n")
-	m.transcript.Write(pretty)
+	m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "Result", string(pretty), meta))
 	return nil
 }
 
-func (m *runTUI) flushStreamingTurn() error {
+func (m *runTUI) flushStreamingTurn(meta *turnDisplayMeta) (bool, error) {
 	raw := m.streaming.String()
 	m.streaming.Reset()
 	if strings.TrimSpace(raw) == "" {
-		return nil
+		return false, nil
 	}
 
 	var formatted bytes.Buffer
 	w := newCompletionWriter(&formatted)
 	if err := w.WriteDelta(raw); err != nil {
-		return err
+		return false, err
 	}
 	if err := w.Flush(); err != nil {
-		return err
+		return false, err
 	}
 
-	m.transcript.WriteString("\n\n")
-	m.transcript.WriteString(tuiAssistStyle.Render("Assistant"))
-	m.transcript.WriteString("\n")
+	body := raw
 	if formatted.Len() > 0 {
-		m.transcript.Write(formatted.Bytes())
-	} else {
-		m.transcript.WriteString(raw)
+		body = formatted.String()
 	}
-	return nil
+	m.transcript.WriteString("\n")
+	m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", body, meta))
+	return true, nil
 }
 
 func (m *runTUI) refreshViewport() {
-	m.viewport.SetContent(wrapTUILines(m.bodyContentWidth(), m.conversationText()))
-	m.viewport.GotoBottom()
+	m.viewport.SetContent(wrapTUILines(m.messageContentWidth(), m.conversationText()))
+	if m.followTail {
+		m.viewport.GotoBottom()
+	}
 }
 
-// bodyContentWidth is the usable width inside the conversation box (border included).
+// bodyContentWidth is the viewport width inside the chat box (border + inner padding).
 func (m *runTUI) bodyContentWidth() int {
-	// View sits inside tuiBoxStyle, which uses Width(m.width-2) including left/right border.
-	w := m.width - 4
+	// Outer box width is m.width-2; subtract border (2) and tuiBoxStyle horizontal padding (4).
+	w := m.width - 8
+	if w < 10 {
+		return 10
+	}
+	return w
+}
+
+// messageContentWidth is the render width for user/agent message blocks inside the viewport.
+func (m *runTUI) messageContentWidth() int {
+	w := m.bodyContentWidth() - 2
 	if w < 10 {
 		return 10
 	}
@@ -399,13 +546,12 @@ func (m *runTUI) conversationText() string {
 		b.WriteString(m.transcript.String())
 	}
 	if m.streaming.Len() > 0 {
-		b.WriteString("\n\n")
-		b.WriteString(tuiAssistStyle.Render("Assistant"))
-		b.WriteString("\n")
-		b.WriteString(m.streaming.String())
+		body := m.streaming.String()
 		if m.status == "streaming" {
-			b.WriteString("▌")
+			body += lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Render("▌")
 		}
+		b.WriteString("\n")
+		b.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", body, nil))
 	}
 	if b.Len() == 0 {
 		switch m.status {
@@ -420,49 +566,111 @@ func (m *runTUI) conversationText() string {
 	return b.String()
 }
 
-func (m *runTUI) layout() {
-	headerLines := 4
-	footerLines := 3
-	if m.awaitingInput {
-		footerLines = 5
+func (m *runTUI) chromeHeights() (header, status, footer, chatFrame int) {
+	if m.width <= 0 {
+		return 0, 0, 0, tuiBoxStyle.GetVerticalFrameSize()
 	}
-	if m.statsLine != "" {
-		headerLines = 5
-	}
+	return lipgloss.Height(m.headerView()),
+		lipgloss.Height(m.statusBarView()),
+		lipgloss.Height(m.footerView()),
+		tuiBoxStyle.GetVerticalFrameSize()
+}
 
-	bodyHeight := m.height - headerLines - footerLines
-	if bodyHeight < 1 {
-		bodyHeight = 1
+func (m *runTUI) layout() {
+	if m.width <= 0 || m.height <= 0 {
+		return
+	}
+	headerH, statusH, footerH, frameH := m.chromeHeights()
+	// JoinVertical adds one line between header, chat, status bar, and footer.
+	sectionGaps := 3
+	inner := m.height - headerH - statusH - footerH - frameH - sectionGaps
+	if inner < 1 {
+		inner = 1
 	}
 	m.viewport.Width = m.bodyContentWidth()
-	m.viewport.Height = bodyHeight
-	m.input.Width = m.width - 6
-	if m.input.Width < 10 {
-		m.input.Width = 10
+	m.viewport.Height = inner
+	inputInner := m.width - 6
+	if inputInner < 10 {
+		inputInner = 10
 	}
+	m.input.Width = inputInner
 	m.refreshViewport()
 }
 
 func (m *runTUI) headerView() string {
-	title := "Phrony session"
+	title := "Phrony"
 	if m.sessionID != "" {
-		title = fmt.Sprintf("Session %s", shortID(m.sessionID))
+		title = fmt.Sprintf("Phrony · session %s", shortID(m.sessionID))
 	}
 	hw := m.headerContentWidth()
-	lines := []string{
+	inner := strings.Join([]string{
 		tuiTitleStyle.Render(title),
 		wrapTUIText(hw, tuiMetaStyle.Render(fmt.Sprintf(
-			"version %s · model %s",
+			"agent version %s · %s",
 			shortID(m.agentVersionID),
 			formatModelLine(m.modelProvider, m.modelName),
 		))),
+	}, "\n")
+	return tuiHeaderBarStyle.Width(m.width - 2).Render(inner)
+}
+
+func (m *runTUI) statusIndicator() string {
+	var label, color string
+	switch m.status {
+	case "connecting":
+		label, color = "Connecting", "214"
+	case "streaming":
+		label, color = "Streaming", "39"
+	case "input":
+		label, color = "Ready", "42"
+	case "ending":
+		label, color = "Ending", "214"
+	case "done":
+		label, color = "Finished", "244"
+	case "error":
+		label, color = "Error", "196"
+	default:
+		label, color = "Active", "252"
 	}
-	if m.statsLine != "" {
-		lines = append(lines, wrapTUIText(hw, tuiStatsStyle.Render(m.statsLine)))
+	dot := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("●")
+	return tuiStatusLabelStyle.Render(dot + " " + label)
+}
+
+func (m *runTUI) statusBarView() string {
+	if m.width < 4 {
+		return ""
+	}
+	segments := []string{m.statusIndicator()}
+	if m.statusHint != "" {
+		segments = append(segments, tuiStatusMutedStyle.Render(m.statusHint))
+	} else if m.lastStats != nil {
+		if turn := m.lastStats.GetTurn(); turn > 0 {
+			segments = append(segments, tuiStatusMutedStyle.Render(fmt.Sprintf("turn %d", turn)))
+		}
+		if u := m.lastStats.GetSessionUsage(); u != nil {
+			segments = append(segments, tuiStatusMutedStyle.Render("session "+formatTokenUsage(u)))
+		} else if u := m.lastStats.GetTurnUsage(); u != nil {
+			segments = append(segments, tuiStatusMutedStyle.Render("turn "+formatTokenUsage(u)))
+		}
+		if m.lastStopReason != "" {
+			segments = append(segments, tuiStatusMutedStyle.Render(m.lastStopReason))
+		}
 	} else if m.status == "streaming" {
-		lines = append(lines, wrapTUIText(hw, tuiStatsStyle.Render("assistant is responding…")))
+		segments = append(segments, tuiStatusMutedStyle.Render("agent is responding…"))
 	}
-	return strings.Join(lines, "\n")
+	content := strings.Join(segments, tuiStatusSepStyle.Render(" │ "))
+	return tuiStatusBarStyle.Width(m.width - 2).Render(content)
+}
+
+func (m *runTUI) inputPanelView() string {
+	style := tuiInputBoxStyle
+	if m.input.Focused() {
+		style = tuiInputBoxFocusStyle
+	}
+	title := tuiInputTitleStyle.Render("Message")
+	field := m.input.View()
+	inner := lipgloss.JoinVertical(lipgloss.Left, title, field)
+	return style.Width(m.width - 2).Render(inner)
 }
 
 func (m *runTUI) footerView() string {
@@ -471,18 +679,31 @@ func (m *runTUI) footerView() string {
 	}
 	switch {
 	case m.awaitingInput:
-		return tuiHelpStyle.Render("enter send · ctrl+d end session · ctrl+c quit") + "\n" + m.input.View()
+		help := tuiHelpStyle.Render(
+			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Enter send  ·  Ctrl+D end  ·  Ctrl+C quit",
+		)
+		return m.inputPanelView() + "\n" + help
 	case m.status == "done":
-		return tuiHelpStyle.Render("session finished")
+		return tuiHelpStyle.Render("Session finished — press Ctrl+C to exit")
 	default:
-		return tuiHelpStyle.Render("ctrl+c quit")
+		return tuiHelpStyle.Render("PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+C quit")
 	}
+}
+
+func (m *runTUI) chatBoxView() string {
+	_, _, _, frameH := m.chromeHeights()
+	outerH := m.viewport.Height + frameH
+	return tuiBoxStyle.Width(m.width - 2).Height(outerH).Render(m.viewport.View())
 }
 
 func (m *runTUI) View() string {
 	if m.width == 0 {
 		return "Starting…\n"
 	}
-	body := tuiBoxStyle.Width(m.width - 2).Height(m.viewport.Height).Render(m.viewport.View())
-	return fmt.Sprintf("%s\n%s\n%s", m.headerView(), body, m.footerView())
+	return lipgloss.JoinVertical(lipgloss.Top,
+		m.headerView(),
+		m.chatBoxView(),
+		m.statusBarView(),
+		m.footerView(),
+	)
 }

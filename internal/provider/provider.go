@@ -25,6 +25,10 @@ type Provider interface {
 type Message struct {
 	Role    string
 	Content string
+	// StopReason, TurnUsage, and TurnDurationMs are populated on assistant rows in persisted session history.
+	StopReason      string
+	TurnUsage       TokenUsage
+	TurnDurationMs  int64
 }
 
 // CompletionRequest is a single model call for an agent version's configured model.

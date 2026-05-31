@@ -149,15 +149,18 @@ func TestUserTextFromSessionInput_notObject(t *testing.T) {
 }
 
 func TestAppendTurnHistory(t *testing.T) {
-	h := appendTurnHistory(nil, "user", "assistant")
+	h := appendTurnHistory(nil, "user", "assistant", "end_turn", provider.TokenUsage{InputTokens: 3, OutputTokens: 2}, 1500*time.Millisecond)
 	if len(h) != 2 {
 		t.Fatalf("len(history) = %d, want 2", len(h))
 	}
 	if h[0].Content != "user" || h[1].Content != "assistant" {
 		t.Fatalf("history = %+v", h)
 	}
+	if h[1].StopReason != "end_turn" || h[1].TurnUsage.InputTokens != 3 {
+		t.Fatalf("assistant metadata = %+v", h[1])
+	}
 
-	h = appendTurnHistory(h, "", "")
+	h = appendTurnHistory(h, "", "", "", provider.TokenUsage{}, 0)
 	if len(h) != 2 {
 		t.Fatalf("empty turn should not append, len = %d", len(h))
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 )
@@ -51,5 +52,28 @@ func TestFormatSessionStatsLine(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Fatalf("line = %q, want substring %q", line, want)
 		}
+	}
+}
+
+func TestFormatTurnFooter(t *testing.T) {
+	line := formatTurnFooter(&runtimev1.InteractiveSessionStats{
+		Turn: 1,
+		TurnUsage: &runtimev1.TokenUsage{
+			InputTokens: 10, OutputTokens: 5, TotalTokens: 15,
+		},
+	}, "end_turn", 250*time.Millisecond)
+	for _, want := range []string{"turn 1", "250ms", "end_turn", "10 in / 5 out"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("line = %q, want substring %q", line, want)
+		}
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	if got := formatDuration(500 * time.Millisecond); got != "500ms" {
+		t.Fatalf("got %q", got)
+	}
+	if got := formatDuration(1500 * time.Millisecond); got != "1.5s" {
+		t.Fatalf("got %q", got)
 	}
 }

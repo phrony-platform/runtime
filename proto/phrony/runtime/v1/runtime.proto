@@ -80,6 +80,11 @@ message RunSessionInteractiveServerMsg {
 message InteractiveConversationMessage {
   string role = 1;
   string content = 2;
+  // Set on assistant messages for completed turns (restored when re-attaching).
+  string stop_reason = 3;
+  TokenUsage turn_usage = 4;
+  // Wall-clock latency for the completed turn, in milliseconds.
+  int64 turn_duration_ms = 5;
 }
 
 message RunSessionInteractiveSessionStarted {

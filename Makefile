@@ -1,4 +1,4 @@
-.PHONY: targets dev-up dev-down migrate serve build install-cli install-cli-path test test-coverage proto proto-tools cli
+.PHONY: targets dev-up dev-down migrate serve build install-cli test test-coverage proto proto-tools cli
 
 GOPATH_BIN := $(shell go env GOPATH)/bin
 export PATH := $(GOPATH_BIN):$(PATH)
@@ -33,8 +33,7 @@ targets:
 	@echo "  make migrate-create name=description   New SQL migration pair in migrations/"
 	@echo "  make serve               Run phrony-runtime (foreground)"
 	@echo "  make cli ...             Operator CLI via go run (flags like --namespace break make)"
-	@echo "  make install-cli         Install phrony to \$$(go env GOPATH)/bin"
-	@echo "  make install-cli-path    Install to ~/.local/bin and update shell PATH (recommended)"
+	@echo "  make install-cli         Install phrony to GOPATH/bin and ~/.local/bin; update shell PATH"
 	@echo ""
 	@echo "Build & test:"
 	@echo "  make build               bin/phrony, bin/phrony-runtime"
@@ -64,22 +63,17 @@ build:
 	go build -o $(BIN_DIR)/phrony ./cmd/cli
 	go build -o $(BIN_DIR)/phrony-runtime ./cmd/phrony-runtime
 
-# Install phrony to $(go env GOPATH)/bin (or $(go env GOBIN) when set).
+# Install to $(go env GOPATH)/bin (or GOBIN) and ~/.local/bin; append PATH in shell rc once.
 # Prefer this over "make cli" so flags like --namespace are not parsed by make.
 install-cli:
 	@bin=$$(go env GOBIN); \
 	if [ -z "$$bin" ]; then bin="$$(go env GOPATH)/bin"; fi; \
+	install_dir="$${HOME}/.local/bin"; \
+	mkdir -p "$$bin" "$$install_dir"; \
 	go build -o "$$bin/phrony" ./cmd/cli; \
-	echo "Installed phrony to $$bin/phrony"; \
-	echo "Run 'make install-cli-path' to add it to your shell PATH automatically"
-
-# Install to ~/.local/bin (no sudo) and append PATH to ~/.zshrc / ~/.bashrc once.
-install-cli-path:
-	@install_dir="$${HOME}/.local/bin"; \
-	mkdir -p "$$install_dir"; \
-	go build -o "$$install_dir/phrony" ./cmd/cli; \
+	cp "$$bin/phrony" "$$install_dir/phrony"; \
 	PHRONY_INSTALL_DIR="$$install_dir" sh scripts/setup-cli-path.sh; \
-	echo "Installed phrony to $$install_dir/phrony"
+	echo "Installed phrony to $$bin/phrony and $$install_dir/phrony"
 
 cli:
 	@$(LOAD_ENV) && go run ./cmd/cli $(CLI_ARGS)

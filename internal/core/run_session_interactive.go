@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
@@ -135,6 +136,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	if err != nil {
 		return status.Errorf(codes.Internal, "decode session history: %v", err)
 	}
+	history = enrichHistoryFromSessionOutput(history, session.Output)
 	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history); err != nil {
 		return err
 	}
@@ -212,7 +214,9 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 
 	for {
 		if len(pendingInput) > 0 {
+			turnStart := time.Now()
 			stopReason, assistantText, turnUsage, err := state.runTurn(ctx, stream, pendingInput)
+			turnDuration := time.Since(turnStart)
 			if err != nil {
 				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 			}
@@ -221,11 +225,11 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			if err != nil {
 				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 			}
-			state.history = appendTurnHistory(state.history, userText, assistantText)
+			state.history = appendTurnHistory(state.history, userText, assistantText, stopReason, turnUsage, turnDuration)
 			state.turnCount++
 			state.sessionUsage.Add(turnUsage)
 
-			outputJSON, err := marshalSessionOutput(assistantText, stopReason, turnUsage, state.sessionUsage)
+			outputJSON, err := marshalSessionOutput(assistantText, stopReason, turnUsage, state.sessionUsage, state.history)
 			if err != nil {
 				return status.Errorf(codes.Internal, "encode session output: %v", err)
 			}
@@ -449,12 +453,18 @@ func (s *runtimeServer) completeInteractiveSession(
 	})
 }
 
-func appendTurnHistory(history []provider.Message, userText, assistantText string) []provider.Message {
+func appendTurnHistory(history []provider.Message, userText, assistantText, stopReason string, turnUsage provider.TokenUsage, turnDuration time.Duration) []provider.Message {
 	if userText != "" {
 		history = append(history, provider.Message{Role: provider.RoleUser, Content: userText})
 	}
 	if assistantText != "" {
-		history = append(history, provider.Message{Role: provider.RoleAssistant, Content: assistantText})
+		history = append(history, provider.Message{
+			Role:           provider.RoleAssistant,
+			Content:        assistantText,
+			StopReason:     stopReason,
+			TurnUsage:      turnUsage,
+			TurnDurationMs: turnDuration.Milliseconds(),
+		})
 	}
 	return history
 }

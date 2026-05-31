@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 )
@@ -47,6 +48,58 @@ func formatSessionStatsLine(stats *runtimev1.InteractiveSessionStats, stopReason
 		line += fmt.Sprintf(" · session tokens: %s", formatTokenUsage(stats.GetSessionUsage()))
 	}
 	return line
+}
+
+// formatTurnFooter is a compact per-assistant-turn summary for the TUI transcript.
+func formatTurnFooter(stats *runtimev1.InteractiveSessionStats, stopReason string, duration time.Duration) string {
+	var parts []string
+	if stats != nil && stats.GetTurn() > 0 {
+		parts = append(parts, fmt.Sprintf("turn %d", stats.GetTurn()))
+	}
+	if duration > 0 {
+		parts = append(parts, formatDuration(duration))
+	}
+	if stopReason != "" {
+		parts = append(parts, stopReason)
+	}
+	if stats != nil && stats.GetTurnUsage() != nil {
+		parts = append(parts, formatTokenUsage(stats.GetTurnUsage()))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " · ")
+}
+
+func formatDuration(d time.Duration) string {
+	switch {
+	case d < time.Millisecond:
+		return "<1ms"
+	case d < time.Second:
+		return fmt.Sprintf("%dms", d.Round(time.Millisecond)/time.Millisecond)
+	default:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+}
+
+func durationFromHistoryMessage(msg *runtimev1.InteractiveConversationMessage) time.Duration {
+	if msg == nil || msg.GetTurnDurationMs() <= 0 {
+		return 0
+	}
+	return time.Duration(msg.GetTurnDurationMs()) * time.Millisecond
+}
+
+func statsFromHistoryMessage(msg *runtimev1.InteractiveConversationMessage, turn int32) *runtimev1.InteractiveSessionStats {
+	if msg == nil || msg.GetRole() != "assistant" {
+		return nil
+	}
+	if msg.GetTurnUsage() == nil && msg.GetStopReason() == "" {
+		return nil
+	}
+	return &runtimev1.InteractiveSessionStats{
+		Turn:      turn,
+		TurnUsage: msg.GetTurnUsage(),
+	}
 }
 
 func formatModelLine(provider, name string) string {

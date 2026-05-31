@@ -12,22 +12,29 @@ import (
 )
 
 func printConversationHistory(stdout io.Writer, msgs []*runtimev1.InteractiveConversationMessage) error {
+	var turn int32
 	for _, msg := range msgs {
 		switch msg.GetRole() {
 		case "user":
-			if _, err := fmt.Fprintf(stdout, "\nYou\n%s\n", msg.GetContent()); err != nil {
+			if _, err := fmt.Fprintf(stdout, "\nYOU\n%s\n", msg.GetContent()); err != nil {
 				return err
 			}
 		case "assistant":
+			turn++
 			formatted, err := formatAssistantTranscript(msg.GetContent())
 			if err != nil {
 				return err
 			}
-			if _, err := io.WriteString(stdout, "\nAssistant\n"); err != nil {
+			if _, err := io.WriteString(stdout, "\nAGENT\n"); err != nil {
 				return err
 			}
 			if len(formatted) > 0 {
 				if _, err := stdout.Write(formatted); err != nil {
+					return err
+				}
+			}
+			if line := formatTurnFooter(statsFromHistoryMessage(msg, turn), msg.GetStopReason(), durationFromHistoryMessage(msg)); line != "" {
+				if _, err := fmt.Fprintf(stdout, "  %s\n", line); err != nil {
 					return err
 				}
 			}
