@@ -14,6 +14,7 @@ service Runtime {
   rpc Deploy(DeployRequest) returns (DeployResponse);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   rpc ListAgentVersions(ListAgentVersionsRequest) returns (ListAgentVersionsResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   rpc DeprecateAgentVersion(DeprecateAgentVersionRequest) returns (DeprecateAgentVersionResponse);
   rpc ArchiveAgent(ArchiveAgentRequest) returns (ArchiveAgentResponse);
 }
@@ -57,6 +58,9 @@ message RunSessionInteractiveStart {
   AgentRef agent_ref = 1;
   // JSON object with session inputs (same semantics as RunSessionRequest.input).
   bytes input = 2;
+  // When set, attach to an existing session instead of creating one.
+  // agent_ref and input are ignored.
+  string session_id = 3;
 }
 
 message RunSessionInteractiveUserMessage {
@@ -162,6 +166,24 @@ message AgentVersionSummary {
 
 message ListAgentVersionsResponse {
   repeated AgentVersionSummary versions = 1;
+}
+
+message ListSessionsRequest {
+  AgentRef agent_ref = 1;
+  // Optional filter; empty means all statuses.
+  string status = 2;
+}
+
+message SessionSummary {
+  string id = 1;
+  string agent_version_id = 2;
+  string status = 3;
+  string created_at = 4;  // RFC3339
+  string updated_at = 5;
+}
+
+message ListSessionsResponse {
+  repeated SessionSummary sessions = 1;
 }
 
 message DeprecateAgentVersionRequest {
