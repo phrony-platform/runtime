@@ -29,3 +29,11 @@ func (s *runtimeServer) unregisterActiveSession(sessionID string) {
 	}
 	s.activeSessions.Delete(sessionID)
 }
+
+func (s *runtimeServer) sessionIsActive(sessionID string) bool {
+	if s.activeSessions == nil {
+		return false
+	}
+	_, ok := s.activeSessions.Load(sessionID)
+	return ok
+}

@@ -118,10 +118,10 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return status.Errorf(codes.Internal, "load session: %v", err)
 	}
 
-	switch session.Status {
-	case model.SessionStatusRunning:
+	if session.Status == model.SessionStatusRunning && s.sessionIsActive(sessionID) {
 		return status.Error(codes.FailedPrecondition, "session is running on another stream")
-	case model.SessionStatusPending:
+	}
+	if session.Status == model.SessionStatusPending {
 		return status.Error(codes.FailedPrecondition, "session is pending execution")
 	}
 
@@ -138,20 +138,25 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return status.Errorf(codes.Internal, "load agent version: %v", err)
 	}
 
+	if session.Status == model.SessionStatusRunning {
+		session, err = s.reconcileStaleRunningSession(sessionCtx, q, session, ver)
+		if err != nil {
+			return err
+		}
+	}
+
 	history, err := decodeHistory(session.History)
 	if err != nil {
 		return status.Errorf(codes.Internal, "decode session history: %v", err)
 	}
 	history = enrichHistoryFromSessionOutput(history, session.Output)
-	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, sessionEndedAtForAttach(&session)); err != nil {
-		return err
-	}
-
-	switch session.Status {
-	case model.SessionStatusAwaitingInput:
-		blockedReason := ""
-		lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
-		state := &interactiveSessionState{
+	endedAt := sessionEndedAtForAttach(&session)
+	var attachAwaitingState *interactiveSessionState
+	var attachAwaitingLastTurn provider.TokenUsage
+	if session.Status == model.SessionStatusAwaitingInput {
+		var sessionUsage provider.TokenUsage
+		attachAwaitingLastTurn, sessionUsage = usageFromSessionOutputJSON(session.Output)
+		attachAwaitingState = &interactiveSessionState{
 			sessionID:        sessionID,
 			version:          ver,
 			history:          history,
@@ -159,13 +164,27 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 			sessionUsage:     sessionUsage,
 			sessionStartedAt: session.CreatedAt,
 		}
-		if err := state.sessionLimitErrorBeforeTurn(); err != nil {
+		if err := attachAwaitingState.sessionLimitErrorBeforeTurn(); err != nil && isWallClockLimitError(err) {
+			endedAt = &session.UpdatedAt
+		}
+	}
+	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, endedAt); err != nil {
+		return err
+	}
+
+	switch session.Status {
+	case model.SessionStatusAwaitingInput:
+		blockedReason := ""
+		if attachAwaitingState == nil {
+			return status.Error(codes.Internal, "attach awaiting_input state missing")
+		}
+		if err := attachAwaitingState.sessionLimitErrorBeforeTurn(); err != nil {
 			if isWallClockLimitError(err) {
 				return s.attachWallClockTerminal(sessionCtx, q, stream, sessionID, session, limitErrorMessage(err))
 			}
 			blockedReason = limitErrorMessage(err)
 		}
-		return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, q, sessionID, session, state, lastTurnUsage, blockedReason, false)
+		return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, q, sessionID, session, attachAwaitingState, attachAwaitingLastTurn, blockedReason, false)
 
 	case model.SessionStatusCompleted:
 		output := session.Output
@@ -302,7 +321,9 @@ func sessionEndedAtForAttach(session *store.Session) *time.Time {
 	case model.SessionStatusCompleted:
 		return &session.UpdatedAt
 	case model.SessionStatusFailed:
-		if session.Error != nil && executor.IsLimitErrorMessage(*session.Error) {
+		// Non-wall-clock run limits on failed rows are restored to awaiting_input on attach;
+		// keep the wall-clock running until the operator resumes or the session ends.
+		if session.Error != nil && executor.IsLimitErrorMessage(*session.Error) && !isWallClockLimitMessage(*session.Error) {
 			return nil
 		}
 		return &session.UpdatedAt

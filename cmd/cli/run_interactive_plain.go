@@ -171,7 +171,14 @@ func runInteractiveSessionPlain(
 			}
 			return nil
 		case msg.GetFailed() != nil:
-			return fmt.Errorf("session failed: %s", msg.GetFailed().GetMessage())
+			failed := msg.GetFailed()
+			if isInteractiveAttachReplay(start) {
+				if line := strings.TrimSpace(failed.GetMessage()); line != "" {
+					_, _ = io.WriteString(stderr, "\n── session failed · "+line+" ──\n")
+				}
+				return nil
+			}
+			return fmt.Errorf("session failed: %s", failed.GetMessage())
 		default:
 			return fmt.Errorf("run session: unexpected server message")
 		}

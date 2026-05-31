@@ -12,6 +12,41 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 )
 
+func TestRunTUI_wallClockBlockedFreezesDisplay(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 100
+	m.maxWallClockSeconds = 60
+	m.sessionStartedAt = time.Now().Add(-90 * time.Second)
+
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
+			AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
+				InputBlockedReason: "run limit max_wall_clock_seconds exceeded (on_limit=halt)",
+				Stats: &runtimev1.InteractiveSessionStats{
+					Turn: 1,
+					SessionUsage: &runtimev1.TokenUsage{
+						InputTokens: 10, OutputTokens: 5, TotalTokens: 15,
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("awaiting_input: %v", err)
+	}
+	bar := m.statusBarView()
+	if !strings.Contains(bar, "60s / 60s") {
+		t.Fatalf("statusBar = %q, want wall clock capped at limit", bar)
+	}
+	model, cmd := m.Update(tuiClockTick{})
+	m = model.(*runTUI)
+	if cmd != nil {
+		t.Fatal("clock tick should stop when wall-clock limit is reached")
+	}
+	if m.statusBarView() != bar {
+		t.Fatalf("statusBar changed after tick: %q -> %q", bar, m.statusBarView())
+	}
+}
+
 func TestRunTUI_handleServerMsg_inputBlocked(t *testing.T) {
 	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
 	m.width = 80
@@ -281,6 +316,57 @@ func TestRunTUI_attachCompletedReadOnly(t *testing.T) {
 	}
 	if !strings.Contains(m.footerView(), "scroll to review") {
 		t.Fatalf("footer = %q, want scroll help", m.footerView())
+	}
+}
+
+func TestRunTUI_attachFailedReadOnlyWallClockFrozen(t *testing.T) {
+	stream := &mockInteractiveClientStream{}
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-failed"})
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	startedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	endedAt := startedAt.Add(18 * time.Second)
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
+				SessionId:              "sess-failed",
+				SessionStartedAtUnixMs: startedAt.UnixMilli(),
+				SessionEndedAtUnixMs:   endedAt.UnixMilli(),
+				MaxWallClockSeconds:    60,
+				History: []*runtimev1.InteractiveConversationMessage{
+					{Role: "user", Content: "hello"},
+					{Role: "assistant", Content: "done"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("session_started: %v", err)
+	}
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
+			Failed: &runtimev1.RunSessionInteractiveFailed{
+				Message: "run limit max_wall_clock_seconds exceeded (on_limit=halt)",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if !m.sessionEndedAt.Equal(endedAt) {
+		t.Fatalf("sessionEndedAt = %v, want %v", m.sessionEndedAt, endedAt)
+	}
+	if !strings.Contains(m.statusBarView(), "18s / 60s") {
+		t.Fatalf("statusBar = %q, want frozen wall clock", m.statusBarView())
+	}
+	barBefore := m.statusBarView()
+	model, cmd := m.Update(tuiClockTick{})
+	m = model.(*runTUI)
+	if cmd != nil {
+		t.Fatal("clock tick should stop on read-only failed attach")
+	}
+	if m.statusBarView() != barBefore {
+		t.Fatalf("statusBar changed after tick: %q -> %q", barBefore, m.statusBarView())
 	}
 }
 

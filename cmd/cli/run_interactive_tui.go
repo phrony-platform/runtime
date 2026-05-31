@@ -245,10 +245,11 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.recvStream()
 
 	case tuiClockTick:
-		if m.quitting || m.status == "done" || m.status == "error" {
+		if m.quitting || m.readOnly || m.wallClockFrozen() || m.status == "done" || m.status == "failed" || m.status == "error" {
 			return m, nil
 		}
 		// Re-render status bar wall clock; no-op until session_started provides limits.
+		m.layout()
 		return m, m.clockTickCmd()
 
 	case tea.MouseMsg:
@@ -401,11 +402,50 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		}
 		m.layout()
 	case msg.GetFailed() != nil:
-		return fmt.Errorf("session failed: %s", msg.GetFailed().GetMessage())
+		failed := msg.GetFailed()
+		if isInteractiveAttachReplay(m.start) && !m.inputEverEnabled {
+			m.freezeWallClockAtLimit()
+			if m.sessionEndedAt.IsZero() {
+				m.sessionEndedAt = time.Now()
+			}
+			m.status = "failed"
+			m.statusHint = failed.GetMessage()
+			m.awaitingInput = false
+			m.input.Blur()
+			m.readOnly = true
+			if err := m.closeSend(); err != nil {
+				return err
+			}
+			m.layout()
+			return nil
+		}
+		return fmt.Errorf("session failed: %s", failed.GetMessage())
 	default:
 		return fmt.Errorf("run session: unexpected server message")
 	}
 	return nil
+}
+
+func wallClockLimitReason(reason string) bool {
+	return strings.Contains(reason, "max_wall_clock_seconds")
+}
+
+// freezeWallClockAtLimit pins the status-bar wall clock at the configured budget.
+func (m *runTUI) freezeWallClockAtLimit() {
+	if m.maxWallClockSeconds <= 0 || m.sessionStartedAt.IsZero() {
+		return
+	}
+	at := m.sessionStartedAt.Add(time.Duration(m.maxWallClockSeconds) * time.Second)
+	if now := time.Now(); now.Before(at) {
+		at = now
+	}
+	if m.sessionEndedAt.IsZero() || m.sessionEndedAt.After(at) {
+		m.sessionEndedAt = at
+	}
+}
+
+func (m *runTUI) wallClockFrozen() bool {
+	return !m.sessionEndedAt.IsZero()
 }
 
 func (m *runTUI) wallClockNow() time.Time {
@@ -435,6 +475,9 @@ func (m *runTUI) applyAwaitingInputState(inputBlockedReason string) {
 		m.awaitingInput = false
 		m.input.Blur()
 		m.input.SetValue("")
+		if wallClockLimitReason(m.inputBlockedReason) {
+			m.freezeWallClockAtLimit()
+		}
 		return
 	}
 	m.status = "input"

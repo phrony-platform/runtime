@@ -138,19 +138,21 @@ func TestSessionsAttachCommand_failedReadOnly(t *testing.T) {
 	t.Setenv("PHRONY_NO_TUI", "1")
 	addr := startTestRuntimeAddrForRunAttachFailed(t)
 
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	root := NewRootCommand()
 	root.SetOut(&out)
-	root.SetErr(&bytes.Buffer{})
+	root.SetErr(&errOut)
 	root.SetArgs([]string{"sessions", "attach", "sess-failed", "--runtime-addr", addr})
 
-	err := root.Execute()
-	if err == nil || !strings.Contains(err.Error(), "session failed") {
-		t.Fatalf("err = %v, want session failed", err)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
-	got := out.String()
+	got := out.String() + errOut.String()
 	if !strings.Contains(got, "session sess-failed started") {
 		t.Fatalf("output = %q, want session started", got)
+	}
+	if !strings.Contains(got, "session failed") {
+		t.Fatalf("output = %q, want session failed banner", got)
 	}
 }
 

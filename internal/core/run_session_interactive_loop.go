@@ -39,9 +39,15 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 	for {
 		if len(pendingInput) > 0 {
 			if err := state.sessionLimitErrorBeforeTurn(); err != nil {
-				state.blockInput(err)
-				if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
-					return err
+				if isWallClockLimitError(err) {
+					if err := s.publishWallClockBlockedAndPersist(ctx, q, stream, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
+						return err
+					}
+				} else {
+					state.blockInput(err)
+					if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+						return err
+					}
 				}
 				pendingInput = nil
 				if !waitForUser {
@@ -74,8 +80,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 
 			if wallExpired {
 				if err := state.sessionWallClockLimitError(); err != nil {
-					state.blockInput(err)
-					if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+					if err := s.publishWallClockBlockedAndPersist(ctx, q, stream, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
 						return err
 					}
 					pendingInput = nil
@@ -93,6 +98,11 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				if handled, err := s.handleInteractiveTurnError(stream, state, lastStopReason, lastTurnUsage, out.err); err != nil {
 					return err
 				} else if handled {
+					if wc := state.sessionWallClockLimitError(); wc != nil {
+						if err := s.persistWallClockTerminal(ctx, q, sessionID, state, limitErrorMessage(wc), lastOutput); err != nil {
+							return err
+						}
+					}
 					pendingInput = nil
 					if !waitForUser {
 						if err := s.persistDetachedSessionOutcome(ctx, q, sessionID, state, lastOutput); err != nil {
@@ -166,7 +176,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			return loopCtx.Err()
 		case <-wallC:
 			wallC = nil
-			if err := state.notifyWallClockLimit(stream, lastStopReason, lastTurnUsage); err != nil {
+			if err := s.publishWallClockBlockedAndPersist(ctx, q, stream, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
 				return err
 			}
 		case r, ok := <-recvCh:
@@ -198,9 +208,15 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				continue
 			}
 			if err := state.sessionLimitErrorBeforeTurn(); err != nil {
-				state.blockInput(err)
-				if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
-					return err
+				if isWallClockLimitError(err) {
+					if err := s.publishWallClockBlockedAndPersist(ctx, q, stream, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
+						return err
+					}
+				} else {
+					state.blockInput(err)
+					if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+						return err
+					}
 				}
 				continue
 			}

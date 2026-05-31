@@ -678,7 +678,7 @@ func TestRuntime_RunSessionInteractive_attachFailedRejectsUserMessage(t *testing
 	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
-func TestRuntime_RunSessionInteractive_attachRunningRejected(t *testing.T) {
+func TestRuntime_RunSessionInteractive_attachRunningRejectedWhenActive(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
@@ -697,6 +697,9 @@ func TestRuntime_RunSessionInteractive_attachRunningRejected(t *testing.T) {
 	}
 
 	srv := &runtimeServer{db: db}
+	if err := srv.registerActiveSession("sess-1", func() {}); err != nil {
+		t.Fatalf("registerActiveSession: %v", err)
+	}
 	err := srv.RunSessionInteractive(stream)
 	assertGRPCCode(t, err, codes.FailedPrecondition)
 }
@@ -722,5 +725,51 @@ func TestRuntime_RunSessionInteractive_invalidInput(t *testing.T) {
 	assertGRPCCode(t, err, codes.InvalidArgument)
 	if !strings.Contains(statusMessage(t, err), "JSON object") {
 		t.Fatalf("error = %v, want JSON object", err)
+	}
+}
+
+func Test_sessionEndedAtForAttach(t *testing.T) {
+	now := time.Now()
+	limitErr := "run limit max_wall_clock_seconds exceeded (on_limit=halt)"
+	tokenErr := "run limit max_tokens_per_run exceeded (on_limit=halt)"
+	otherErr := "model unavailable"
+
+	tests := []struct {
+		name    string
+		session store.Session
+		wantEnd bool
+	}{
+		{
+			name: "completed",
+			session: store.Session{Status: model.SessionStatusCompleted, UpdatedAt: now},
+			wantEnd: true,
+		},
+		{
+			name: "failed wall clock",
+			session: store.Session{Status: model.SessionStatusFailed, UpdatedAt: now, Error: &limitErr},
+			wantEnd: true,
+		},
+		{
+			name: "failed resumable token limit",
+			session: store.Session{Status: model.SessionStatusFailed, UpdatedAt: now, Error: &tokenErr},
+			wantEnd: false,
+		},
+		{
+			name: "failed other",
+			session: store.Session{Status: model.SessionStatusFailed, UpdatedAt: now, Error: &otherErr},
+			wantEnd: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sessionEndedAtForAttach(&tc.session)
+			if tc.wantEnd {
+				if got == nil || !got.Equal(now) {
+					t.Fatalf("sessionEndedAtForAttach() = %v, want %v", got, now)
+				}
+			} else if got != nil {
+				t.Fatalf("sessionEndedAtForAttach() = %v, want nil", got)
+			}
+		})
 	}
 }

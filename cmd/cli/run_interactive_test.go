@@ -248,19 +248,23 @@ func TestRunInteractiveSession_attachFailedReadOnly(t *testing.T) {
 		},
 	}
 
+	var stdout, stderr bytes.Buffer
 	err := runInteractiveSession(
 		context.Background(),
 		stream,
 		&runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
 		strings.NewReader(""),
-		&bytes.Buffer{},
-		&bytes.Buffer{},
+		&stdout,
+		&stderr,
 	)
-	if err == nil || !strings.Contains(err.Error(), "session failed") {
-		t.Fatalf("err = %v, want session failed", err)
+	if err != nil {
+		t.Fatalf("runInteractiveSession: %v", err)
 	}
 	if len(stream.sent) != 1 || stream.sent[0].GetStart().GetSessionId() != "sess-1" {
 		t.Fatalf("sent = %+v, want only start with session_id", stream.sent)
+	}
+	if !strings.Contains(stderr.String(), "session failed") {
+		t.Fatalf("stderr = %q, want session failed banner", stderr.String())
 	}
 }
 

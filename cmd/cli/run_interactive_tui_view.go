@@ -179,6 +179,8 @@ func (m *runTUI) statusIndicator() string {
 		label, color = "Ending", "214"
 	case "done":
 		label, color = "Finished", "244"
+	case "failed":
+		label, color = "Failed", "196"
 	case "error":
 		label, color = "Error", "196"
 	default:

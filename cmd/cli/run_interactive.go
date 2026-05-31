@@ -3,9 +3,15 @@ package main
 import (
 	"context"
 	"io"
+	"strings"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 )
+
+// isInteractiveAttachReplay reports whether the client is attaching to an existing session.
+func isInteractiveAttachReplay(start *runtimev1.RunSessionInteractiveStart) bool {
+	return start != nil && strings.TrimSpace(start.GetSessionId()) != ""
+}
 
 // interactiveStream is the client side of RunSessionInteractive.
 type interactiveStream interface {
