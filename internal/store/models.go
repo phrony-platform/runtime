@@ -31,6 +31,7 @@ type Session struct {
 	Status         string          `json:"status"`
 	Output         json.RawMessage `json:"output"`
 	Error          *string         `json:"error"`
+	History        json.RawMessage `json:"history"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
