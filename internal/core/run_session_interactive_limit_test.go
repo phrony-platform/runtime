@@ -312,3 +312,64 @@ func TestRuntime_RunSessionInteractive_attachFailedRunLimitBlocked(t *testing.T)
 }
 
 func intPtr(n int) *int { return &n }
+
+func TestRuntime_RunSessionInteractive_wallClockPushesBlockedWhileWaiting(t *testing.T) {
+	max := 30
+	now := time.Now()
+	output := []byte(`{"message":"hi","stop_reason":"end_turn","turn_usage":{"input_tokens":1,"output_tokens":1},"session_usage":{"input_tokens":1,"output_tokens":1}}`)
+	history := []byte(`[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`)
+
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hello"}`), model.SessionStatusAwaitingInput, output, nil, history, now.Add(-time.Minute), now))
+
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Instructions: manifest.InstructionsSpec{Text: "System."},
+			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"},
+			Limits:       &manifest.Limits{MaxWallClockSeconds: &max, OnLimit: "halt"},
+		},
+	}
+
+	stream := &mockInteractiveStream{
+		ctx: context.Background(),
+		recv: []*runtimev1.RunSessionInteractiveClientMsg{
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+				Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+			}},
+		},
+	}
+
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", agent, &usageStubProvider{}), nil
+		},
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = srv.RunSessionInteractive(stream)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var blocked bool
+		for _, msg := range stream.sent {
+			if ai := msg.GetAwaitingInput(); ai != nil && strings.Contains(ai.GetInputBlockedReason(), "max_wall_clock_seconds") {
+				blocked = true
+				break
+			}
+		}
+		if blocked {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("sent = %+v, want proactive wall clock blocked awaiting_input", stream.sent)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

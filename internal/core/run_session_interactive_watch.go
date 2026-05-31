@@ -1,0 +1,138 @@
+package core
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/executor"
+	"github.com/phrony-platform/runtime/internal/provider"
+)
+
+type interactiveClientRecv struct {
+	msg *runtimev1.RunSessionInteractiveClientMsg
+	err error
+}
+
+type interactiveTurnOutcome struct {
+	stopReason    string
+	assistantText string
+	turnUsage     provider.TokenUsage
+	err           error
+}
+
+func startInteractiveClientRecv(ctx context.Context, stream runtimev1.Runtime_RunSessionInteractiveServer) <-chan interactiveClientRecv {
+	ch := make(chan interactiveClientRecv, 1)
+	go func() {
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			msg, err := stream.Recv()
+			select {
+			case ch <- interactiveClientRecv{msg: msg, err: err}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch
+}
+
+// wallClockTimerChan returns a channel that fires when max_wall_clock_seconds is reached for this session.
+func (st *interactiveSessionState) wallClockTimerChan() <-chan time.Time {
+	max := st.maxWallClockSeconds()
+	if max <= 0 || st.sessionStartedAt.IsZero() {
+		return nil
+	}
+	rem := time.Until(st.sessionStartedAt.Add(time.Duration(max) * time.Second))
+	if rem < 0 {
+		return time.After(0)
+	}
+	return time.After(rem)
+}
+
+func (st *interactiveSessionState) blockInput(limitErr error) {
+	if limitErr == nil {
+		return
+	}
+	st.inputBlockedReason = limitErrorMessage(limitErr)
+}
+
+func (st *interactiveSessionState) publishInputBlocked(
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	stopReason string,
+	turnUsage provider.TokenUsage,
+) error {
+	if st.inputBlockedReason == "" {
+		return nil
+	}
+	return sendAwaitingInput(stream, stopReason, st.turnCount, turnUsage, st.sessionUsage, st.inputBlockedReason)
+}
+
+func (st *interactiveSessionState) notifyWallClockLimit(
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	stopReason string,
+	turnUsage provider.TokenUsage,
+) error {
+	if st.inputBlockedReason != "" {
+		return nil
+	}
+	limitErr := st.sessionWallClockLimitError()
+	if limitErr == nil {
+		return nil
+	}
+	st.blockInput(limitErr)
+	return sendAwaitingInput(stream, stopReason, st.turnCount, turnUsage, st.sessionUsage, st.inputBlockedReason)
+}
+
+func (s *runtimeServer) handleInteractiveTurnError(
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	state *interactiveSessionState,
+	lastStopReason string,
+	lastTurnUsage provider.TokenUsage,
+	turnErr error,
+) (handled bool, err error) {
+	if turnErr == nil {
+		return false, nil
+	}
+	var lim *executor.LimitError
+	if errors.As(turnErr, &lim) {
+		state.blockInput(turnErr)
+		if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	if errors.Is(turnErr, context.Canceled) {
+		if wc := state.sessionWallClockLimitError(); wc != nil {
+			state.blockInput(wc)
+			if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func runInteractiveTurnAsync(
+	loopCtx context.Context,
+	state *interactiveSessionState,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	pendingInput []byte,
+) (cancel context.CancelFunc, done <-chan interactiveTurnOutcome) {
+	turnCtx, cancel := context.WithCancel(loopCtx)
+	out := make(chan interactiveTurnOutcome, 1)
+	go func() {
+		stopReason, assistantText, turnUsage, err := state.runTurn(turnCtx, stream, pendingInput)
+		out <- interactiveTurnOutcome{
+			stopReason:    stopReason,
+			assistantText: assistantText,
+			turnUsage:     turnUsage,
+			err:           err,
+		}
+	}()
+	return cancel, out
+}

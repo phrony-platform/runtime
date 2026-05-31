@@ -251,35 +251,76 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 	var lastOutput json.RawMessage
 	var lastTurnUsage provider.TokenUsage
 
+	loopCtx, loopCancel := context.WithCancel(ctx)
+	defer loopCancel()
+
+	recvCh := startInteractiveClientRecv(loopCtx, stream)
+	wallC := state.wallClockTimerChan()
+
 	for {
 		if len(pendingInput) > 0 {
 			if err := state.sessionLimitErrorBeforeTurn(); err != nil {
-				state.inputBlockedReason = limitErrorMessage(err)
-				if err := sendAwaitingInput(stream, lastStopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
+				state.blockInput(err)
+				if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
 					return err
 				}
 				pendingInput = nil
 				continue
 			}
+
 			turnStart := time.Now()
-			stopReason, assistantText, turnUsage, err := state.runTurn(ctx, stream, pendingInput)
-			turnDuration := time.Since(turnStart)
-			if err != nil {
-				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+			turnCancel, turnDone := runInteractiveTurnAsync(loopCtx, state, stream, pendingInput)
+
+			var out interactiveTurnOutcome
+			wallExpired := false
+			if wallC != nil {
+				select {
+				case <-wallC:
+					wallC = nil
+					wallExpired = true
+					turnCancel()
+					out = <-turnDone
+				case out = <-turnDone:
+				}
+			} else {
+				out = <-turnDone
+			}
+			turnCancel()
+
+			if wallExpired {
+				if err := state.sessionWallClockLimitError(); err != nil {
+					state.blockInput(err)
+					if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+						return err
+					}
+					pendingInput = nil
+					continue
+				}
+			}
+
+			if out.err != nil {
+				if handled, err := s.handleInteractiveTurnError(stream, state, lastStopReason, lastTurnUsage, out.err); err != nil {
+					return err
+				} else if handled {
+					pendingInput = nil
+					continue
+				}
+				return s.failInteractiveSession(ctx, q, stream, sessionID, out.err)
 			}
 
 			userText, err := userTextFromSessionInput(pendingInput)
 			if err != nil {
 				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 			}
-			state.history = appendTurnHistory(state.history, userText, assistantText, stopReason, turnUsage, turnDuration)
+			turnDuration := time.Since(turnStart)
+			state.history = appendTurnHistory(state.history, userText, out.assistantText, out.stopReason, out.turnUsage, turnDuration)
 			state.turnCount++
-			state.sessionUsage.Add(turnUsage)
+			state.sessionUsage.Add(out.turnUsage)
 			if err := state.sessionLimitErrorAfterTurn(); err != nil {
-				state.inputBlockedReason = limitErrorMessage(err)
+				state.blockInput(err)
 			}
 
-			outputJSON, err := marshalSessionOutput(assistantText, stopReason, turnUsage, state.sessionUsage, state.history)
+			outputJSON, err := marshalSessionOutput(out.assistantText, out.stopReason, out.turnUsage, state.sessionUsage, state.history)
 			if err != nil {
 				return status.Errorf(codes.Internal, "encode session output: %v", err)
 			}
@@ -296,60 +337,72 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}); err != nil {
 				return status.Errorf(codes.Internal, "update session: %v", err)
 			}
-			lastStopReason = stopReason
+			lastStopReason = out.stopReason
 			lastOutput = outputJSON
-			lastTurnUsage = turnUsage
+			lastTurnUsage = out.turnUsage
 
-			if err := sendAwaitingInput(stream, stopReason, state.turnCount, turnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
+			if err := sendAwaitingInput(stream, out.stopReason, state.turnCount, out.turnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
 				return err
 			}
 			pendingInput = nil
+			continue
 		}
 
-		msg, err := stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if len(lastOutput) == 0 {
-					return nil
+		select {
+		case <-wallC:
+			wallC = nil
+			if err := state.notifyWallClockLimit(stream, lastStopReason, lastTurnUsage); err != nil {
+				return err
+			}
+		case r, ok := <-recvCh:
+			if !ok {
+				recvCh = nil
+				continue
+			}
+			if r.err != nil {
+				if errors.Is(r.err, io.EOF) {
+					if len(lastOutput) == 0 {
+						return nil
+					}
+					return s.completeInteractiveSession(ctx, q, stream, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
 				}
-				return s.completeInteractiveSession(ctx, q, stream, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
+				return r.err
 			}
-			return err
-		}
 
-		um := msg.GetUserMessage()
-		if um == nil {
-			return status.Error(codes.InvalidArgument, "expected user_message after awaiting_input")
-		}
-		if state.inputBlockedReason != "" {
-			if err := sendAwaitingInput(stream, lastStopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
-				return err
+			um := r.msg.GetUserMessage()
+			if um == nil {
+				return status.Error(codes.InvalidArgument, "expected user_message after awaiting_input")
 			}
-			continue
-		}
-		if err := state.sessionLimitErrorBeforeTurn(); err != nil {
-			state.inputBlockedReason = limitErrorMessage(err)
-			if err := sendAwaitingInput(stream, lastStopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
-				return err
+			if state.inputBlockedReason != "" {
+				if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+					return err
+				}
+				continue
 			}
-			continue
-		}
-		text := strings.TrimSpace(um.GetText())
-		if text == "" {
-			return status.Error(codes.InvalidArgument, "user_message.text must be non-empty")
-		}
+			if err := state.sessionLimitErrorBeforeTurn(); err != nil {
+				state.blockInput(err)
+				if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+					return err
+				}
+				continue
+			}
+			text := strings.TrimSpace(um.GetText())
+			if text == "" {
+				return status.Error(codes.InvalidArgument, "user_message.text must be non-empty")
+			}
 
-		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-			ID:     sessionID,
-			Status: model.SessionStatusRunning,
-		}); err != nil {
-			return status.Errorf(codes.Internal, "update session: %v", err)
+			if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+				ID:     sessionID,
+				Status: model.SessionStatusRunning,
+			}); err != nil {
+				return status.Errorf(codes.Internal, "update session: %v", err)
+			}
+			encoded, err := json.Marshal(map[string]string{"message": text})
+			if err != nil {
+				return status.Errorf(codes.Internal, "encode user message: %v", err)
+			}
+			pendingInput = encoded
 		}
-		encoded, err := json.Marshal(map[string]string{"message": text})
-		if err != nil {
-			return status.Errorf(codes.Internal, "encode user message: %v", err)
-		}
-		pendingInput = encoded
 	}
 }
 
