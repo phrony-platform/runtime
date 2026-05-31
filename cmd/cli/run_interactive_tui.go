@@ -22,6 +22,9 @@ type streamServerMsg struct {
 	err error
 }
 
+// tuiClockTick refreshes the wall-clock line in the status bar.
+type tuiClockTick struct{}
+
 type runTUI struct {
 	ctx    context.Context
 	stream interactiveStream
@@ -38,17 +41,21 @@ type runTUI struct {
 	modelProvider  string
 	modelName      string
 
-	lastStats      *runtimev1.InteractiveSessionStats
-	lastStopReason string
-	statusHint     string
+	lastStats         *runtimev1.InteractiveSessionStats
+	lastStopReason    string
+	maxTokensPerRun     int32
+	maxWallClockSeconds int32
+	sessionStartedAt    time.Time
+	statusHint          string
 	turnStartedAt  time.Time
 
 	transcript strings.Builder
 	streaming  strings.Builder
 
-	status        string
-	awaitingInput bool
-	sendClosed    bool
+	status             string
+	awaitingInput      bool
+	inputBlockedReason string
+	sendClosed         bool
 	streamErr     error
 	quitting      bool
 
@@ -103,6 +110,15 @@ var (
 				Bold(true).
 				Foreground(lipgloss.Color("245")).
 				MarginBottom(0)
+	tuiBlockedBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("196")).
+				Foreground(lipgloss.Color("224")).
+				Background(lipgloss.Color("52")).
+				Padding(0, 1)
+	tuiBlockedTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("196"))
 )
 
 func runInteractiveSessionTUI(
@@ -201,8 +217,12 @@ func (m *runTUI) jumpToLatest() {
 	m.followTail = true
 }
 
+func (m *runTUI) clockTickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return tuiClockTick{} })
+}
+
 func (m *runTUI) Init() tea.Cmd {
-	return tea.Batch(m.sendStart(), m.recvStream(), textinput.Blink)
+	return tea.Batch(m.sendStart(), m.recvStream(), textinput.Blink, m.clockTickCmd())
 }
 
 func (m *runTUI) sendStart() tea.Cmd {
@@ -270,6 +290,13 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.recvStream()
 
+	case tuiClockTick:
+		if m.quitting || m.status == "done" || m.status == "error" {
+			return m, nil
+		}
+		// Re-render status bar wall clock; no-op until session_started provides limits.
+		return m, m.clockTickCmd()
+
 	case tea.MouseMsg:
 		return m, m.scrollViewport(msg)
 
@@ -282,7 +309,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.jumpToLatest()
 			return m, nil
 		}
-		if m.awaitingInput {
+		if m.awaitingInput || m.inputBlocked() {
 			switch msg.String() {
 			case "ctrl+d":
 				if err := m.closeSend(); err != nil {
@@ -291,6 +318,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 				m.awaitingInput = false
+				m.inputBlockedReason = ""
 				m.input.Blur()
 				m.status = "ending"
 				m.statusHint = ""
@@ -303,7 +331,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.awaitingInput {
+	if m.awaitingInput && !m.inputBlocked() {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
@@ -358,6 +386,11 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		m.agentVersionID = started.GetAgentVersionId()
 		m.modelProvider = started.GetModelProvider()
 		m.modelName = started.GetModelName()
+		m.maxTokensPerRun = started.GetMaxTokensPerRun()
+		m.maxWallClockSeconds = started.GetMaxWallClockSeconds()
+		if ms := started.GetSessionStartedAtUnixMs(); ms > 0 {
+			m.sessionStartedAt = time.UnixMilli(ms)
+		}
 		if err := m.appendConversationHistory(started.GetHistory()); err != nil {
 			return err
 		}
@@ -380,9 +413,7 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 			m.transcript.WriteString("\n")
 			m.transcript.WriteString(renderAgentMetaStrip(m.messageContentWidth(), meta))
 		}
-		m.status = "input"
-		m.awaitingInput = true
-		m.input.Focus()
+		m.applyAwaitingInputState(awaiting.GetInputBlockedReason())
 		m.layout()
 	case msg.GetCompleted() != nil:
 		duration := m.turnElapsed()
@@ -420,6 +451,24 @@ func (m *runTUI) setLastTurnStats(stats *runtimev1.InteractiveSessionStats, stop
 	m.lastStats = stats
 	m.lastStopReason = stopReason
 	m.turnStartedAt = time.Time{}
+}
+
+func (m *runTUI) applyAwaitingInputState(inputBlockedReason string) {
+	m.inputBlockedReason = strings.TrimSpace(inputBlockedReason)
+	if m.inputBlockedReason != "" {
+		m.status = "blocked"
+		m.awaitingInput = false
+		m.input.Blur()
+		m.input.SetValue("")
+		return
+	}
+	m.status = "input"
+	m.awaitingInput = true
+	m.input.Focus()
+}
+
+func (m *runTUI) inputBlocked() bool {
+	return m.inputBlockedReason != ""
 }
 
 func (m *runTUI) appendConversationHistory(msgs []*runtimev1.InteractiveConversationMessage) error {
@@ -623,6 +672,8 @@ func (m *runTUI) statusIndicator() string {
 		label, color = "Streaming", "39"
 	case "input":
 		label, color = "Ready", "42"
+	case "blocked":
+		label, color = "Limit reached", "196"
 	case "ending":
 		label, color = "Ending", "214"
 	case "done":
@@ -641,6 +692,9 @@ func (m *runTUI) statusBarView() string {
 		return ""
 	}
 	segments := []string{m.statusIndicator()}
+	if wc := formatWallClockLimit(m.sessionStartedAt, m.maxWallClockSeconds, time.Now()); wc != "" {
+		segments = append(segments, tuiStatusMutedStyle.Render(wc))
+	}
 	if m.statusHint != "" {
 		segments = append(segments, tuiStatusMutedStyle.Render(m.statusHint))
 	} else if m.lastStats != nil {
@@ -649,6 +703,9 @@ func (m *runTUI) statusBarView() string {
 		}
 		if u := m.lastStats.GetSessionUsage(); u != nil {
 			segments = append(segments, tuiStatusMutedStyle.Render("session "+formatTokenUsage(u)))
+			if pct := formatTokenLimitPercent(u, m.maxTokensPerRun); pct != "" {
+				segments = append(segments, tuiStatusMutedStyle.Render(pct))
+			}
 		} else if u := m.lastStats.GetTurnUsage(); u != nil {
 			segments = append(segments, tuiStatusMutedStyle.Render("turn "+formatTokenUsage(u)))
 		}
@@ -673,11 +730,23 @@ func (m *runTUI) inputPanelView() string {
 	return style.Width(m.width - 2).Render(inner)
 }
 
+func (m *runTUI) blockedPanelView() string {
+	title := tuiBlockedTitleStyle.Render("Session limit reached")
+	body := wrapTUIText(m.width-8, m.inputBlockedReason)
+	inner := lipgloss.JoinVertical(lipgloss.Left, title, body)
+	return tuiBlockedBoxStyle.Width(m.width - 2).Render(inner)
+}
+
 func (m *runTUI) footerView() string {
 	if m.streamErr != nil {
 		return tuiErrorStyle.Render(m.streamErr.Error())
 	}
 	switch {
+	case m.inputBlocked():
+		help := tuiHelpStyle.Render(
+			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C quit",
+		)
+		return m.blockedPanelView() + "\n" + help
 	case m.awaitingInput:
 		help := tuiHelpStyle.Render(
 			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Enter send  ·  Ctrl+D end  ·  Ctrl+C quit",

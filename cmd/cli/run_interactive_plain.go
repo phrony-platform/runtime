@@ -112,6 +112,11 @@ func runInteractiveSessionPlain(
 			if line := formatSessionStatsLine(awaiting.GetStats(), awaiting.GetStopReason()); line != "" {
 				_, _ = io.WriteString(stdout, "\n── "+line+" ──\n")
 			}
+			if reason := strings.TrimSpace(awaiting.GetInputBlockedReason()); reason != "" {
+				_, _ = fmt.Fprintf(stderr, "\nInput disabled: %s\n", reason)
+				_, _ = io.WriteString(stderr, "End the session with Ctrl+D or Ctrl+C.\n")
+				continue
+			}
 			if _, err := io.WriteString(stdout, "\n"); err != nil {
 				return err
 			}

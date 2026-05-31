@@ -15,6 +15,44 @@ func shortID(id string) string {
 	return id[:8]
 }
 
+func tokenUsageTotal(u *runtimev1.TokenUsage) int32 {
+	if u == nil {
+		return 0
+	}
+	total := u.GetTotalTokens()
+	if total == 0 {
+		total = u.GetInputTokens() + u.GetOutputTokens()
+	}
+	return total
+}
+
+// formatWallClockLimit returns elapsed wall time vs limit, e.g. "18s / 30s (60%)".
+func formatWallClockLimit(sessionStartedAt time.Time, maxWallClockSeconds int32, now time.Time) string {
+	if maxWallClockSeconds <= 0 || sessionStartedAt.IsZero() {
+		return ""
+	}
+	elapsed := now.Sub(sessionStartedAt)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	secs := int32(elapsed.Seconds())
+	pct := (secs * 100) / maxWallClockSeconds
+	return fmt.Sprintf("%ds / %ds (%d%%)", secs, maxWallClockSeconds, pct)
+}
+
+// formatTokenLimitPercent returns e.g. "42% of limit" when maxTokensPerRun > 0.
+func formatTokenLimitPercent(usage *runtimev1.TokenUsage, maxTokensPerRun int32) string {
+	if maxTokensPerRun <= 0 {
+		return ""
+	}
+	used := tokenUsageTotal(usage)
+	pct := int32(0)
+	if used > 0 {
+		pct = (used * 100) / maxTokensPerRun
+	}
+	return fmt.Sprintf("%d%% of limit", pct)
+}
+
 func formatTokenUsage(u *runtimev1.TokenUsage) string {
 	if u == nil || (u.GetInputTokens() == 0 && u.GetOutputTokens() == 0) {
 		return "—"

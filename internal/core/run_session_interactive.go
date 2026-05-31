@@ -90,13 +90,15 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 	}
 
-	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver, nil); err != nil {
+	sessionStartedAt := time.Now()
+	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver, nil, sessionStartedAt); err != nil {
 		return err
 	}
 
 	state := &interactiveSessionState{
-		sessionID: sessionID,
-		version:   ver,
+		sessionID:        sessionID,
+		version:          ver,
+		sessionStartedAt: sessionStartedAt,
 	}
 	return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, inputJSON)
 }
@@ -137,32 +139,26 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return status.Errorf(codes.Internal, "decode session history: %v", err)
 	}
 	history = enrichHistoryFromSessionOutput(history, session.Output)
-	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history); err != nil {
+	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history, session.CreatedAt); err != nil {
 		return err
 	}
 
 	switch session.Status {
 	case model.SessionStatusAwaitingInput:
+		blockedReason := ""
 		lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
 		state := &interactiveSessionState{
-			sessionID:    sessionID,
-			version:      ver,
-			history:      history,
-			turnCount:    len(history) / 2,
-			sessionUsage: sessionUsage,
+			sessionID:        sessionID,
+			version:          ver,
+			history:          history,
+			turnCount:        len(history) / 2,
+			sessionUsage:     sessionUsage,
+			sessionStartedAt: session.CreatedAt,
 		}
-		stopReason := stopReasonFromSessionOutput(session.Output)
-		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
-			Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
-				AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
-					StopReason: stopReason,
-					Stats:      interactiveSessionStats(state.turnCount, lastTurnUsage, state.sessionUsage),
-				},
-			},
-		}); err != nil {
-			return err
+		if err := state.sessionLimitErrorBeforeTurn(); err != nil {
+			blockedReason = limitErrorMessage(err)
 		}
-		return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, nil)
+		return s.runSessionInteractiveAttachBlocked(ctx, stream, q, sessionID, session, state, lastTurnUsage, blockedReason, false)
 
 	case model.SessionStatusCompleted:
 		output := session.Output
@@ -182,13 +178,25 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return rejectInteractiveUserMessage(stream)
 
 	case model.SessionStatusFailed:
-		msg := ""
+		errMsg := ""
 		if session.Error != nil {
-			msg = *session.Error
+			errMsg = *session.Error
+		}
+		if isRunLimitSessionError(errMsg) {
+			lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
+			state := &interactiveSessionState{
+				sessionID:        sessionID,
+				version:          ver,
+				history:          history,
+				turnCount:        len(history) / 2,
+				sessionUsage:     sessionUsage,
+				sessionStartedAt: session.CreatedAt,
+			}
+			return s.runSessionInteractiveAttachBlocked(ctx, stream, q, sessionID, session, state, lastTurnUsage, errMsg, true)
 		}
 		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
-				Failed: &runtimev1.RunSessionInteractiveFailed{Message: msg},
+				Failed: &runtimev1.RunSessionInteractiveFailed{Message: errMsg},
 			},
 		}); err != nil {
 			return err
@@ -198,6 +206,37 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	default:
 		return status.Errorf(codes.FailedPrecondition, "session status %q cannot be attached", session.Status)
 	}
+}
+
+// runSessionInteractiveAttachBlocked keeps the stream open with history visible and input disabled.
+// When restoreAwaiting is true (legacy failed sessions that hit a run limit), status is moved back to awaiting_input.
+func (s *runtimeServer) runSessionInteractiveAttachBlocked(
+	ctx context.Context,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	q *store.Queries,
+	sessionID string,
+	session store.Session,
+	state *interactiveSessionState,
+	lastTurnUsage provider.TokenUsage,
+	inputBlockedReason string,
+	restoreAwaiting bool,
+) error {
+	state.inputBlockedReason = inputBlockedReason
+	if restoreAwaiting {
+		cleared := ""
+		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+			ID:     sessionID,
+			Status: model.SessionStatusAwaitingInput,
+			Error:  &cleared,
+		}); err != nil {
+			return status.Errorf(codes.Internal, "update session: %v", err)
+		}
+	}
+	stopReason := stopReasonFromSessionOutput(session.Output)
+	if err := sendAwaitingInput(stream, stopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
+		return err
+	}
+	return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, nil)
 }
 
 func (s *runtimeServer) runSessionInteractiveLoop(
@@ -214,6 +253,14 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 
 	for {
 		if len(pendingInput) > 0 {
+			if err := state.sessionLimitErrorBeforeTurn(); err != nil {
+				state.inputBlockedReason = limitErrorMessage(err)
+				if err := sendAwaitingInput(stream, lastStopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
+					return err
+				}
+				pendingInput = nil
+				continue
+			}
 			turnStart := time.Now()
 			stopReason, assistantText, turnUsage, err := state.runTurn(ctx, stream, pendingInput)
 			turnDuration := time.Since(turnStart)
@@ -228,6 +275,9 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			state.history = appendTurnHistory(state.history, userText, assistantText, stopReason, turnUsage, turnDuration)
 			state.turnCount++
 			state.sessionUsage.Add(turnUsage)
+			if err := state.sessionLimitErrorAfterTurn(); err != nil {
+				state.inputBlockedReason = limitErrorMessage(err)
+			}
 
 			outputJSON, err := marshalSessionOutput(assistantText, stopReason, turnUsage, state.sessionUsage, state.history)
 			if err != nil {
@@ -250,14 +300,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			lastOutput = outputJSON
 			lastTurnUsage = turnUsage
 
-			if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
-				Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
-					AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
-						StopReason: stopReason,
-						Stats:      interactiveSessionStats(state.turnCount, turnUsage, state.sessionUsage),
-					},
-				},
-			}); err != nil {
+			if err := sendAwaitingInput(stream, stopReason, state.turnCount, turnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
 				return err
 			}
 			pendingInput = nil
@@ -278,6 +321,19 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 		if um == nil {
 			return status.Error(codes.InvalidArgument, "expected user_message after awaiting_input")
 		}
+		if state.inputBlockedReason != "" {
+			if err := sendAwaitingInput(stream, lastStopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := state.sessionLimitErrorBeforeTurn(); err != nil {
+			state.inputBlockedReason = limitErrorMessage(err)
+			if err := sendAwaitingInput(stream, lastStopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
+				return err
+			}
+			continue
+		}
 		text := strings.TrimSpace(um.GetText())
 		if text == "" {
 			return status.Error(codes.InvalidArgument, "user_message.text must be non-empty")
@@ -297,26 +353,61 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 	}
 }
 
+func sendAwaitingInput(
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	stopReason string,
+	turn int,
+	turnUsage, sessionUsage provider.TokenUsage,
+	inputBlockedReason string,
+) error {
+	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
+			AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
+				StopReason:         stopReason,
+				Stats:              interactiveSessionStats(turn, turnUsage, sessionUsage),
+				InputBlockedReason: inputBlockedReason,
+			},
+		},
+	})
+}
+
 func sendSessionStarted(
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	sessionID, agentVersionID string,
 	ver *executor.Version,
 	history []provider.Message,
+	sessionStartedAt time.Time,
 ) error {
 	modelProvider := ""
 	modelName := ""
+	var maxTokensPerRun int32
+	var maxWallClockSeconds int32
 	if ver.Agent != nil {
 		modelProvider = ver.Agent.Spec.Model.Provider
 		modelName = ver.Agent.Spec.Model.Name
+		if lim := ver.Agent.Spec.Limits; lim != nil {
+			if lim.MaxTokensPerRun != nil && *lim.MaxTokensPerRun > 0 {
+				maxTokensPerRun = int32(*lim.MaxTokensPerRun)
+			}
+			if lim.MaxWallClockSeconds != nil && *lim.MaxWallClockSeconds > 0 {
+				maxWallClockSeconds = int32(*lim.MaxWallClockSeconds)
+			}
+		}
+	}
+	if sessionStartedAt.IsZero() {
+		sessionStartedAt = time.Now()
 	}
 	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
 			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
-				SessionId:      sessionID,
-				AgentVersionId: agentVersionID,
-				ModelProvider:  modelProvider,
-				ModelName:      modelName,
-				History:        historyToProto(history),
+				SessionId:                sessionID,
+				AgentVersionId:           agentVersionID,
+				ModelProvider:            modelProvider,
+				ModelName:                modelName,
+				History:                  historyToProto(history),
+				MaxTokensPerRun:          maxTokensPerRun,
+				MaxWallClockSeconds:      maxWallClockSeconds,
+				SessionStartedAtUnixMs:   sessionStartedAt.UnixMilli(),
 			},
 		},
 	})
@@ -350,11 +441,24 @@ func stopReasonFromSessionOutput(output json.RawMessage) string {
 }
 
 type interactiveSessionState struct {
-	sessionID    string
-	turnCount    int
-	sessionUsage provider.TokenUsage
-	history      []provider.Message
-	version      *executor.Version
+	sessionID          string
+	turnCount          int
+	sessionUsage       provider.TokenUsage
+	history            []provider.Message
+	version            *executor.Version
+	sessionStartedAt   time.Time
+	inputBlockedReason string
+}
+
+func (st *interactiveSessionState) maxTokensPerRun() int {
+	if st.version == nil || st.version.Agent == nil {
+		return 0
+	}
+	lim := st.version.Agent.Spec.Limits
+	if lim == nil || lim.MaxTokensPerRun == nil {
+		return 0
+	}
+	return *lim.MaxTokensPerRun
 }
 
 func (st *interactiveSessionState) runTurn(
@@ -362,10 +466,13 @@ func (st *interactiveSessionState) runTurn(
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	input json.RawMessage,
 ) (stopReason, assistantText string, turnUsage provider.TokenUsage, err error) {
+	runCtx, cancel := st.runContext(ctx)
+	defer cancel()
+
 	ch := make(chan executor.Event, 32)
 	runErrCh := make(chan error, 1)
 	go func() {
-		runErrCh <- st.version.StreamCompletion(ctx, executor.RunParams{
+		runErrCh <- st.version.StreamCompletion(runCtx, executor.RunParams{
 			Input:   input,
 			History: st.history,
 		}, ch)

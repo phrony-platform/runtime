@@ -69,6 +69,30 @@ func TestFormatTurnFooter(t *testing.T) {
 	}
 }
 
+func TestFormatWallClockLimit(t *testing.T) {
+	start := time.Now().Add(-18 * time.Second)
+	got := formatWallClockLimit(start, 30, time.Now())
+	if got != "18s / 30s (60%)" {
+		t.Fatalf("got %q", got)
+	}
+	if formatWallClockLimit(time.Time{}, 30, time.Now()) != "" {
+		t.Fatal("zero start should be empty")
+	}
+}
+
+func TestFormatTokenLimitPercent(t *testing.T) {
+	u := &runtimev1.TokenUsage{InputTokens: 35, OutputTokens: 35, TotalTokens: 70}
+	if got := formatTokenLimitPercent(u, 0); got != "" {
+		t.Fatalf("no limit = %q, want empty", got)
+	}
+	if got := formatTokenLimitPercent(u, 5000); got != "1% of limit" {
+		t.Fatalf("got %q, want 1%% of limit", got)
+	}
+	if got := formatTokenLimitPercent(u, 70); got != "100% of limit" {
+		t.Fatalf("got %q, want 100%% of limit", got)
+	}
+}
+
 func TestFormatDuration(t *testing.T) {
 	if got := formatDuration(500 * time.Millisecond); got != "500ms" {
 		t.Fatalf("got %q", got)

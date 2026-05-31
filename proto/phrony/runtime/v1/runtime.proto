@@ -94,6 +94,12 @@ message RunSessionInteractiveSessionStarted {
   string model_name = 4;
   // Prior turns when attaching to an existing session; empty for new sessions.
   repeated InteractiveConversationMessage history = 5;
+  // Agent manifest limits.max_tokens_per_run when set; 0 when unlimited.
+  int32 max_tokens_per_run = 6;
+  // Agent manifest limits.max_wall_clock_seconds when set; 0 when unlimited.
+  int32 max_wall_clock_seconds = 7;
+  // Wall-clock anchor for the run (session created_at when attaching, stream start for new sessions).
+  int64 session_started_at_unix_ms = 8;
 }
 
 message RunSessionInteractiveTextDelta {
@@ -117,6 +123,8 @@ message InteractiveSessionStats {
 message RunSessionInteractiveAwaitingInput {
   string stop_reason = 1;
   InteractiveSessionStats stats = 2;
+  // When set, the session stays attached but the client must not send user_message.
+  string input_blocked_reason = 3;
 }
 
 message RunSessionInteractiveCompleted {

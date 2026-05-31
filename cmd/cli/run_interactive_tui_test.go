@@ -5,11 +5,60 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 )
+
+func TestRunTUI_handleServerMsg_inputBlocked(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
+			AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
+				InputBlockedReason: "run limit max_tokens_per_run exceeded (on_limit=halt)",
+				Stats: &runtimev1.InteractiveSessionStats{
+					Turn: 1,
+					SessionUsage: &runtimev1.TokenUsage{
+						InputTokens: 50, OutputTokens: 20, TotalTokens: 70,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("awaiting_input: %v", err)
+	}
+	if !m.inputBlocked() || m.awaitingInput {
+		t.Fatalf("blocked=%v awaitingInput=%v", m.inputBlocked(), m.awaitingInput)
+	}
+	footer := m.footerView()
+	if !strings.Contains(footer, "Session limit reached") {
+		t.Fatalf("footer = %q, want limit banner", footer)
+	}
+	if strings.Contains(footer, "Message") {
+		t.Fatalf("footer = %q, should not show message input", footer)
+	}
+}
+
+func TestRunTUI_statusBarView_wallClock(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 100
+	m.maxWallClockSeconds = 60
+	m.sessionStartedAt = time.Now().Add(-10 * time.Second)
+	m.status = "input"
+	m.lastStats = &runtimev1.InteractiveSessionStats{Turn: 1}
+
+	bar := m.statusBarView()
+	if !strings.Contains(bar, "10s / 60s") {
+		t.Fatalf("statusBar = %q, want wall clock segment", bar)
+	}
+}
 
 func TestRunTUI_handleServerMsg_turnWithStats(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
@@ -21,10 +70,11 @@ func TestRunTUI_handleServerMsg_turnWithStats(t *testing.T) {
 	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
 			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
-				SessionId:      "sess-abc",
-				AgentVersionId: "ver-123",
-				ModelProvider:  "anthropic",
-				ModelName:      "claude-sonnet-4-5",
+				SessionId:         "sess-abc",
+				AgentVersionId:    "ver-123",
+				ModelProvider:     "anthropic",
+				ModelName:         "claude-sonnet-4-5",
+				MaxTokensPerRun:   5000,
 			},
 		},
 	}); err != nil {
@@ -90,6 +140,12 @@ func TestRunTUI_handleServerMsg_turnWithStats(t *testing.T) {
 	}
 	if !strings.Contains(statusBar, "70") {
 		t.Fatalf("statusBar = %q, want session token total", statusBar)
+	}
+	if !strings.Contains(statusBar, "1% of limit") {
+		t.Fatalf("statusBar = %q, want token limit percentage", statusBar)
+	}
+	if m.maxTokensPerRun != 5000 {
+		t.Fatalf("maxTokensPerRun = %d, want 5000", m.maxTokensPerRun)
 	}
 
 	content := m.viewport.View()

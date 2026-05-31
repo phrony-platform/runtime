@@ -689,9 +689,15 @@ type RunSessionInteractiveSessionStarted struct {
 	ModelProvider  string                 `protobuf:"bytes,3,opt,name=model_provider,json=modelProvider,proto3" json:"model_provider,omitempty"`
 	ModelName      string                 `protobuf:"bytes,4,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
 	// Prior turns when attaching to an existing session; empty for new sessions.
-	History       []*InteractiveConversationMessage `protobuf:"bytes,5,rep,name=history,proto3" json:"history,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	History []*InteractiveConversationMessage `protobuf:"bytes,5,rep,name=history,proto3" json:"history,omitempty"`
+	// Agent manifest limits.max_tokens_per_run when set; 0 when unlimited.
+	MaxTokensPerRun int32 `protobuf:"varint,6,opt,name=max_tokens_per_run,json=maxTokensPerRun,proto3" json:"max_tokens_per_run,omitempty"`
+	// Agent manifest limits.max_wall_clock_seconds when set; 0 when unlimited.
+	MaxWallClockSeconds int32 `protobuf:"varint,7,opt,name=max_wall_clock_seconds,json=maxWallClockSeconds,proto3" json:"max_wall_clock_seconds,omitempty"`
+	// Wall-clock anchor for the run (session created_at when attaching, stream start for new sessions).
+	SessionStartedAtUnixMs int64 `protobuf:"varint,8,opt,name=session_started_at_unix_ms,json=sessionStartedAtUnixMs,proto3" json:"session_started_at_unix_ms,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *RunSessionInteractiveSessionStarted) Reset() {
@@ -757,6 +763,27 @@ func (x *RunSessionInteractiveSessionStarted) GetHistory() []*InteractiveConvers
 		return x.History
 	}
 	return nil
+}
+
+func (x *RunSessionInteractiveSessionStarted) GetMaxTokensPerRun() int32 {
+	if x != nil {
+		return x.MaxTokensPerRun
+	}
+	return 0
+}
+
+func (x *RunSessionInteractiveSessionStarted) GetMaxWallClockSeconds() int32 {
+	if x != nil {
+		return x.MaxWallClockSeconds
+	}
+	return 0
+}
+
+func (x *RunSessionInteractiveSessionStarted) GetSessionStartedAtUnixMs() int64 {
+	if x != nil {
+		return x.SessionStartedAtUnixMs
+	}
+	return 0
 }
 
 type RunSessionInteractiveTextDelta struct {
@@ -933,11 +960,13 @@ func (x *InteractiveSessionStats) GetSessionUsage() *TokenUsage {
 }
 
 type RunSessionInteractiveAwaitingInput struct {
-	state         protoimpl.MessageState   `protogen:"open.v1"`
-	StopReason    string                   `protobuf:"bytes,1,opt,name=stop_reason,json=stopReason,proto3" json:"stop_reason,omitempty"`
-	Stats         *InteractiveSessionStats `protobuf:"bytes,2,opt,name=stats,proto3" json:"stats,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState   `protogen:"open.v1"`
+	StopReason string                   `protobuf:"bytes,1,opt,name=stop_reason,json=stopReason,proto3" json:"stop_reason,omitempty"`
+	Stats      *InteractiveSessionStats `protobuf:"bytes,2,opt,name=stats,proto3" json:"stats,omitempty"`
+	// When set, the session stays attached but the client must not send user_message.
+	InputBlockedReason string `protobuf:"bytes,3,opt,name=input_blocked_reason,json=inputBlockedReason,proto3" json:"input_blocked_reason,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *RunSessionInteractiveAwaitingInput) Reset() {
@@ -982,6 +1011,13 @@ func (x *RunSessionInteractiveAwaitingInput) GetStats() *InteractiveSessionStats
 		return x.Stats
 	}
 	return nil
+}
+
+func (x *RunSessionInteractiveAwaitingInput) GetInputBlockedReason() string {
+	if x != nil {
+		return x.InputBlockedReason
+	}
+	return ""
 }
 
 type RunSessionInteractiveCompleted struct {
@@ -1945,7 +1981,7 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"stopReason\x12<\n" +
 	"\n" +
 	"turn_usage\x18\x04 \x01(\v2\x1d.phrony.runtime.v1.TokenUsageR\tturnUsage\x12(\n" +
-	"\x10turn_duration_ms\x18\x05 \x01(\x03R\x0eturnDurationMs\"\x81\x02\n" +
+	"\x10turn_duration_ms\x18\x05 \x01(\x03R\x0eturnDurationMs\"\x9f\x03\n" +
 	"#RunSessionInteractiveSessionStarted\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12(\n" +
@@ -1953,7 +1989,10 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x0emodel_provider\x18\x03 \x01(\tR\rmodelProvider\x12\x1d\n" +
 	"\n" +
 	"model_name\x18\x04 \x01(\tR\tmodelName\x12K\n" +
-	"\ahistory\x18\x05 \x03(\v21.phrony.runtime.v1.InteractiveConversationMessageR\ahistory\"6\n" +
+	"\ahistory\x18\x05 \x03(\v21.phrony.runtime.v1.InteractiveConversationMessageR\ahistory\x12+\n" +
+	"\x12max_tokens_per_run\x18\x06 \x01(\x05R\x0fmaxTokensPerRun\x123\n" +
+	"\x16max_wall_clock_seconds\x18\a \x01(\x05R\x13maxWallClockSeconds\x12:\n" +
+	"\x1asession_started_at_unix_ms\x18\b \x01(\x03R\x16sessionStartedAtUnixMs\"6\n" +
 	"\x1eRunSessionInteractiveTextDelta\x12\x14\n" +
 	"\x05delta\x18\x01 \x01(\tR\x05delta\"\x95\x01\n" +
 	"\n" +
@@ -1966,11 +2005,12 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x04turn\x18\x01 \x01(\x05R\x04turn\x12<\n" +
 	"\n" +
 	"turn_usage\x18\x02 \x01(\v2\x1d.phrony.runtime.v1.TokenUsageR\tturnUsage\x12B\n" +
-	"\rsession_usage\x18\x03 \x01(\v2\x1d.phrony.runtime.v1.TokenUsageR\fsessionUsage\"\x87\x01\n" +
+	"\rsession_usage\x18\x03 \x01(\v2\x1d.phrony.runtime.v1.TokenUsageR\fsessionUsage\"\xb9\x01\n" +
 	"\"RunSessionInteractiveAwaitingInput\x12\x1f\n" +
 	"\vstop_reason\x18\x01 \x01(\tR\n" +
 	"stopReason\x12@\n" +
-	"\x05stats\x18\x02 \x01(\v2*.phrony.runtime.v1.InteractiveSessionStatsR\x05stats\"\x9b\x01\n" +
+	"\x05stats\x18\x02 \x01(\v2*.phrony.runtime.v1.InteractiveSessionStatsR\x05stats\x120\n" +
+	"\x14input_blocked_reason\x18\x03 \x01(\tR\x12inputBlockedReason\"\x9b\x01\n" +
 	"\x1eRunSessionInteractiveCompleted\x12\x1f\n" +
 	"\vstop_reason\x18\x01 \x01(\tR\n" +
 	"stopReason\x12\x16\n" +
