@@ -66,7 +66,7 @@ func TestRunCommand_missingAgentArg(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"session"})
+	root.SetArgs([]string{"run"})
 
 	err := root.Execute()
 	if err == nil {
@@ -204,7 +204,26 @@ func TestRunCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"session", "demo/echo-agent", "--runtime-addr", addr})
+	root.SetArgs([]string{"run", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "session ") || !strings.Contains(got, " started") {
+		t.Fatalf("output = %q, want session id started line", got)
+	}
+}
+
+func TestRunCommand_attach_failure(t *testing.T) {
+	t.Setenv("PHRONY_NO_TUI", "1")
+	addr := startTestRuntimeAddrForRun(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"run", "demo/echo-agent", "--attach", "--runtime-addr", addr})
 
 	err := root.Execute()
 	if err == nil {
@@ -212,6 +231,24 @@ func TestRunCommand_success(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "session failed") {
 		t.Fatalf("err = %v, want session failed", err)
+	}
+}
+
+func TestRunCommand_deprecatedSessionAlias(t *testing.T) {
+	addr := startTestRuntimeAddrForRun(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"session", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, " started") {
+		t.Fatalf("output = %q, want detached session started line", got)
 	}
 }
 
@@ -222,32 +259,34 @@ func TestRunCommand_withVersionFlag(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"session", "demo/echo-agent", "-v", "1.2.0", "--runtime-addr", addr})
+	root.SetArgs([]string{"run", "demo/echo-agent", "-v", "1.2.0", "--runtime-addr", addr})
 
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected session failure after start, got nil")
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(err.Error(), "session failed") {
-		t.Fatalf("err = %v, want session failed", err)
+	if !strings.Contains(out.String(), " started") {
+		t.Fatalf("output = %q, want session started line", out.String())
 	}
 }
 
 func TestRunCommand_withInput(t *testing.T) {
 	addr := startTestRuntimeAddrForRun(t)
 
+	var out bytes.Buffer
 	root := NewRootCommand()
-	root.SetOut(&bytes.Buffer{})
+	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{
-		"session", "demo/echo-agent",
+		"run", "demo/echo-agent",
 		"--input", `{"message":"hello"}`,
 		"--runtime-addr", addr,
 	})
 
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected session failure after start, got nil")
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), " started") {
+		t.Fatalf("output = %q, want session started line", out.String())
 	}
 }
 
@@ -255,7 +294,7 @@ func TestRunCommand_invalidAgentName(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"session", "echo-agent"})
+	root.SetArgs([]string{"run", "echo-agent"})
 
 	err := root.Execute()
 	if err == nil {
@@ -270,7 +309,7 @@ func TestRunCommand_invalidInput(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"session", "demo/echo-agent", "--input", "not-json"})
+	root.SetArgs([]string{"run", "demo/echo-agent", "--input", "not-json"})
 
 	err := root.Execute()
 	if err == nil {

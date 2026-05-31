@@ -310,7 +310,10 @@ func TestRuntime_RunSessionInteractive_attachFailedRunLimitBlocked(t *testing.T)
 
 func intPtr(n int) *int { return &n }
 
-func TestRuntime_RunSessionInteractive_wallClockPushesBlockedWhileWaiting(t *testing.T) {
+// A session whose wall-clock budget (measured from creation) is exhausted is
+// terminal: attaching replays it as a read-only failure and persists the
+// terminal status, so ls and attach agree. It is not resumable.
+func TestRuntime_RunSessionInteractive_wallClockExpiredAttachIsTerminal(t *testing.T) {
 	max := 30
 	now := time.Now()
 	output := []byte(`{"message":"hi","stop_reason":"end_turn","turn_usage":{"input_tokens":1,"output_tokens":1},"session_usage":{"input_tokens":1,"output_tokens":1}}`)
@@ -322,6 +325,10 @@ func TestRuntime_RunSessionInteractive_wallClockPushesBlockedWhileWaiting(t *tes
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
 		}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hello"}`), model.SessionStatusAwaitingInput, output, nil, history, now.Add(-time.Minute), now))
+	// Attach persists the terminal failure so ls reflects it.
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("sess-1", model.SessionStatusFailed, nil, sqlmock.AnyArg(), nil).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{
@@ -346,27 +353,27 @@ func TestRuntime_RunSessionInteractive_wallClockPushesBlockedWhileWaiting(t *tes
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
-	done := make(chan struct{})
-	go func() {
-		_ = srv.RunSessionInteractive(stream)
-		close(done)
-	}()
+	_ = srv.RunSessionInteractive(stream)
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		var blocked bool
-		for _, msg := range stream.sent {
-			if ai := msg.GetAwaitingInput(); ai != nil && strings.Contains(ai.GetInputBlockedReason(), "max_wall_clock_seconds") {
-				blocked = true
-				break
+	var started, failed bool
+	for _, msg := range stream.sent {
+		if msg.GetSessionStarted() != nil {
+			started = true
+		}
+		if f := msg.GetFailed(); f != nil {
+			failed = true
+			if !strings.Contains(f.GetMessage(), "max_wall_clock_seconds") {
+				t.Fatalf("failed message = %q, want wall clock limit", f.GetMessage())
 			}
 		}
-		if blocked {
-			return
+		if ai := msg.GetAwaitingInput(); ai != nil {
+			t.Fatalf("wall-clock-expired session must be terminal, got awaiting_input: %q", ai.GetInputBlockedReason())
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("sent = %+v, want proactive wall clock blocked awaiting_input", stream.sent)
-		}
-		time.Sleep(10 * time.Millisecond)
+	}
+	if !started || !failed {
+		t.Fatalf("started=%v failed=%v", started, failed)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
 	}
 }

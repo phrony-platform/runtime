@@ -228,7 +228,7 @@ type RunSessionResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	SessionId      string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	AgentVersionId string                 `protobuf:"bytes,2,opt,name=agent_version_id,json=agentVersionId,proto3" json:"agent_version_id,omitempty"`
-	// pending: session created and bound; model execution is not available yet.
+	// running: session is executing the first turn in the background (detached RunSession).
 	Status        string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

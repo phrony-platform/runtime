@@ -50,7 +50,7 @@ message RunSessionRequest {
 message RunSessionResponse {
   string session_id = 1;
   string agent_version_id = 2;
-  // pending: session created and bound; model execution is not available yet.
+  // running: session is executing the first turn in the background (detached RunSession).
   string status = 3;
 }
 

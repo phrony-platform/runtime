@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"sync"
 
@@ -22,6 +23,8 @@ type runtimeServer struct {
 	secretsEnc *secrets.Encryptor
 	// loadSessionVersionFn overrides version loading for interactive sessions (tests only).
 	loadSessionVersionFn func(context.Context, *store.Queries, string) (*executor.Version, error)
+	// startRunSessionBackgroundFn replaces detached session startup (tests only).
+	startRunSessionBackgroundFn func(sessionID, agentVersionID string, inputJSON json.RawMessage)
 	// activeSessions tracks session IDs with an open interactive stream.
 	activeSessions *sync.Map
 }

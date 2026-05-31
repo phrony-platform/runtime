@@ -46,6 +46,7 @@ func NewRootCommand() *cobra.Command {
 		newActiveCommand(&runtimeAddr),
 		newHistoryCommand(&runtimeAddr),
 		newRollbackCommand(&runtimeAddr),
+		newRunCommand(&runtimeAddr),
 		newSessionCommand(&runtimeAddr),
 		newSessionsCommand(&runtimeAddr),
 		newAgentsCommand(&runtimeAddr),

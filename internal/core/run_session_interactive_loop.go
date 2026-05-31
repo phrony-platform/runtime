@@ -24,6 +24,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 	sessionID string,
 	state *interactiveSessionState,
 	pendingInput json.RawMessage,
+	waitForUser bool,
 ) error {
 	var lastStopReason string
 	var lastOutput json.RawMessage
@@ -43,6 +44,12 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 					return err
 				}
 				pendingInput = nil
+				if !waitForUser {
+					if err := s.persistDetachedSessionOutcome(ctx, q, sessionID, state, lastOutput); err != nil {
+						return err
+					}
+					return nil
+				}
 				continue
 			}
 
@@ -72,6 +79,12 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 						return err
 					}
 					pendingInput = nil
+					if !waitForUser {
+						if err := s.persistDetachedSessionOutcome(ctx, q, sessionID, state, lastOutput); err != nil {
+							return err
+						}
+						return nil
+					}
 					continue
 				}
 			}
@@ -81,6 +94,12 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 					return err
 				} else if handled {
 					pendingInput = nil
+					if !waitForUser {
+						if err := s.persistDetachedSessionOutcome(ctx, q, sessionID, state, lastOutput); err != nil {
+							return err
+						}
+						return nil
+					}
 					continue
 				}
 				return s.failInteractiveSession(ctx, q, stream, sessionID, out.err)
@@ -107,13 +126,17 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			if err != nil {
 				return status.Errorf(codes.Internal, "encode session history: %v", err)
 			}
-			if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-				ID:      sessionID,
-				Status:  model.SessionStatusAwaitingInput,
-				Output:  outputJSON,
-				History: historyJSON,
-			}); err != nil {
-				return status.Errorf(codes.Internal, "update session: %v", err)
+			if waitForUser {
+				if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+					ID:      sessionID,
+					Status:  model.SessionStatusAwaitingInput,
+					Output:  outputJSON,
+					History: historyJSON,
+				}); err != nil {
+					return status.Errorf(codes.Internal, "update session: %v", err)
+				}
+			} else if err := s.persistDetachedSessionAfterTurn(ctx, q, sessionID, state, outputJSON, historyJSON); err != nil {
+				return err
 			}
 			lastStopReason = out.stopReason
 			lastOutput = outputJSON
@@ -123,6 +146,9 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				return err
 			}
 			pendingInput = nil
+			if !waitForUser {
+				return nil
+			}
 			continue
 		}
 
@@ -150,6 +176,9 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}
 			if r.err != nil {
 				if errors.Is(r.err, io.EOF) {
+					if !waitForUser {
+						return nil
+					}
 					if len(lastOutput) == 0 {
 						return nil
 					}

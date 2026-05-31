@@ -8,11 +8,14 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/manifest"
+	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -83,13 +86,14 @@ func TestIntegration_MigrateAndDeploy(t *testing.T) {
 	if runV1.GetSessionId() == "" {
 		t.Fatal("RunSession returned empty session_id")
 	}
-	if runV1.GetStatus() != runSessionStatusPending {
-		t.Fatalf("status = %q, want %q", runV1.GetStatus(), runSessionStatusPending)
+	if runV1.GetStatus() != model.SessionStatusRunning {
+		t.Fatalf("status = %q, want %q", runV1.GetStatus(), model.SessionStatusRunning)
 	}
 	if runV1.GetAgentVersionId() != versionV1ID {
 		t.Fatalf("agent_version_id = %q, want %q", runV1.GetAgentVersionId(), versionV1ID)
 	}
 	t.Cleanup(func() { cleanupIntegrationSessions(t, db, runV1.GetSessionId()) })
+	integrationWaitForSessionSettled(t, db, runV1.GetSessionId())
 
 	manifestV2 := integrationManifestJSON(t, namespace, "Version two.", "2.0.0")
 	respV2, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: manifestV2})
@@ -114,7 +118,11 @@ func TestIntegration_MigrateAndDeploy(t *testing.T) {
 	if runLatest.GetAgentVersionId() != respV2.GetVersionId() {
 		t.Fatalf("latest agent_version_id = %q, want %q", runLatest.GetAgentVersionId(), respV2.GetVersionId())
 	}
+	if runLatest.GetStatus() != model.SessionStatusRunning {
+		t.Fatalf("status = %q, want %q", runLatest.GetStatus(), model.SessionStatusRunning)
+	}
 	t.Cleanup(func() { cleanupIntegrationSessions(t, db, runLatest.GetSessionId()) })
+	integrationWaitForSessionSettled(t, db, runLatest.GetSessionId())
 }
 
 func TestIntegration_AgentLifecycle(t *testing.T) {
@@ -251,6 +259,27 @@ func TestIntegration_PublishWithoutDeployCannotRun(t *testing.T) {
 	if !strings.Contains(err.Error(), "no active deployment") {
 		t.Fatalf("RunSession without deploy: err = %v, want no active deployment", err)
 	}
+}
+
+func integrationWaitForSessionSettled(t *testing.T, db *sqlx.DB, sessionID string) {
+	t.Helper()
+	q := store.New(db.DB)
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		session, err := q.GetSession(context.Background(), sessionID)
+		if err != nil {
+			t.Fatalf("GetSession %s: %v", sessionID, err)
+		}
+		switch session.Status {
+		case model.SessionStatusAwaitingInput, model.SessionStatusCompleted, model.SessionStatusFailed, model.SessionStatusCancelled:
+			return
+		case model.SessionStatusRunning, model.SessionStatusPending:
+			time.Sleep(200 * time.Millisecond)
+		default:
+			t.Fatalf("unexpected session status %q", session.Status)
+		}
+	}
+	t.Fatalf("session %s did not settle within timeout", sessionID)
 }
 
 func integrationActivateVersion(t *testing.T, srv *runtimeServer, namespace, name, version string) {

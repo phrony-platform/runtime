@@ -101,7 +101,7 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		version:          ver,
 		sessionStartedAt: sessionStartedAt,
 	}
-	return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, inputJSON)
+	return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, inputJSON, true)
 }
 
 func (s *runtimeServer) runSessionInteractiveAttach(
@@ -135,7 +135,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 
 	ver, err := s.loadSessionVersion(sessionCtx, q, session.AgentVersionID)
 	if err != nil {
-		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+		return status.Errorf(codes.Internal, "load agent version: %v", err)
 	}
 
 	history, err := decodeHistory(session.History)
@@ -160,6 +160,9 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 			sessionStartedAt: session.CreatedAt,
 		}
 		if err := state.sessionLimitErrorBeforeTurn(); err != nil {
+			if isWallClockLimitError(err) {
+				return s.attachWallClockTerminal(sessionCtx, q, stream, sessionID, session, limitErrorMessage(err))
+			}
 			blockedReason = limitErrorMessage(err)
 		}
 		return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, q, sessionID, session, state, lastTurnUsage, blockedReason, false)
@@ -189,7 +192,9 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 			errMsg = *session.Error
 		}
 		// Session.Error is stored as text only; match persisted LimitError messages on re-attach.
-		if executor.IsLimitErrorMessage(errMsg) {
+		// Wall-clock expiry is terminal (the daemon failed it on purpose); other run
+		// limits remain resumable so an operator can continue the conversation.
+		if executor.IsLimitErrorMessage(errMsg) && !isWallClockLimitMessage(errMsg) {
 			lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
 			state := &interactiveSessionState{
 				sessionID:        sessionID,
@@ -213,6 +218,51 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	default:
 		return status.Errorf(codes.FailedPrecondition, "session status %q cannot be attached", session.Status)
 	}
+}
+
+// isWallClockLimitError reports whether err is a max_wall_clock_seconds run limit.
+func isWallClockLimitError(err error) bool {
+	var lim *executor.LimitError
+	if errors.As(err, &lim) {
+		return lim.Kind == executor.LimitMaxWallClockSeconds
+	}
+	return false
+}
+
+// isWallClockLimitMessage reports whether a persisted error string is a wall-clock limit.
+func isWallClockLimitMessage(msg string) bool {
+	return executor.IsLimitErrorMessage(msg) && strings.Contains(msg, string(executor.LimitMaxWallClockSeconds))
+}
+
+// attachWallClockTerminal replays a wall-clock-expired session as a read-only
+// failure. It also persists the terminal status so ls and attach agree even if
+// the background expiry watcher has not run yet (e.g. after a daemon restart).
+func (s *runtimeServer) attachWallClockTerminal(
+	ctx context.Context,
+	q *store.Queries,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	sessionID string,
+	session store.Session,
+	message string,
+) error {
+	if session.Status != model.SessionStatusFailed {
+		errText := message
+		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+			ID:     sessionID,
+			Status: model.SessionStatusFailed,
+			Error:  &errText,
+		}); err != nil {
+			return status.Errorf(codes.Internal, "update session: %v", err)
+		}
+	}
+	if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
+			Failed: &runtimev1.RunSessionInteractiveFailed{Message: message},
+		},
+	}); err != nil {
+		return err
+	}
+	return rejectInteractiveUserMessage(stream)
 }
 
 // runSessionInteractiveAttachBlocked keeps the stream open with history visible and input disabled.
@@ -243,7 +293,7 @@ func (s *runtimeServer) runSessionInteractiveAttachBlocked(
 	if err := sendAwaitingInput(stream, stopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
 		return err
 	}
-	return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, nil)
+	return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, nil, true)
 }
 
 // sessionEndedAtForAttach returns updated_at for terminal attach replays so clients freeze wall-clock display.

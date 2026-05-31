@@ -14,8 +14,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const runSessionStatusPending = model.SessionStatusPending
-
 func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessionRequest) (*runtimev1.RunSessionResponse, error) {
 	q, err := s.queries()
 	if err != nil {
@@ -38,15 +36,17 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 		ID:             sessionID,
 		AgentVersionID: agentVersionID,
 		Input:          inputJSON,
-		Status:         runSessionStatusPending,
+		Status:         model.SessionStatusRunning,
 	}); err != nil {
 		return nil, status.Errorf(codes.Internal, "persist session: %v", err)
 	}
 
+	s.startRunSessionBackground(sessionID, agentVersionID, inputJSON)
+
 	return &runtimev1.RunSessionResponse{
 		SessionId:      sessionID,
 		AgentVersionId: agentVersionID,
-		Status:         runSessionStatusPending,
+		Status:         model.SessionStatusRunning,
 	}, nil
 }
 

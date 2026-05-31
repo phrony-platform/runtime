@@ -3,12 +3,14 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/model"
 	"google.golang.org/grpc/codes"
 )
 
@@ -16,10 +18,13 @@ func TestRuntime_RunSession_latestVersion(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte("{}"), runSessionStatusPending).
+		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte("{}"), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
 
-	srv := &runtimeServer{db: db}
+	srv := &runtimeServer{
+		db: db,
+		startRunSessionBackgroundFn: func(string, string, json.RawMessage) {},
+	}
 	resp, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
 		AgentRef: &runtimev1.AgentRef{Namespace: "demo", Name: "echo-agent"},
 	})
@@ -32,6 +37,9 @@ func TestRuntime_RunSession_latestVersion(t *testing.T) {
 	if resp.GetAgentVersionId() != "version-uuid" {
 		t.Fatalf("agent_version_id = %q, want version-uuid", resp.GetAgentVersionId())
 	}
+	if resp.GetStatus() != model.SessionStatusRunning {
+		t.Fatalf("status = %q, want %q", resp.GetStatus(), model.SessionStatusRunning)
+	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}
@@ -41,10 +49,13 @@ func TestRuntime_RunSession_specificVersion(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"q":"hi"}`), runSessionStatusPending).
+		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"q":"hi"}`), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
 
-	srv := &runtimeServer{db: db}
+	srv := &runtimeServer{
+		db: db,
+		startRunSessionBackgroundFn: func(string, string, json.RawMessage) {},
+	}
 	resp, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
 		AgentRef: &runtimev1.AgentRef{
 			Namespace: "demo",
