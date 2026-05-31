@@ -12,6 +12,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/providertest"
 	"github.com/phrony-platform/runtime/internal/secrets"
 	"github.com/phrony-platform/runtime/internal/store"
 )
@@ -142,7 +143,7 @@ func TestExecutor_LoadVersion_notFound(t *testing.T) {
 }
 
 func TestStreamCompletion_streamsDeltas(t *testing.T) {
-	stub := &deltaStubProvider{}
+	stub := providertest.DeltaCompleted()
 	v := testVersion(stub)
 	ch := make(chan Event, 8)
 
@@ -177,7 +178,7 @@ func TestStreamCompletion_streamsDeltas(t *testing.T) {
 }
 
 func TestStreamCompletion_providerFailure(t *testing.T) {
-	v := testVersion(&failStubProvider{})
+	v := testVersion(providertest.Fail(errors.New("provider down")))
 	ch := make(chan Event, 4)
 	err := v.StreamCompletion(context.Background(), RunParams{
 		Input: json.RawMessage(`{"message":"hello"}`),
@@ -197,7 +198,7 @@ func TestStreamCompletion_providerFailure(t *testing.T) {
 }
 
 func TestStreamCompletion_skipsEmptyDeltas(t *testing.T) {
-	v := testVersion(&emptyDeltaStubProvider{})
+	v := testVersion(providertest.EmptyDeltaCompleted())
 	ch := make(chan Event, 8)
 	if err := v.StreamCompletion(context.Background(), RunParams{
 		Input: json.RawMessage(`{"message":"hello"}`),
@@ -216,7 +217,7 @@ func TestStreamCompletion_skipsEmptyDeltas(t *testing.T) {
 }
 
 func TestStreamCompletion_prependsHistory(t *testing.T) {
-	v := testVersion(&deltaStubProvider{})
+	v := testVersion(providertest.DeltaCompleted())
 	ch := make(chan Event, 8)
 	history := []provider.Message{{Role: provider.RoleUser, Content: "prior"}}
 	if err := v.StreamCompletion(context.Background(), RunParams{
@@ -240,7 +241,7 @@ func TestStreamCompletion_nilVersion(t *testing.T) {
 
 func TestStreamCompletion_enforcesTokenLimit(t *testing.T) {
 	max := 3
-	stub := &deltaStubProvider{}
+	stub := providertest.DeltaCompleted()
 	v := testVersion(stub)
 	v.Agent.Spec.Instructions = manifest.InstructionsSpec{}
 	v.Agent.Spec.Limits = &manifest.Limits{MaxTokensPerRun: &max, OnLimit: "halt"}
@@ -283,38 +284,4 @@ func testVersion(p provider.Provider) *Version {
 		},
 	}
 	return NewVersionWithProvider("version-uuid", agent, p)
-}
-
-type deltaStubProvider struct{}
-
-func (d *deltaStubProvider) ID() string { return provider.IDAnthropic }
-
-func (d *deltaStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
-	defer close(ch)
-	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "Hi "}
-	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "there"}
-	ch <- provider.CompletionEvent{Type: provider.EventCompleted, StopReason: "end_turn"}
-	return nil
-}
-
-type failStubProvider struct{}
-
-func (f *failStubProvider) ID() string { return provider.IDAnthropic }
-
-func (f *failStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
-	defer close(ch)
-	ch <- provider.CompletionEvent{Type: provider.EventFailed, Err: errors.New("provider down")}
-	return nil
-}
-
-type emptyDeltaStubProvider struct{}
-
-func (e *emptyDeltaStubProvider) ID() string { return provider.IDAnthropic }
-
-func (e *emptyDeltaStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
-	defer close(ch)
-	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: ""}
-	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "ok"}
-	ch <- provider.CompletionEvent{Type: provider.EventCompleted, StopReason: "end_turn"}
-	return nil
 }

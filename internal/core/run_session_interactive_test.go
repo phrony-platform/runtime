@@ -17,6 +17,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/providertest"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -179,7 +180,7 @@ func TestInteractiveSessionState_runTurn_streamsDeltas(t *testing.T) {
 	}
 	st := &interactiveSessionState{
 		sessionID: "sess-1",
-		version:   executor.NewVersionWithProvider("version-uuid", agent, &interactiveDeltaStubProvider{}),
+		version:   executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()),
 	}
 
 	stopReason, text, _, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
@@ -211,7 +212,7 @@ func TestInteractiveSessionState_runTurn_providerFailure(t *testing.T) {
 		},
 	}
 	st := &interactiveSessionState{
-		version: executor.NewVersionWithProvider("v", agent, &interactiveFailStubProvider{}),
+		version: executor.NewVersionWithProvider("v", agent, providertest.Fail(fmt.Errorf("model unavailable"))),
 	}
 	_, _, _, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
 	if err == nil {
@@ -261,28 +262,6 @@ func TestRuntime_failInteractiveSession(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}
-}
-
-type interactiveDeltaStubProvider struct{}
-
-func (d *interactiveDeltaStubProvider) ID() string { return provider.IDAnthropic }
-
-func (d *interactiveDeltaStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
-	defer close(ch)
-	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "Hi "}
-	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "there"}
-	ch <- provider.CompletionEvent{Type: provider.EventCompleted, StopReason: "end_turn"}
-	return nil
-}
-
-type interactiveFailStubProvider struct{}
-
-func (d *interactiveFailStubProvider) ID() string { return provider.IDAnthropic }
-
-func (d *interactiveFailStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
-	defer close(ch)
-	ch <- provider.CompletionEvent{Type: provider.EventFailed, Err: fmt.Errorf("model unavailable")}
-	return nil
 }
 
 type mockInteractiveStream struct {
@@ -357,7 +336,7 @@ func TestRuntime_RunSessionInteractive_attachCompleted(t *testing.T) {
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
-			}, &interactiveDeltaStubProvider{}), nil
+			}, providertest.DeltaCompleted()), nil
 		},
 	}
 	if err := srv.RunSessionInteractive(stream); err != nil {
@@ -411,7 +390,7 @@ func TestRuntime_RunSessionInteractive_attachCompletedRejectsUserMessage(t *test
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
-			}, &interactiveDeltaStubProvider{}), nil
+			}, providertest.DeltaCompleted()), nil
 		},
 	}
 	err := srv.RunSessionInteractive(stream)
@@ -460,7 +439,7 @@ func TestRuntime_RunSessionInteractive_attachAwaitingInputContinues(t *testing.T
 	srv := &runtimeServer{
 		db: db,
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
-			return executor.NewVersionWithProvider("version-uuid", agent, &interactiveDeltaStubProvider{}), nil
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}
 	if err := srv.RunSessionInteractive(stream); err != nil {
@@ -602,7 +581,7 @@ func TestRuntime_RunSessionInteractive_attachInvalidHistory(t *testing.T) {
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
-			}, &interactiveDeltaStubProvider{}), nil
+			}, providertest.DeltaCompleted()), nil
 		},
 	}
 	err := srv.RunSessionInteractive(stream)
@@ -633,7 +612,7 @@ func TestRuntime_RunSessionInteractive_attachFailed(t *testing.T) {
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
-			}, &interactiveDeltaStubProvider{}), nil
+			}, providertest.DeltaCompleted()), nil
 		},
 	}
 	if err := srv.RunSessionInteractive(stream); err != nil {
@@ -687,7 +666,7 @@ func TestRuntime_RunSessionInteractive_attachFailedRejectsUserMessage(t *testing
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
-			}, &interactiveDeltaStubProvider{}), nil
+			}, providertest.DeltaCompleted()), nil
 		},
 	}
 	err := srv.RunSessionInteractive(stream)

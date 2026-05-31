@@ -11,6 +11,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/providertest"
 	"github.com/phrony-platform/runtime/internal/store"
 )
 
@@ -51,7 +52,7 @@ func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 	srv := &runtimeServer{
 		db: db,
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
-			return executor.NewVersionWithProvider("version-uuid", agent, &usageStubProvider{}), nil
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
 
@@ -98,19 +99,4 @@ func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}
-}
-
-type usageStubProvider struct{}
-
-func (u *usageStubProvider) ID() string { return provider.IDAnthropic }
-
-func (u *usageStubProvider) Complete(ctx context.Context, req provider.CompletionRequest, ch chan<- provider.CompletionEvent) error {
-	defer close(ch)
-	ch <- provider.CompletionEvent{Type: provider.EventTextDelta, TextDelta: "ok"}
-	ch <- provider.CompletionEvent{
-		Type:       provider.EventCompleted,
-		StopReason: "end_turn",
-		Usage:      provider.TokenUsage{InputTokens: 10, OutputTokens: 5},
-	}
-	return nil
 }

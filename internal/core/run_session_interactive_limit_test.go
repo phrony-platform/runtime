@@ -12,6 +12,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/providertest"
 	"github.com/phrony-platform/runtime/internal/store"
 )
 
@@ -101,7 +102,7 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 	srv := &runtimeServer{
 		db: db,
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
-			return executor.NewVersionWithProvider("version-uuid", agent, &usageStubProvider{}), nil
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
 	_ = srv.RunSessionInteractive(stream)
@@ -168,7 +169,7 @@ func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.
 	srv := &runtimeServer{
 		db: db,
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
-			return executor.NewVersionWithProvider("version-uuid", agent, &usageStubProvider{}), nil
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
 	_ = srv.RunSessionInteractive(stream)
@@ -223,7 +224,7 @@ func TestRuntime_RunSessionInteractive_attachOverTokenLimitBlocksInput(t *testin
 	srv := &runtimeServer{
 		db: db,
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
-			return executor.NewVersionWithProvider("version-uuid", agent, &usageStubProvider{}), nil
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
 	if err := srv.RunSessionInteractive(stream); err != nil {
@@ -286,7 +287,7 @@ func TestRuntime_RunSessionInteractive_attachFailedRunLimitBlocked(t *testing.T)
 	srv := &runtimeServer{
 		db: db,
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
-			return executor.NewVersionWithProvider("version-uuid", agent, &usageStubProvider{}), nil
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
 	_ = srv.RunSessionInteractive(stream)
@@ -346,7 +347,7 @@ func TestRuntime_RunSessionInteractive_wallClockPushesBlockedWhileWaiting(t *tes
 	srv := &runtimeServer{
 		db: db,
 		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
-			return executor.NewVersionWithProvider("version-uuid", agent, &usageStubProvider{}), nil
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
 	done := make(chan struct{})
