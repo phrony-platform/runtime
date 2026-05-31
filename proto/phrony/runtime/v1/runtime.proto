@@ -77,11 +77,18 @@ message RunSessionInteractiveServerMsg {
   }
 }
 
+message InteractiveConversationMessage {
+  string role = 1;
+  string content = 2;
+}
+
 message RunSessionInteractiveSessionStarted {
   string session_id = 1;
   string agent_version_id = 2;
   string model_provider = 3;
   string model_name = 4;
+  // Prior turns when attaching to an existing session; empty for new sessions.
+  repeated InteractiveConversationMessage history = 5;
 }
 
 message RunSessionInteractiveTextDelta {

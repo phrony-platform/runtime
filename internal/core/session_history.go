@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/provider"
 )
 
@@ -40,4 +41,18 @@ func decodeHistory(raw json.RawMessage) ([]provider.Message, error) {
 		out[i] = provider.Message{Role: item.Role, Content: item.Content}
 	}
 	return out, nil
+}
+
+func historyToProto(messages []provider.Message) []*runtimev1.InteractiveConversationMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	out := make([]*runtimev1.InteractiveConversationMessage, len(messages))
+	for i, m := range messages {
+		out[i] = &runtimev1.InteractiveConversationMessage{
+			Role:    m.Role,
+			Content: m.Content,
+		}
+	}
+	return out
 }

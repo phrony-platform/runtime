@@ -3,11 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
-	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -18,10 +16,10 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run AGENT",
 		Short: "Start a session for a deployed agent",
-		Long:  "AGENT is namespace/name (for example demo/echo-agent). Uses the latest deployed version unless -v is set.",
+		Long:  "Start a new session for AGENT (namespace/name).",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSession(cmd, runtimeAddr, args[0], version, input, noTUI)
+			return runNewSession(cmd, runtimeAddr, args[0], version, input, noTUI)
 		},
 	}
 	cmd.Flags().StringVarP(&version, "version", "v", "", "deployed agent version (semver from manifest metadata.version)")
@@ -31,10 +29,7 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 	return cmd
 }
 
-func runSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, input string, noTUI bool) error {
-	if noTUI {
-		_ = os.Setenv("PHRONY_NO_TUI", "1")
-	}
+func runNewSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, input string, noTUI bool) error {
 	ref, err := agentRef(agentName, version)
 	if err != nil {
 		return err
@@ -52,22 +47,7 @@ func runSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, inp
 		AgentRef: ref,
 		Input:    inputBytes,
 	}
-
-	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
-		stream, err := rt.RunSessionInteractive(cmd.Context())
-		if err != nil {
-			return clierr.WrapRPC("run session", err)
-		}
-
-		return runInteractiveSession(
-			cmd.Context(),
-			stream,
-			start,
-			cmd.InOrStdin(),
-			cmd.OutOrStdout(),
-			cmd.ErrOrStderr(),
-		)
-	})
+	return runInteractiveSessionCLI(cmd, runtimeAddr, start, noTUI)
 }
 
 func parseAgentName(agentName string) (namespace, name string, err error) {

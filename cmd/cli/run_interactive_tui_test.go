@@ -86,6 +86,32 @@ func TestRunTUI_handleServerMsg_turnWithStats(t *testing.T) {
 	}
 }
 
+func TestRunTUI_handleServerMsg_sessionStartedWithHistory(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
+				SessionId: "sess-attach",
+				History: []*runtimev1.InteractiveConversationMessage{
+					{Role: "user", Content: "hello"},
+					{Role: "assistant", Content: "hi there"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("session_started: %v", err)
+	}
+	text := m.conversationText()
+	if !strings.Contains(text, "hello") || !strings.Contains(text, "hi there") {
+		t.Fatalf("conversation = %q, want prior turns", text)
+	}
+}
+
 func TestRunTUI_layout_viewportMatchesBox(t *testing.T) {
 	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
 	m.width = 80

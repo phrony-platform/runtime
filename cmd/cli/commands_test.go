@@ -77,6 +77,123 @@ func TestRunCommand_missingAgentArg(t *testing.T) {
 	}
 }
 
+func TestSessionsAttachCommand_completedReadOnly(t *testing.T) {
+	t.Setenv("PHRONY_NO_TUI", "1")
+	addr := startTestRuntimeAddrForRunAttachCompleted(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"sessions", "attach", "sess-completed", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "session sess-completed started") {
+		t.Fatalf("output = %q, want session started", got)
+	}
+	if !strings.Contains(got, "session complete") {
+		t.Fatalf("output = %q, want session complete", got)
+	}
+}
+
+func TestSessionsAttachCommand_missingSessionArg(t *testing.T) {
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"sessions", "attach"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "accepts 1 arg") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSessionsListCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForSessionsList(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"sessions", "ls", "demo/echo-agent", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"sess-await", "sess-done", "awaiting_input", "completed", "RESUMABLE", "yes"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestSessionsAttachCommand_failedReadOnly(t *testing.T) {
+	t.Setenv("PHRONY_NO_TUI", "1")
+	addr := startTestRuntimeAddrForRunAttachFailed(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"sessions", "attach", "sess-failed", "--runtime-addr", addr})
+
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "session failed") {
+		t.Fatalf("err = %v, want session failed", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "session sess-failed started") {
+		t.Fatalf("output = %q, want session started", got)
+	}
+}
+
+func TestSessionsListCommand_statusFilter(t *testing.T) {
+	addr := startTestRuntimeAddrForSessionsListFiltered(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{
+		"sessions", "ls", "demo/echo-agent",
+		"--status", "awaiting_input",
+		"--runtime-addr", addr,
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "sess-await") || !strings.Contains(got, "awaiting_input") {
+		t.Fatalf("output = %q, want filtered awaiting session", got)
+	}
+	if strings.Contains(got, "sess-done") {
+		t.Fatalf("output = %q, should not include completed session", got)
+	}
+}
+
+func TestSessionsListCommand_missingAgentArg(t *testing.T) {
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"sessions", "ls"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "accepts 1 arg") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunCommand_success(t *testing.T) {
 	addr := startTestRuntimeAddrForRun(t)
 

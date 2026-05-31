@@ -235,6 +235,75 @@ func TestRunInteractiveSession_plainModeShowsTokenStats(t *testing.T) {
 	}
 }
 
+func TestRunInteractiveSession_attachFailedReadOnly(t *testing.T) {
+	t.Setenv("PHRONY_NO_TUI", "1")
+	stream := &mockInteractiveClientStream{
+		recv: []*runtimev1.RunSessionInteractiveServerMsg{
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+				SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{SessionId: "sess-1"},
+			}},
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
+				Failed: &runtimev1.RunSessionInteractiveFailed{Message: "model unavailable"},
+			}},
+		},
+	}
+
+	err := runInteractiveSession(
+		context.Background(),
+		stream,
+		&runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+		strings.NewReader(""),
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "session failed") {
+		t.Fatalf("err = %v, want session failed", err)
+	}
+	if len(stream.sent) != 1 || stream.sent[0].GetStart().GetSessionId() != "sess-1" {
+		t.Fatalf("sent = %+v, want only start with session_id", stream.sent)
+	}
+}
+
+func TestRunInteractiveSession_attachCompletedReadOnly(t *testing.T) {
+	t.Setenv("PHRONY_NO_TUI", "1")
+	stream := &mockInteractiveClientStream{
+		recv: []*runtimev1.RunSessionInteractiveServerMsg{
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+				SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{SessionId: "sess-1"},
+			}},
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
+				Completed: &runtimev1.RunSessionInteractiveCompleted{
+					StopReason: "end_turn",
+					Output:     []byte(`{"message":"done","stop_reason":"end_turn"}`),
+				},
+			}},
+		},
+	}
+
+	var stdout bytes.Buffer
+	err := runInteractiveSession(
+		context.Background(),
+		stream,
+		&runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+		strings.NewReader(""),
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("runInteractiveSession: %v", err)
+	}
+	if len(stream.sent) != 1 || stream.sent[0].GetStart().GetSessionId() != "sess-1" {
+		t.Fatalf("sent = %+v, want only start with session_id", stream.sent)
+	}
+	if stream.sent[0].GetStart().GetAgentRef() != nil {
+		t.Fatal("attach start must not include agent_ref")
+	}
+	got := stdout.String()
+	if !strings.Contains(got, "session complete") {
+		t.Fatalf("stdout = %q, want session complete", got)
+	}
+}
+
 func TestRunInteractiveSession_failed(t *testing.T) {
 	stream := &mockInteractiveClientStream{
 		recv: []*runtimev1.RunSessionInteractiveServerMsg{

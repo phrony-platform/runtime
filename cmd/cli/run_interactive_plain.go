@@ -11,6 +11,34 @@ import (
 	"github.com/phrony-platform/runtime/internal/clierr"
 )
 
+func printConversationHistory(stdout io.Writer, msgs []*runtimev1.InteractiveConversationMessage) error {
+	for _, msg := range msgs {
+		switch msg.GetRole() {
+		case "user":
+			if _, err := fmt.Fprintf(stdout, "\nYou\n%s\n", msg.GetContent()); err != nil {
+				return err
+			}
+		case "assistant":
+			formatted, err := formatAssistantTranscript(msg.GetContent())
+			if err != nil {
+				return err
+			}
+			if _, err := io.WriteString(stdout, "\nAssistant\n"); err != nil {
+				return err
+			}
+			if len(formatted) > 0 {
+				if _, err := stdout.Write(formatted); err != nil {
+					return err
+				}
+			}
+			if _, err := io.WriteString(stdout, "\n"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func runInteractiveSessionPlain(
 	ctx context.Context,
 	stream interactiveStream,
@@ -61,6 +89,9 @@ func runInteractiveSessionPlain(
 				shortID(started.GetAgentVersionId()),
 				formatModelLine(started.GetModelProvider(), started.GetModelName()),
 			)
+			if err := printConversationHistory(stdout, started.GetHistory()); err != nil {
+				return err
+			}
 		case msg.GetTextDelta() != nil:
 			if err := completionOut.WriteDelta(msg.GetTextDelta().GetDelta()); err != nil {
 				return err

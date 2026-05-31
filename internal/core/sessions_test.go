@@ -68,3 +68,30 @@ func TestRuntime_ListSessions_noDatabase(t *testing.T) {
 	})
 	assertGRPCCode(t, err, codes.FailedPrecondition)
 }
+
+func TestRuntime_ListSessions_statusFilter(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("version-uuid", model.SessionStatusAwaitingInput).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
+			AddRow("sess-await", "version-uuid", model.SessionStatusAwaitingInput, now, now))
+
+	srv := &runtimeServer{db: db}
+	resp, err := srv.ListSessions(context.Background(), &runtimev1.ListSessionsRequest{
+		AgentRef: &runtimev1.AgentRef{Namespace: "demo", Name: "echo-agent"},
+		Status:   model.SessionStatusAwaitingInput,
+	})
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(resp.GetSessions()) != 1 || resp.GetSessions()[0].GetId() != "sess-await" {
+		t.Fatalf("sessions = %+v, want one awaiting_input row", resp.GetSessions())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}

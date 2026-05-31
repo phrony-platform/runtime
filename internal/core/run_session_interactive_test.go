@@ -418,7 +418,7 @@ func TestRuntime_RunSessionInteractive_attachCompletedRejectsUserMessage(t *test
 func TestRuntime_RunSessionInteractive_attachAwaitingInputContinues(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
-	output := []byte(`{"message":"hi","stop_reason":"end_turn"}`)
+	output := []byte(`{"message":"hi","stop_reason":"end_turn","turn_usage":{"input_tokens":10,"output_tokens":5},"session_usage":{"input_tokens":10,"output_tokens":5}}`)
 	history := []byte(`[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
@@ -464,19 +464,40 @@ func TestRuntime_RunSessionInteractive_attachAwaitingInputContinues(t *testing.T
 		t.Fatalf("RunSessionInteractive: %v", err)
 	}
 
-	var started, awaiting, completed bool
+	var started, attachAwaiting, completed bool
+	var awaitingCount int
 	for _, msg := range stream.sent {
 		switch {
 		case msg.GetSessionStarted() != nil:
 			started = true
+			h := msg.GetSessionStarted().GetHistory()
+			if len(h) != 2 || h[0].GetRole() != "user" || h[0].GetContent() != "hello" ||
+				h[1].GetRole() != "assistant" || h[1].GetContent() != "hi" {
+				t.Fatalf("history = %+v", h)
+			}
 		case msg.GetAwaitingInput() != nil:
-			awaiting = true
+			awaitingCount++
+			if awaitingCount == 1 {
+				attachAwaiting = true
+				stats := msg.GetAwaitingInput().GetStats()
+				if stats == nil || stats.GetTurn() != 1 {
+					t.Fatalf("attach stats turn = %+v", stats)
+				}
+				su := stats.GetSessionUsage()
+				if su == nil || su.GetInputTokens() != 10 || su.GetOutputTokens() != 5 {
+					t.Fatalf("attach session_usage = %+v", su)
+				}
+				tu := stats.GetTurnUsage()
+				if tu == nil || tu.GetInputTokens() != 10 {
+					t.Fatalf("attach turn_usage = %+v", tu)
+				}
+			}
 		case msg.GetCompleted() != nil:
 			completed = true
 		}
 	}
-	if !started || !awaiting || !completed {
-		t.Fatalf("started=%v awaiting=%v completed=%v", started, awaiting, completed)
+	if !started || !attachAwaiting || !completed {
+		t.Fatalf("started=%v attachAwaiting=%v completed=%v", started, attachAwaiting, completed)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -507,6 +528,167 @@ func TestRuntime_RunSessionInteractive_attachAlreadyActive(t *testing.T) {
 
 	err := srv.RunSessionInteractive(stream)
 	assertGRPCCode(t, err, codes.FailedPrecondition)
+}
+
+func TestRuntime_RunSessionInteractive_attachNotFound(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+
+	stream := &mockInteractiveStream{
+		ctx: context.Background(),
+		recv: []*runtimev1.RunSessionInteractiveClientMsg{
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+				Start: &runtimev1.RunSessionInteractiveStart{SessionId: "missing"},
+			}},
+		},
+	}
+
+	srv := &runtimeServer{db: db}
+	err := srv.RunSessionInteractive(stream)
+	assertGRPCCode(t, err, codes.NotFound)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestRuntime_RunSessionInteractive_attachPendingRejected(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusPending, nil, nil, []byte(`[]`), now, now))
+
+	stream := &mockInteractiveStream{
+		ctx: context.Background(),
+		recv: []*runtimev1.RunSessionInteractiveClientMsg{
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+				Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+			}},
+		},
+	}
+
+	srv := &runtimeServer{db: db}
+	err := srv.RunSessionInteractive(stream)
+	assertGRPCCode(t, err, codes.FailedPrecondition)
+}
+
+func TestRuntime_RunSessionInteractive_attachInvalidHistory(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusAwaitingInput, nil, nil, []byte(`not-json`), now, now))
+
+	stream := &mockInteractiveStream{
+		ctx: context.Background(),
+		recv: []*runtimev1.RunSessionInteractiveClientMsg{
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+				Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+			}},
+		},
+	}
+
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
+				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
+			}, &interactiveDeltaStubProvider{}), nil
+		},
+	}
+	err := srv.RunSessionInteractive(stream)
+	assertGRPCCode(t, err, codes.Internal)
+}
+
+func TestRuntime_RunSessionInteractive_attachFailed(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	errMsg := "model unavailable"
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusFailed, nil, &errMsg, []byte(`[]`), now, now))
+
+	stream := &mockInteractiveStream{
+		ctx: context.Background(),
+		recv: []*runtimev1.RunSessionInteractiveClientMsg{
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+				Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+			}},
+		},
+	}
+
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
+				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
+			}, &interactiveDeltaStubProvider{}), nil
+		},
+	}
+	if err := srv.RunSessionInteractive(stream); err != nil {
+		t.Fatalf("RunSessionInteractive: %v", err)
+	}
+
+	var started, failed bool
+	for _, msg := range stream.sent {
+		if msg.GetSessionStarted() != nil {
+			started = true
+		}
+		if f := msg.GetFailed(); f != nil {
+			failed = true
+			if f.GetMessage() != errMsg {
+				t.Fatalf("failed message = %q, want %q", f.GetMessage(), errMsg)
+			}
+		}
+	}
+	if !started || !failed {
+		t.Fatalf("started=%v failed=%v", started, failed)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestRuntime_RunSessionInteractive_attachFailedRejectsUserMessage(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	errMsg := "model unavailable"
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusFailed, nil, &errMsg, []byte(`[]`), now, now))
+
+	stream := &mockInteractiveStream{
+		ctx: context.Background(),
+		recv: []*runtimev1.RunSessionInteractiveClientMsg{
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+				Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+			}},
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_UserMessage{
+				UserMessage: &runtimev1.RunSessionInteractiveUserMessage{Text: "more"},
+			}},
+		},
+	}
+
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
+				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
+			}, &interactiveDeltaStubProvider{}), nil
+		},
+	}
+	err := srv.RunSessionInteractive(stream)
+	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
 func TestRuntime_RunSessionInteractive_attachRunningRejected(t *testing.T) {

@@ -243,6 +243,9 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		m.agentVersionID = started.GetAgentVersionId()
 		m.modelProvider = started.GetModelProvider()
 		m.modelName = started.GetModelName()
+		if err := m.appendConversationHistory(started.GetHistory()); err != nil {
+			return err
+		}
 		m.status = "streaming"
 		m.refreshViewport()
 	case msg.GetTextDelta() != nil:
@@ -263,6 +266,11 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 			return err
 		}
 		completed := msg.GetCompleted()
+		if m.transcript.Len() == 0 {
+			if err := m.appendCompletedOutput(completed.GetOutput()); err != nil {
+				return err
+			}
+		}
 		m.statsLine = "session complete · " + formatSessionStatsLine(completed.GetStats(), completed.GetStopReason())
 		m.status = "done"
 		m.awaitingInput = false
@@ -273,6 +281,65 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 	default:
 		return fmt.Errorf("run session: unexpected server message")
 	}
+	return nil
+}
+
+func (m *runTUI) appendConversationHistory(msgs []*runtimev1.InteractiveConversationMessage) error {
+	for _, msg := range msgs {
+		role := msg.GetRole()
+		content := msg.GetContent()
+		switch role {
+		case "user":
+			m.transcript.WriteString("\n\n")
+			m.transcript.WriteString(tuiUserStyle.Render("You"))
+			m.transcript.WriteString("\n")
+			m.transcript.WriteString(content)
+		case "assistant":
+			formatted, err := formatAssistantTranscript(content)
+			if err != nil {
+				return err
+			}
+			m.transcript.WriteString("\n\n")
+			m.transcript.WriteString(tuiAssistStyle.Render("Assistant"))
+			m.transcript.WriteString("\n")
+			m.transcript.Write(formatted)
+		default:
+			return fmt.Errorf("run session: unknown history role %q", role)
+		}
+	}
+	return nil
+}
+
+func formatAssistantTranscript(content string) ([]byte, error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, nil
+	}
+	var formatted bytes.Buffer
+	w := newCompletionWriter(&formatted)
+	if err := w.WriteDelta(content); err != nil {
+		return nil, err
+	}
+	if err := w.Flush(); err != nil {
+		return nil, err
+	}
+	if formatted.Len() > 0 {
+		return formatted.Bytes(), nil
+	}
+	return []byte(content), nil
+}
+
+func (m *runTUI) appendCompletedOutput(raw []byte) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	pretty, err := prettifySessionOutput(raw)
+	if err != nil {
+		return err
+	}
+	m.transcript.WriteString("\n\n")
+	m.transcript.WriteString(tuiAssistStyle.Render("Result"))
+	m.transcript.WriteString("\n")
+	m.transcript.Write(pretty)
 	return nil
 }
 

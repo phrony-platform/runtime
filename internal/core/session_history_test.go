@@ -53,3 +53,10 @@ func TestDecodeHistory_emptyRaw(t *testing.T) {
 		t.Fatalf("decoded = %+v, want nil", decoded)
 	}
 }
+
+func TestDecodeHistory_invalidJSON(t *testing.T) {
+	_, err := decodeHistory(json.RawMessage(`not-json`))
+	if err == nil {
+		t.Fatal("decodeHistory() = nil, want error")
+	}
+}

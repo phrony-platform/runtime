@@ -300,6 +300,135 @@ func startTestRuntimeAddrForArchive(t *testing.T) string {
 	return startRuntimeOnDB(t, sqlDB)
 }
 
+func startTestRuntimeAddrForSessionsList(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("version-uuid", "").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
+			AddRow("sess-await", "version-uuid", "awaiting_input", time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 13, 0, 0, 0, time.UTC)).
+			AddRow("sess-done", "version-uuid", "completed", time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 11, 0, 0, 0, time.UTC)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+const attachTestManifestJSON = `{
+	"apiVersion":"phrony.dev/v1",
+	"kind":"Agent",
+	"metadata":{"name":"echo-agent","namespace":"demo","version":"1.2.0"},
+	"secrets":{"anthropic":{"fromEnv":"ANTHROPIC_API_KEY"}},
+	"spec":{
+		"purpose":"p",
+		"instructions":{"text":"System."},
+		"model":{"provider":"anthropic","name":"claude-sonnet-4-5"}
+	}
+}`
+
+func startTestRuntimeAddrForSessionsListFiltered(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("version-uuid", "awaiting_input").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
+			AddRow("sess-await", "version-uuid", "awaiting_input", time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 13, 0, 0, 0, time.UTC)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForRunAttachFailed(t *testing.T) string {
+	t.Helper()
+
+	testKey := make([]byte, 32)
+	t.Setenv(secrets.EnvEncryptionKey, base64.StdEncoding.EncodeToString(testKey))
+	enc, err := secrets.NewEncryptor(testKey, 1)
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
+	sealed, err := enc.Encrypt("version-uuid", "anthropic", []byte("sk-test"))
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	now := time.Now()
+	errMsg := "model unavailable"
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("sess-failed").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-failed", "version-uuid", []byte("{}"), "failed", nil, &errMsg, []byte(`[]`), now, now))
+	mock.ExpectQuery(`SELECT manifest`).
+		WithArgs("version-uuid").
+		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow([]byte(attachTestManifestJSON)))
+	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
+		WithArgs("version-uuid", "anthropic").
+		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
+			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForRunAttachCompleted(t *testing.T) string {
+	t.Helper()
+
+	testKey := make([]byte, 32)
+	t.Setenv(secrets.EnvEncryptionKey, base64.StdEncoding.EncodeToString(testKey))
+	enc, err := secrets.NewEncryptor(testKey, 1)
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
+	sealed, err := enc.Encrypt("version-uuid", "anthropic", []byte("sk-test"))
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	now := time.Now()
+	output := []byte(`{"message":"done","stop_reason":"end_turn"}`)
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("sess-completed").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-completed", "version-uuid", []byte("{}"), "completed", output, nil, []byte(`[]`), now, now))
+	mock.ExpectQuery(`SELECT manifest`).
+		WithArgs("version-uuid").
+		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow([]byte(attachTestManifestJSON)))
+	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
+		WithArgs("version-uuid", "anthropic").
+		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
+			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
 func startRuntimeOnDB(t *testing.T, sqlDB *sql.DB) string {
 	t.Helper()
 	db := sqlx.NewDb(sqlDB, "pgx")

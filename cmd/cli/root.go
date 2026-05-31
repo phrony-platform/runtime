@@ -38,6 +38,7 @@ func NewRootCommand() *cobra.Command {
 		newDeployCommand(&runtimeAddr),
 		newValidateCommand(),
 		newAgentsCommand(&runtimeAddr),
+		newSessionsCommand(&runtimeAddr),
 	)
 
 	return root

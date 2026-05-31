@@ -89,7 +89,7 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 	}
 
-	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver); err != nil {
+	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver, nil); err != nil {
 		return err
 	}
 
@@ -131,28 +131,30 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 	}
 
-	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver); err != nil {
+	history, err := decodeHistory(session.History)
+	if err != nil {
+		return status.Errorf(codes.Internal, "decode session history: %v", err)
+	}
+	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history); err != nil {
 		return err
 	}
 
 	switch session.Status {
 	case model.SessionStatusAwaitingInput:
-		history, err := decodeHistory(session.History)
-		if err != nil {
-			return status.Errorf(codes.Internal, "decode session history: %v", err)
-		}
+		lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
 		state := &interactiveSessionState{
-			sessionID: sessionID,
-			version:   ver,
-			history:   history,
-			turnCount: len(history) / 2,
+			sessionID:    sessionID,
+			version:      ver,
+			history:      history,
+			turnCount:    len(history) / 2,
+			sessionUsage: sessionUsage,
 		}
 		stopReason := stopReasonFromSessionOutput(session.Output)
 		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
 				AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
 					StopReason: stopReason,
-					Stats:      interactiveSessionStats(state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}),
+					Stats:      interactiveSessionStats(state.turnCount, lastTurnUsage, state.sessionUsage),
 				},
 			},
 		}); err != nil {
@@ -215,14 +217,6 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 			}
 
-			outputJSON, err := json.Marshal(map[string]string{
-				"message":     assistantText,
-				"stop_reason": stopReason,
-			})
-			if err != nil {
-				return status.Errorf(codes.Internal, "encode session output: %v", err)
-			}
-
 			userText, err := userTextFromSessionInput(pendingInput)
 			if err != nil {
 				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
@@ -230,6 +224,11 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			state.history = appendTurnHistory(state.history, userText, assistantText)
 			state.turnCount++
 			state.sessionUsage.Add(turnUsage)
+
+			outputJSON, err := marshalSessionOutput(assistantText, stopReason, turnUsage, state.sessionUsage)
+			if err != nil {
+				return status.Errorf(codes.Internal, "encode session output: %v", err)
+			}
 
 			historyJSON, err := encodeHistory(state.history)
 			if err != nil {
@@ -243,7 +242,6 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}); err != nil {
 				return status.Errorf(codes.Internal, "update session: %v", err)
 			}
-
 			lastStopReason = stopReason
 			lastOutput = outputJSON
 			lastTurnUsage = turnUsage
@@ -299,6 +297,7 @@ func sendSessionStarted(
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	sessionID, agentVersionID string,
 	ver *executor.Version,
+	history []provider.Message,
 ) error {
 	modelProvider := ""
 	modelName := ""
@@ -313,6 +312,7 @@ func sendSessionStarted(
 				AgentVersionId: agentVersionID,
 				ModelProvider:  modelProvider,
 				ModelName:      modelName,
+				History:        historyToProto(history),
 			},
 		},
 	})
