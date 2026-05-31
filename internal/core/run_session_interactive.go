@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,12 +39,32 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		return status.Error(codes.InvalidArgument, "first message must be start")
 	}
 
+	sessionID := strings.TrimSpace(start.GetSessionId())
+	if sessionID != "" {
+		return s.runSessionInteractiveAttach(ctx, stream, q, sessionID)
+	}
+
+	ref := start.GetAgentRef()
+	if ref == nil || ref.GetNamespace() == "" || ref.GetName() == "" {
+		return status.Error(codes.InvalidArgument, "start requires agent_ref or session_id")
+	}
+
 	inputJSON, err := normalizeSessionInput(start.GetInput())
 	if err != nil {
 		return err
 	}
 
-	agentVersionID, err := resolveAgentVersionID(ctx, s.db.DB, start.GetAgentRef())
+	return s.runSessionInteractiveNew(ctx, stream, q, ref, inputJSON)
+}
+
+func (s *runtimeServer) runSessionInteractiveNew(
+	ctx context.Context,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	q *store.Queries,
+	ref *runtimev1.AgentRef,
+	inputJSON json.RawMessage,
+) error {
+	agentVersionID, err := resolveAgentVersionID(ctx, s.db.DB, ref)
 	if err != nil {
 		return err
 	}
@@ -58,28 +79,17 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		return status.Errorf(codes.Internal, "persist session: %v", err)
 	}
 
+	if err := s.registerActiveSession(sessionID); err != nil {
+		return err
+	}
+	defer s.unregisterActiveSession(sessionID)
+
 	ver, err := s.loadSessionVersion(ctx, q, agentVersionID)
 	if err != nil {
 		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 	}
 
-	modelProvider := ""
-	modelName := ""
-	if ver.Agent != nil {
-		modelProvider = ver.Agent.Spec.Model.Provider
-		modelName = ver.Agent.Spec.Model.Name
-	}
-
-	if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
-		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
-			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
-				SessionId:      sessionID,
-				AgentVersionId: agentVersionID,
-				ModelProvider:  modelProvider,
-				ModelName:      modelName,
-			},
-		},
-	}); err != nil {
+	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver); err != nil {
 		return err
 	}
 
@@ -87,58 +97,177 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		sessionID: sessionID,
 		version:   ver,
 	}
+	return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, inputJSON)
+}
 
-	turnInput := inputJSON
-	for {
-		stopReason, assistantText, turnUsage, err := state.runTurn(ctx, stream, turnInput)
+func (s *runtimeServer) runSessionInteractiveAttach(
+	ctx context.Context,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	q *store.Queries,
+	sessionID string,
+) error {
+	session, err := q.GetSession(ctx, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return status.Errorf(codes.NotFound, "session %s not found", sessionID)
+	}
+	if err != nil {
+		return status.Errorf(codes.Internal, "load session: %v", err)
+	}
+
+	switch session.Status {
+	case model.SessionStatusRunning:
+		return status.Error(codes.FailedPrecondition, "session is running on another stream")
+	case model.SessionStatusPending:
+		return status.Error(codes.FailedPrecondition, "session is pending execution")
+	}
+
+	if err := s.registerActiveSession(sessionID); err != nil {
+		return err
+	}
+	defer s.unregisterActiveSession(sessionID)
+
+	ver, err := s.loadSessionVersion(ctx, q, session.AgentVersionID)
+	if err != nil {
+		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+	}
+
+	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver); err != nil {
+		return err
+	}
+
+	switch session.Status {
+	case model.SessionStatusAwaitingInput:
+		history, err := decodeHistory(session.History)
 		if err != nil {
-			return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+			return status.Errorf(codes.Internal, "decode session history: %v", err)
 		}
-
-		outputJSON, err := json.Marshal(map[string]string{
-			"message":     assistantText,
-			"stop_reason": stopReason,
-		})
-		if err != nil {
-			return status.Errorf(codes.Internal, "encode session output: %v", err)
+		state := &interactiveSessionState{
+			sessionID: sessionID,
+			version:   ver,
+			history:   history,
+			turnCount: len(history) / 2,
 		}
-
-		userText, err := userTextFromSessionInput(turnInput)
-		if err != nil {
-			return s.failInteractiveSession(ctx, q, stream, sessionID, err)
-		}
-		state.history = appendTurnHistory(state.history, userText, assistantText)
-		state.turnCount++
-		state.sessionUsage.Add(turnUsage)
-
-		historyJSON, err := encodeHistory(state.history)
-		if err != nil {
-			return status.Errorf(codes.Internal, "encode session history: %v", err)
-		}
-		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-			ID:      sessionID,
-			Status:  model.SessionStatusAwaitingInput,
-			Output:  outputJSON,
-			History: historyJSON,
-		}); err != nil {
-			return status.Errorf(codes.Internal, "update session: %v", err)
-		}
-
+		stopReason := stopReasonFromSessionOutput(session.Output)
 		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
 				AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
 					StopReason: stopReason,
-					Stats:      interactiveSessionStats(state.turnCount, turnUsage, state.sessionUsage),
+					Stats:      interactiveSessionStats(state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}),
 				},
 			},
 		}); err != nil {
 			return err
 		}
+		return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, nil)
+
+	case model.SessionStatusCompleted:
+		output := session.Output
+		if len(output) == 0 {
+			output = json.RawMessage("null")
+		}
+		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+			Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
+				Completed: &runtimev1.RunSessionInteractiveCompleted{
+					StopReason: stopReasonFromSessionOutput(output),
+					Output:     output,
+				},
+			},
+		}); err != nil {
+			return err
+		}
+		return rejectInteractiveUserMessage(stream)
+
+	case model.SessionStatusFailed:
+		msg := ""
+		if session.Error != nil {
+			msg = *session.Error
+		}
+		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+			Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
+				Failed: &runtimev1.RunSessionInteractiveFailed{Message: msg},
+			},
+		}); err != nil {
+			return err
+		}
+		return rejectInteractiveUserMessage(stream)
+
+	default:
+		return status.Errorf(codes.FailedPrecondition, "session status %q cannot be attached", session.Status)
+	}
+}
+
+func (s *runtimeServer) runSessionInteractiveLoop(
+	ctx context.Context,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	q *store.Queries,
+	sessionID string,
+	state *interactiveSessionState,
+	pendingInput json.RawMessage,
+) error {
+	var lastStopReason string
+	var lastOutput json.RawMessage
+	var lastTurnUsage provider.TokenUsage
+
+	for {
+		if len(pendingInput) > 0 {
+			stopReason, assistantText, turnUsage, err := state.runTurn(ctx, stream, pendingInput)
+			if err != nil {
+				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+			}
+
+			outputJSON, err := json.Marshal(map[string]string{
+				"message":     assistantText,
+				"stop_reason": stopReason,
+			})
+			if err != nil {
+				return status.Errorf(codes.Internal, "encode session output: %v", err)
+			}
+
+			userText, err := userTextFromSessionInput(pendingInput)
+			if err != nil {
+				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+			}
+			state.history = appendTurnHistory(state.history, userText, assistantText)
+			state.turnCount++
+			state.sessionUsage.Add(turnUsage)
+
+			historyJSON, err := encodeHistory(state.history)
+			if err != nil {
+				return status.Errorf(codes.Internal, "encode session history: %v", err)
+			}
+			if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+				ID:      sessionID,
+				Status:  model.SessionStatusAwaitingInput,
+				Output:  outputJSON,
+				History: historyJSON,
+			}); err != nil {
+				return status.Errorf(codes.Internal, "update session: %v", err)
+			}
+
+			lastStopReason = stopReason
+			lastOutput = outputJSON
+			lastTurnUsage = turnUsage
+
+			if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+				Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
+					AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
+						StopReason: stopReason,
+						Stats:      interactiveSessionStats(state.turnCount, turnUsage, state.sessionUsage),
+					},
+				},
+			}); err != nil {
+				return err
+			}
+			pendingInput = nil
+		}
 
 		msg, err := stream.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return s.completeInteractiveSession(ctx, q, stream, sessionID, stopReason, outputJSON, state.turnCount, turnUsage, state.sessionUsage)
+				if len(lastOutput) == 0 {
+					return nil
+				}
+				return s.completeInteractiveSession(ctx, q, stream, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
 			}
 			return err
 		}
@@ -162,8 +291,58 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		if err != nil {
 			return status.Errorf(codes.Internal, "encode user message: %v", err)
 		}
-		turnInput = encoded
+		pendingInput = encoded
 	}
+}
+
+func sendSessionStarted(
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	sessionID, agentVersionID string,
+	ver *executor.Version,
+) error {
+	modelProvider := ""
+	modelName := ""
+	if ver.Agent != nil {
+		modelProvider = ver.Agent.Spec.Model.Provider
+		modelName = ver.Agent.Spec.Model.Name
+	}
+	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
+				SessionId:      sessionID,
+				AgentVersionId: agentVersionID,
+				ModelProvider:  modelProvider,
+				ModelName:      modelName,
+			},
+		},
+	})
+}
+
+func rejectInteractiveUserMessage(stream runtimev1.Runtime_RunSessionInteractiveServer) error {
+	msg, err := stream.Recv()
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if msg.GetUserMessage() != nil {
+		return status.Error(codes.InvalidArgument, "user_message is not allowed for this session")
+	}
+	return status.Error(codes.InvalidArgument, "expected no further client messages")
+}
+
+func stopReasonFromSessionOutput(output json.RawMessage) string {
+	if len(output) == 0 {
+		return ""
+	}
+	var obj struct {
+		StopReason string `json:"stop_reason"`
+	}
+	if err := json.Unmarshal(output, &obj); err != nil {
+		return ""
+	}
+	return obj.StopReason
 }
 
 type interactiveSessionState struct {

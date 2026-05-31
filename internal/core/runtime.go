@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/jmoiron/sqlx"
@@ -20,6 +21,8 @@ type runtimeServer struct {
 	secretsEnc *secrets.Encryptor
 	// loadSessionVersionFn overrides version loading for interactive sessions (tests only).
 	loadSessionVersionFn func(context.Context, *store.Queries, string) (*executor.Version, error)
+	// activeSessions tracks session IDs with an open interactive stream.
+	activeSessions *sync.Map
 }
 
 // queries returns a store handle backed by the configured database, or a
