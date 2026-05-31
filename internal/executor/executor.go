@@ -27,6 +27,7 @@ type Event struct {
 	Type       EventType
 	TextDelta  string
 	StopReason string
+	Usage      provider.TokenUsage
 	Err        error
 }
 
@@ -118,6 +119,7 @@ func (v *Version) StreamCompletion(ctx context.Context, params RunParams, ch cha
 		emitFailed(ch, err)
 		return err
 	}
+	usageEst := newUsageEstimator()
 
 	messages, err := buildMessages(v.Agent, params.Input)
 	if err != nil {
@@ -129,6 +131,7 @@ func (v *Version) StreamCompletion(ctx context.Context, params RunParams, ch cha
 	}
 
 	for _, m := range messages {
+		usageEst.addInput(m.Content)
 		if err := tracker.addTokens(m.Content); err != nil {
 			emitFailed(ch, err)
 			return err
@@ -163,6 +166,7 @@ func (v *Version) StreamCompletion(ctx context.Context, params RunParams, ch cha
 			if ev.TextDelta == "" {
 				continue
 			}
+			usageEst.addOutput(ev.TextDelta)
 			if err := tracker.addTokens(ev.TextDelta); err != nil {
 				emitFailed(ch, err)
 				return err
@@ -170,7 +174,11 @@ func (v *Version) StreamCompletion(ctx context.Context, params RunParams, ch cha
 			ch <- Event{Type: EventTextDelta, TextDelta: ev.TextDelta}
 
 		case provider.EventCompleted:
-			ch <- Event{Type: EventCompleted, StopReason: ev.StopReason}
+			usage := ev.Usage
+			if usage.IsZero() {
+				usage = usageEst.usage()
+			}
+			ch <- Event{Type: EventCompleted, StopReason: ev.StopReason, Usage: usage}
 			if err := <-providerErrCh; err != nil {
 				return err
 			}

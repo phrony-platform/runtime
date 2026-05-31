@@ -92,14 +92,11 @@ func TestRuntime_RunSessionInteractive_sessionStartedThenFailedOnLoad(t *testing
 		t.Fatalf("RunSessionInteractive: %v", err)
 	}
 
-	if len(stream.sent) < 2 {
-		t.Fatalf("sent %d messages, want at least session_started and failed", len(stream.sent))
+	if len(stream.sent) < 1 {
+		t.Fatalf("sent %d messages, want failed", len(stream.sent))
 	}
-	if stream.sent[0].GetSessionStarted() == nil {
-		t.Fatalf("first message = %T, want session_started", stream.sent[0].GetBody())
-	}
-	if stream.sent[1].GetFailed() == nil {
-		t.Fatalf("second message = %T, want failed", stream.sent[1].GetBody())
+	if stream.sent[0].GetFailed() == nil {
+		t.Fatalf("first message = %T, want failed", stream.sent[0].GetBody())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -181,7 +178,7 @@ func TestInteractiveSessionState_runTurn_streamsDeltas(t *testing.T) {
 		version:   executor.NewVersionWithProvider("version-uuid", agent, &interactiveDeltaStubProvider{}),
 	}
 
-	stopReason, text, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
+	stopReason, text, _, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
 	if err != nil {
 		t.Fatalf("runTurn: %v", err)
 	}
@@ -212,7 +209,7 @@ func TestInteractiveSessionState_runTurn_providerFailure(t *testing.T) {
 	st := &interactiveSessionState{
 		version: executor.NewVersionWithProvider("v", agent, &interactiveFailStubProvider{}),
 	}
-	_, _, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
+	_, _, _, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
 	if err == nil {
 		t.Fatal("runTurn() = nil, want error")
 	}
@@ -228,7 +225,7 @@ func TestRuntime_completeInteractiveSession(t *testing.T) {
 
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	srv := &runtimeServer{db: db}
-	err := srv.completeInteractiveSession(context.Background(), store.New(db), stream, "sess-1", "end_turn", output)
+	err := srv.completeInteractiveSession(context.Background(), store.New(db), stream, "sess-1", "end_turn", output, 1, provider.TokenUsage{}, provider.TokenUsage{})
 	if err != nil {
 		t.Fatalf("completeInteractiveSession: %v", err)
 	}

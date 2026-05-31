@@ -34,9 +34,14 @@ func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest,
 	}
 
 	stream := p.client.Messages.NewStreaming(ctx, params)
+	var acc anthropic.Message
 	stopReason := ""
 	for stream.Next() {
 		event := stream.Current()
+		if err := acc.Accumulate(event); err != nil {
+			emitFailed(ch, err)
+			return err
+		}
 		switch ev := event.AsAny().(type) {
 		case anthropic.ContentBlockDeltaEvent:
 			switch d := ev.Delta.AsAny().(type) {
@@ -56,7 +61,11 @@ func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest,
 		return err
 	}
 
-	ch <- CompletionEvent{Type: EventCompleted, StopReason: stopReason}
+	usage := TokenUsage{
+		InputTokens:  int(acc.Usage.InputTokens),
+		OutputTokens: int(acc.Usage.OutputTokens),
+	}
+	ch <- CompletionEvent{Type: EventCompleted, StopReason: stopReason, Usage: usage}
 	return nil
 }
 

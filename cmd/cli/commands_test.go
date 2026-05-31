@@ -90,9 +90,6 @@ func TestRunCommand_success(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected session failure after start, got nil")
 	}
-	if !strings.Contains(out.String(), "session ") || !strings.Contains(out.String(), "started") {
-		t.Fatalf("output = %q, want started session", out.String())
-	}
 	if !strings.Contains(err.Error(), "session failed") {
 		t.Fatalf("err = %v, want session failed", err)
 	}
@@ -111,8 +108,8 @@ func TestRunCommand_withVersionFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected session failure after start, got nil")
 	}
-	if !strings.Contains(out.String(), "started") {
-		t.Fatalf("output = %q, want started session", out.String())
+	if !strings.Contains(err.Error(), "session failed") {
+		t.Fatalf("err = %v, want session failed", err)
 	}
 }
 

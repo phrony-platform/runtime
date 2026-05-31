@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
@@ -12,6 +13,7 @@ import (
 
 func newRunCommand(runtimeAddr *string) *cobra.Command {
 	var version, input string
+	var noTUI bool
 
 	cmd := &cobra.Command{
 		Use:   "run AGENT",
@@ -19,16 +21,20 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 		Long:  "AGENT is namespace/name (for example demo/echo-agent). Uses the latest deployed version unless -v is set.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSession(cmd, runtimeAddr, args[0], version, input)
+			return runSession(cmd, runtimeAddr, args[0], version, input, noTUI)
 		},
 	}
 	cmd.Flags().StringVarP(&version, "version", "v", "", "deployed agent version (semver from manifest metadata.version)")
 	cmd.Flags().StringVar(&input, "input", "", "session input as a JSON object")
+	cmd.Flags().BoolVar(&noTUI, "no-tui", false, "disable interactive terminal UI (use plain stream output)")
 
 	return cmd
 }
 
-func runSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, input string) error {
+func runSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, input string, noTUI bool) error {
+	if noTUI {
+		_ = os.Setenv("PHRONY_NO_TUI", "1")
+	}
 	ref, err := agentRef(agentName, version)
 	if err != nil {
 		return err

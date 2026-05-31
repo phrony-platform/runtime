@@ -35,8 +35,15 @@ func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest, ch
 
 	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
 	stopReason := ""
+	var usage TokenUsage
 	for stream.Next() {
 		chunk := stream.Current()
+		if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 {
+			usage = TokenUsage{
+				InputTokens:  int(chunk.Usage.PromptTokens),
+				OutputTokens: int(chunk.Usage.CompletionTokens),
+			}
+		}
 		if len(chunk.Choices) == 0 {
 			continue
 		}
@@ -53,7 +60,7 @@ func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest, ch
 		return err
 	}
 
-	ch <- CompletionEvent{Type: EventCompleted, StopReason: stopReason}
+	ch <- CompletionEvent{Type: EventCompleted, StopReason: stopReason, Usage: usage}
 	return nil
 }
 
@@ -84,6 +91,9 @@ func openAIParams(req CompletionRequest) (openai.ChatCompletionNewParams, error)
 	params := openai.ChatCompletionNewParams{
 		Model:    openai.ChatModel(model),
 		Messages: messages,
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
+		},
 	}
 	applyOpenAIParameters(&params, req.Parameters)
 	applyOpenAIReasoning(&params, req.Reasoning)

@@ -58,21 +58,30 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		return status.Errorf(codes.Internal, "persist session: %v", err)
 	}
 
+	ex := &executor.Executor{Enc: s.secretsEnc, Q: q}
+	ver, err := ex.LoadVersion(ctx, agentVersionID)
+	if err != nil {
+		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+	}
+
+	modelProvider := ""
+	modelName := ""
+	if ver.Agent != nil {
+		modelProvider = ver.Agent.Spec.Model.Provider
+		modelName = ver.Agent.Spec.Model.Name
+	}
+
 	if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
 			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
 				SessionId:      sessionID,
 				AgentVersionId: agentVersionID,
+				ModelProvider:  modelProvider,
+				ModelName:      modelName,
 			},
 		},
 	}); err != nil {
 		return err
-	}
-
-	ex := &executor.Executor{Enc: s.secretsEnc, Q: q}
-	ver, err := ex.LoadVersion(ctx, agentVersionID)
-	if err != nil {
-		return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 	}
 
 	state := &interactiveSessionState{
@@ -82,7 +91,7 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 
 	turnInput := inputJSON
 	for {
-		stopReason, assistantText, err := state.runTurn(ctx, stream, turnInput)
+		stopReason, assistantText, turnUsage, err := state.runTurn(ctx, stream, turnInput)
 		if err != nil {
 			return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 		}
@@ -107,11 +116,14 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 			return s.failInteractiveSession(ctx, q, stream, sessionID, err)
 		}
 		state.history = appendTurnHistory(state.history, userText, assistantText)
+		state.turnCount++
+		state.sessionUsage.Add(turnUsage)
 
 		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
 				AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
 					StopReason: stopReason,
+					Stats:      interactiveSessionStats(state.turnCount, turnUsage, state.sessionUsage),
 				},
 			},
 		}); err != nil {
@@ -121,7 +133,7 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		msg, err := stream.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return s.completeInteractiveSession(ctx, q, stream, sessionID, stopReason, outputJSON)
+				return s.completeInteractiveSession(ctx, q, stream, sessionID, stopReason, outputJSON, state.turnCount, turnUsage, state.sessionUsage)
 			}
 			return err
 		}
@@ -150,16 +162,18 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 }
 
 type interactiveSessionState struct {
-	sessionID string
-	history   []provider.Message
-	version   *executor.Version
+	sessionID    string
+	turnCount    int
+	sessionUsage provider.TokenUsage
+	history      []provider.Message
+	version      *executor.Version
 }
 
 func (st *interactiveSessionState) runTurn(
 	ctx context.Context,
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	input json.RawMessage,
-) (stopReason, assistantText string, err error) {
+) (stopReason, assistantText string, turnUsage provider.TokenUsage, err error) {
 	ch := make(chan executor.Event, 32)
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -179,25 +193,25 @@ func (st *interactiveSessionState) runTurn(
 					TextDelta: &runtimev1.RunSessionInteractiveTextDelta{Delta: ev.TextDelta},
 				},
 			}); err != nil {
-				return "", "", err
+				return "", "", provider.TokenUsage{}, err
 			}
 		case executor.EventCompleted:
 			if err := <-runErrCh; err != nil {
-				return "", "", err
+				return "", "", provider.TokenUsage{}, err
 			}
-			return ev.StopReason, builder.String(), nil
+			return ev.StopReason, builder.String(), ev.Usage, nil
 		case executor.EventFailed:
 			if ev.Err != nil {
-				return "", "", ev.Err
+				return "", "", provider.TokenUsage{}, ev.Err
 			}
-			return "", "", fmt.Errorf("model completion failed")
+			return "", "", provider.TokenUsage{}, fmt.Errorf("model completion failed")
 		}
 	}
 
 	if err := <-runErrCh; err != nil {
-		return "", "", err
+		return "", "", provider.TokenUsage{}, err
 	}
-	return "", "", fmt.Errorf("model completion ended without a terminal event")
+	return "", "", provider.TokenUsage{}, fmt.Errorf("model completion ended without a terminal event")
 }
 
 func (s *runtimeServer) failInteractiveSession(
@@ -230,6 +244,8 @@ func (s *runtimeServer) completeInteractiveSession(
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	sessionID, stopReason string,
 	output json.RawMessage,
+	turn int,
+	turnUsage, sessionUsage provider.TokenUsage,
 ) error {
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 		ID:     sessionID,
@@ -243,6 +259,7 @@ func (s *runtimeServer) completeInteractiveSession(
 			Completed: &runtimev1.RunSessionInteractiveCompleted{
 				StopReason: stopReason,
 				Output:     output,
+				Stats:      interactiveSessionStats(turn, turnUsage, sessionUsage),
 			},
 		},
 	})

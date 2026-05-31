@@ -76,20 +76,38 @@ message RunSessionInteractiveServerMsg {
 message RunSessionInteractiveSessionStarted {
   string session_id = 1;
   string agent_version_id = 2;
+  string model_provider = 3;
+  string model_name = 4;
 }
 
 message RunSessionInteractiveTextDelta {
   string delta = 1;
 }
 
+message TokenUsage {
+  int32 input_tokens = 1;
+  int32 output_tokens = 2;
+  int32 total_tokens = 3;
+  // True when counts are heuristic estimates rather than provider-reported usage.
+  bool estimated = 4;
+}
+
+message InteractiveSessionStats {
+  int32 turn = 1;
+  TokenUsage turn_usage = 2;
+  TokenUsage session_usage = 3;
+}
+
 message RunSessionInteractiveAwaitingInput {
   string stop_reason = 1;
+  InteractiveSessionStats stats = 2;
 }
 
 message RunSessionInteractiveCompleted {
   string stop_reason = 1;
   // JSON object with the final session output for this run.
   bytes output = 2;
+  InteractiveSessionStats stats = 3;
 }
 
 message RunSessionInteractiveFailed {

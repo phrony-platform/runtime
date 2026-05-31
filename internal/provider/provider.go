@@ -51,5 +51,6 @@ type CompletionEvent struct {
 	Type       CompletionEventType
 	TextDelta  string
 	StopReason string
+	Usage      TokenUsage
 	Err        error
 }
