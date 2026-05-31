@@ -1,3 +1,5 @@
+// Session output and history JSON shapes persisted in the store.
+// Domain usage values use provider.TokenUsage; wire types use runtimev1 (see convert_proto.go).
 package core
 
 import (

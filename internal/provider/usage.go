@@ -1,5 +1,8 @@
 package provider
 
+// TokenUsage is the domain-layer usage type (providers and executor).
+// Persistence uses core session JSON types; gRPC uses runtimev1.TokenUsage.
+//
 // TokenUsage reports prompt and completion token counts for a model call.
 type TokenUsage struct {
 	InputTokens  int

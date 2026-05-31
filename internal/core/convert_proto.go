@@ -1,0 +1,53 @@
+// Proto conversion helpers for the runtime core package.
+//
+// Layer boundaries (types are intentionally separate; do not merge):
+//   - provider.TokenUsage — domain model from model providers and the executor
+//   - sessionOutputUsage — JSON persisted on sessions (see session_output.go)
+//   - runtimev1.TokenUsage — gRPC wire messages
+package core
+
+import (
+	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/provider"
+)
+
+func tokenUsageToProto(u provider.TokenUsage) *runtimev1.TokenUsage {
+	if u.IsZero() && !u.Estimated {
+		return nil
+	}
+	total := u.Total()
+	return &runtimev1.TokenUsage{
+		InputTokens:  int32(u.InputTokens),
+		OutputTokens: int32(u.OutputTokens),
+		TotalTokens:  int32(total),
+		Estimated:    u.Estimated,
+	}
+}
+
+func interactiveSessionStats(turn int, turnUsage, sessionUsage provider.TokenUsage) *runtimev1.InteractiveSessionStats {
+	return &runtimev1.InteractiveSessionStats{
+		Turn:         int32(turn),
+		TurnUsage:    tokenUsageToProto(turnUsage),
+		SessionUsage: tokenUsageToProto(sessionUsage),
+	}
+}
+
+func historyToProto(messages []provider.Message) []*runtimev1.InteractiveConversationMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	out := make([]*runtimev1.InteractiveConversationMessage, len(messages))
+	for i, m := range messages {
+		msg := &runtimev1.InteractiveConversationMessage{
+			Role:    m.Role,
+			Content: m.Content,
+		}
+		if m.Role == provider.RoleAssistant {
+			msg.StopReason = m.StopReason
+			msg.TurnUsage = tokenUsageToProto(m.TurnUsage)
+			msg.TurnDurationMs = m.TurnDurationMs
+		}
+		out[i] = msg
+	}
+	return out
+}
