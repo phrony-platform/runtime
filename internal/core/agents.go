@@ -7,6 +7,7 @@ import (
 	"time"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/agentref"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -78,13 +79,13 @@ func (s *runtimeServer) DeprecateAgentVersion(ctx context.Context, req *runtimev
 		return nil, err
 	}
 	if agent.ArchivedAt.Valid {
-		return nil, status.Errorf(codes.FailedPrecondition, "agent %s is archived", formatAgentRef(agent.Namespace, agent.Name))
+		return nil, status.Errorf(codes.FailedPrecondition, "agent %s is archived", agentref.Format(agent.Namespace, agent.Name))
 	}
 
 	versionID, err := q.DeprecateAgentVersion(ctx, agent.ID, ref.GetVersion())
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, status.Errorf(codes.NotFound, "no active version %q for agent %s",
-			ref.GetVersion(), formatAgentRef(agent.Namespace, agent.Name))
+			ref.GetVersion(), agentref.Format(agent.Namespace, agent.Name))
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "deprecate version: %v", err)
@@ -103,7 +104,7 @@ func (s *runtimeServer) ArchiveAgent(ctx context.Context, req *runtimev1.Archive
 	if err != nil {
 		return nil, err
 	}
-	agentRef := formatAgentRef(agent.Namespace, agent.Name)
+	agentRef := agentref.Format(agent.Namespace, agent.Name)
 
 	tx, err := s.db.DB.BeginTx(ctx, nil)
 	if err != nil {

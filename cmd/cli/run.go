@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/spf13/cobra"
@@ -48,12 +47,4 @@ func runNewSession(cmd *cobra.Command, runtimeAddr *string, agentName, version, 
 		Input:    inputBytes,
 	}
 	return runInteractiveSessionCLI(cmd, runtimeAddr, start, noTUI)
-}
-
-func parseAgentName(agentName string) (namespace, name string, err error) {
-	namespace, name, ok := strings.Cut(agentName, "/")
-	if !ok || namespace == "" || name == "" {
-		return "", "", fmt.Errorf("agent must be namespace/name, got %q", agentName)
-	}
-	return namespace, name, nil
 }

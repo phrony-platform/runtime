@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/spf13/cobra"
 )
@@ -29,7 +30,7 @@ func runValidate(cmd *cobra.Command, manifestPath string) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s is not set in the local environment\n", msg)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "valid: %s %s\n",
-		formatAgentName(agent.Metadata.Namespace, agent.Metadata.Name),
+		agentref.Format(agent.Metadata.Namespace, agent.Metadata.Name),
 		agent.Metadata.Version,
 	)
 	return nil

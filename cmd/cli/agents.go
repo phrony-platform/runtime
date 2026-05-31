@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/phrony-platform/runtime/internal/cliout"
 	"github.com/spf13/cobra"
@@ -66,7 +67,7 @@ func newAgentsCommand(runtimeAddr *string) *cobra.Command {
 }
 
 func agentRef(agentName, version string) (*runtimev1.AgentRef, error) {
-	namespace, name, err := parseAgentName(agentName)
+	namespace, name, err := agentref.Parse(agentName)
 	if err != nil {
 		return nil, err
 	}

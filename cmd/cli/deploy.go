@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/spf13/cobra"
@@ -50,15 +51,8 @@ func runDeploy(cmd *cobra.Command, runtimeAddr *string, manifestPath string) err
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n",
-		formatAgentName(resp.GetNamespace(), resp.GetName()),
+		agentref.Format(resp.GetNamespace(), resp.GetName()),
 		resp.GetVersion(),
 	)
 	return nil
-}
-
-func formatAgentName(namespace, name string) string {
-	if namespace == "" {
-		return name
-	}
-	return namespace + "/" + name
 }

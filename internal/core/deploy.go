@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
@@ -69,7 +70,7 @@ func (s *runtimeServer) Deploy(ctx context.Context, req *runtimev1.DeployRequest
 	if err == nil && existing.ArchivedAt.Valid {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"agent %s is archived and cannot accept new versions",
-			formatAgentRef(agent.Metadata.Namespace, agent.Metadata.Name))
+			agentref.Format(agent.Metadata.Namespace, agent.Metadata.Name))
 	}
 
 	if err := rejectImmutableVersionRedeploy(ctx, q, agent, agentID, hash); err != nil {
@@ -119,7 +120,7 @@ func rejectImmutableVersionRedeploy(ctx context.Context, q *store.Queries, agent
 		return status.Errorf(codes.Internal, "lookup agent version: %v", err)
 	}
 
-	agentRef := formatAgentRef(agent.Metadata.Namespace, agent.Metadata.Name)
+	agentRef := agentref.Format(agent.Metadata.Namespace, agent.Metadata.Name)
 	msg := fmt.Sprintf(
 		"agent %s version %q is already deployed and cannot be changed; increment metadata.version to publish configuration updates",
 		agentRef,

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
@@ -51,13 +52,13 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 }
 
 func resolveAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.AgentRef) (string, error) {
-	ns, name, err := agentRefFromRequest(ref)
+	ns, name, err := agentref.FromProto(ref)
 	if err != nil {
 		return "", err
 	}
 
 	q := store.New(db)
-	agentRef := formatAgentRef(ns, name)
+	agentRef := agentref.Format(ns, name)
 
 	if ref.GetVersion() != "" {
 		lookup, err := q.AgentVersionIDByLabel(ctx, ns, name, ref.GetVersion())
