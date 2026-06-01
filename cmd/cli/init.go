@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const initAgentManifestYAML = `apiVersion: phrony.dev/v1
+const initAgentManifestYAML = `apiVersion: phrony.com/v1
 kind: Agent
 
 metadata:

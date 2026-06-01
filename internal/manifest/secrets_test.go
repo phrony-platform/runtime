@@ -8,7 +8,7 @@ import (
 func TestParse_secretsRejectPlaintext(t *testing.T) {
 	t.Parallel()
 	yaml := `
-apiVersion: phrony.dev/v1
+apiVersion: phrony.com/v1
 kind: Agent
 metadata:
   name: a
@@ -138,7 +138,7 @@ func TestValidate_secrets(t *testing.T) {
 func TestParseJSON_secretsRejectPlaintext(t *testing.T) {
 	t.Parallel()
 	data := []byte(`{
-  "apiVersion": "phrony.dev/v1",
+  "apiVersion": "phrony.com/v1",
   "kind": "Agent",
   "metadata": {"name":"a","namespace":"ns","version":"1.0.0"},
   "secrets": {"anthropic": {"plaintext": "sk"}},

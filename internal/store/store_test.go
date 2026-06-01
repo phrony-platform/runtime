@@ -87,7 +87,7 @@ func TestQueries_InsertAgentVersion(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	manifest := json.RawMessage(`{"apiVersion":"phrony.dev/v1"}`)
+	manifest := json.RawMessage(`{"apiVersion":"phrony.com/v1"}`)
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs("ver-id", "agent-id", "1.0.0", "abc123", manifest).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ver-id"))

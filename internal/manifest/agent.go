@@ -5,10 +5,7 @@ import (
 	"strings"
 )
 
-const (
-	APIVersionV1 = "phrony.dev/v1"
-	KindAgent    = "Agent"
-)
+const KindAgent = "Agent"
 
 // Agent is the v1 Agent document (Kubernetes-style envelope).
 type Agent struct {

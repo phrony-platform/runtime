@@ -30,7 +30,7 @@ func Validate(agent *Agent) error {
 	}
 	var errs ValidationErrors
 
-	if agent.APIVersion != APIVersionV1 {
+	if !IsSupportedAPIVersion(agent.APIVersion) {
 		errs = append(errs, FieldError{
 			Path:    "apiVersion",
 			Message: "must be " + APIVersionV1,

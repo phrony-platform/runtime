@@ -25,7 +25,7 @@ func TestValidationErrors_Error(t *testing.T) {
 		t.Fatalf("single Error() = %q", got)
 	}
 	multi := ValidationErrors{
-		{Path: "apiVersion", Message: "must be phrony.dev/v1"},
+		{Path: "apiVersion", Message: "must be phrony.com/v1"},
 		{Path: "kind", Message: "must be Agent"},
 	}
 	got := multi.Error()

@@ -20,7 +20,7 @@ import (
 
 func TestExecutor_LoadVersion(t *testing.T) {
 	manifestJSON := []byte(`{
-		"apiVersion":"phrony.dev/v1",
+		"apiVersion":"phrony.com/v1",
 		"kind":"Agent",
 		"metadata":{"name":"a","namespace":"n","version":"1.0.0"},
 		"secrets":{"anthropic":{"fromEnv":"ANTHROPIC_API_KEY"}},

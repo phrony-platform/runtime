@@ -8,24 +8,25 @@ import (
 	"github.com/phrony-platform/runtime/internal/manifest"
 )
 
-func loadResolvedManifest(manifestPath string) (*manifest.ResolvedAgent, error) {
+func loadResolvedManifest(manifestPath string) (*manifest.ResolvedAgent, bool, error) {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("read manifest: %w", err)
+		return nil, false, fmt.Errorf("read manifest: %w", err)
 	}
 
 	agent, err := manifest.Parse(data)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	deprecated := manifest.NormalizeAPIVersion(agent)
 	if err := manifest.Validate(agent); err != nil {
 		// Preserve the full multi-field message for clierr.Format (ValidationErrors only unwraps the first field).
-		return nil, errors.New(err.Error())
+		return nil, deprecated, errors.New(err.Error())
 	}
 
 	resolved, err := manifest.ResolveBundle(manifestPath, agent)
 	if err != nil {
-		return nil, err
+		return nil, deprecated, err
 	}
-	return resolved, nil
+	return resolved, deprecated, nil
 }

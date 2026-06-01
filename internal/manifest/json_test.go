@@ -7,7 +7,7 @@ import (
 
 func TestParseJSON_success(t *testing.T) {
 	raw := []byte(`{
-		"apiVersion": "phrony.dev/v1",
+		"apiVersion": "phrony.com/v1",
 		"kind": "Agent",
 		"metadata": {"name": "a", "namespace": "n", "version": "1.0.0"},
 		"spec": {

@@ -62,7 +62,7 @@ func TestResolveBundle_inlineInstructionsAndSchema(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	agentPath := filepath.Join(dir, "agent.yaml")
-	manifestYAML := `apiVersion: phrony.dev/v1
+	manifestYAML := `apiVersion: phrony.com/v1
 kind: Agent
 metadata:
   name: inline
@@ -133,7 +133,7 @@ func TestResolveBundle_refWithExtension(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	agentPath := filepath.Join(dir, "agent.yaml")
-	manifestYAML := `apiVersion: phrony.dev/v1
+	manifestYAML := `apiVersion: phrony.com/v1
 kind: Agent
 metadata:
   name: ext
@@ -168,7 +168,7 @@ func TestResolveBundle_missingSchemaRef(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	agentPath := filepath.Join(dir, "agent.yaml")
-	if err := os.WriteFile(agentPath, []byte(`apiVersion: phrony.dev/v1
+	if err := os.WriteFile(agentPath, []byte(`apiVersion: phrony.com/v1
 kind: Agent
 metadata:
   name: no-schema
@@ -218,7 +218,7 @@ func TestResolveBundle_versionSubpathLayout(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	agentPath := filepath.Join(dir, "agent.yaml")
-	manifestYAML := `apiVersion: phrony.dev/v1
+	manifestYAML := `apiVersion: phrony.com/v1
 kind: Agent
 metadata:
   name: subpath
@@ -260,7 +260,7 @@ func TestResolveBundle_invalidPromptYAML(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	agentPath := filepath.Join(dir, "agent.yaml")
-	manifestYAML := `apiVersion: phrony.dev/v1
+	manifestYAML := `apiVersion: phrony.com/v1
 kind: Agent
 metadata:
   name: bad-prompt
@@ -301,7 +301,7 @@ func TestResolveBundle_invalidSchemaJSON(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	agentPath := filepath.Join(dir, "agent.yaml")
-	manifestYAML := `apiVersion: phrony.dev/v1
+	manifestYAML := `apiVersion: phrony.com/v1
 kind: Agent
 metadata:
   name: bad-schema

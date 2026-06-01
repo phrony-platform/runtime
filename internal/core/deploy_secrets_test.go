@@ -163,7 +163,7 @@ func TestManifestForStorage_refOnlyWhenSecretsPresent(t *testing.T) {
 			Model:        manifest.ModelConfig{Provider: "anthropic", Name: "m"},
 		},
 	}
-	raw := []byte(`{"apiVersion":"phrony.dev/v1","kind":"Agent","metadata":{"name":"a","namespace":"n","version":"1.0.0"},"secrets":{"anthropic":{"fromEnv":"ANTHROPIC_API_KEY"}},"spec":{"purpose":"p","instructions":{"text":"i"},"model":{"provider":"anthropic","name":"m"}}}`)
+	raw := []byte(`{"apiVersion":"phrony.com/v1","kind":"Agent","metadata":{"name":"a","namespace":"n","version":"1.0.0"},"secrets":{"anthropic":{"fromEnv":"ANTHROPIC_API_KEY"}},"spec":{"purpose":"p","instructions":{"text":"i"},"model":{"provider":"anthropic","name":"m"}}}`)
 	stored, err := manifestForStorage(agent, raw)
 	if err != nil {
 		t.Fatalf("manifestForStorage: %v", err)

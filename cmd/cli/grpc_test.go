@@ -488,7 +488,7 @@ func startTestRuntimeAddrForSessionsList(t *testing.T) string {
 }
 
 const attachTestManifestJSON = `{
-	"apiVersion":"phrony.dev/v1",
+	"apiVersion":"phrony.com/v1",
 	"kind":"Agent",
 	"metadata":{"name":"echo-agent","namespace":"demo","version":"1.2.0"},
 	"secrets":{"anthropic":{"fromEnv":"ANTHROPIC_API_KEY"}},
