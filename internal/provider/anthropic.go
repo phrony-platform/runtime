@@ -36,6 +36,7 @@ func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest,
 	stream := p.client.Messages.NewStreaming(ctx, params)
 	var acc anthropic.Message
 	stopReason := ""
+	var toolInputBlockID string
 	for stream.Next() {
 		event := stream.Current()
 		if err := acc.Accumulate(event); err != nil {
@@ -43,13 +44,27 @@ func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest,
 			return err
 		}
 		switch ev := event.AsAny().(type) {
+		case anthropic.ContentBlockStartEvent:
+			if tu := ev.ContentBlock.AsToolUse(); tu.ID != "" {
+				toolInputBlockID = tu.ID
+			}
 		case anthropic.ContentBlockDeltaEvent:
 			switch d := ev.Delta.AsAny().(type) {
 			case anthropic.TextDelta:
 				if d.Text != "" {
 					ch <- CompletionEvent{Type: EventTextDelta, TextDelta: d.Text}
 				}
+			case anthropic.InputJSONDelta:
+				if d.PartialJSON != "" && toolInputBlockID != "" {
+					ch <- CompletionEvent{
+						Type:           EventToolInputDelta,
+						ToolCallID:     toolInputBlockID,
+						ToolInputDelta: d.PartialJSON,
+					}
+				}
 			}
+		case anthropic.ContentBlockStopEvent:
+			toolInputBlockID = ""
 		case anthropic.MessageDeltaEvent:
 			if ev.Delta.StopReason != "" {
 				stopReason = string(ev.Delta.StopReason)
@@ -61,11 +76,20 @@ func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest,
 		return err
 	}
 
+	emitAnthropicToolCalls(ch, acc)
+
 	usage := TokenUsage{
 		InputTokens:  int(acc.Usage.InputTokens),
 		OutputTokens: int(acc.Usage.OutputTokens),
 	}
-	ch <- CompletionEvent{Type: EventCompleted, StopReason: stopReason, Usage: usage}
+	if stopReason == "" {
+		stopReason = string(acc.StopReason)
+	}
+	ch <- CompletionEvent{
+		Type:       EventCompleted,
+		StopReason: NormalizeStopReason(stopReason),
+		Usage:      usage,
+	}
 	return nil
 }
 
@@ -78,15 +102,30 @@ func anthropicParams(req CompletionRequest) (anthropic.MessageNewParams, error) 
 	var system []anthropic.TextBlockParam
 	var messages []anthropic.MessageParam
 	for _, m := range req.Messages {
-		switch strings.TrimSpace(m.Role) {
+		role := strings.TrimSpace(m.Role)
+		switch role {
 		case RoleSystem:
 			if strings.TrimSpace(m.Content) != "" {
 				system = append(system, anthropic.TextBlockParam{Text: m.Content})
 			}
 		case RoleUser:
-			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
+			blocks, err := anthropicContentBlocks(m)
+			if err != nil {
+				return anthropic.MessageNewParams{}, err
+			}
+			messages = append(messages, anthropic.NewUserMessage(blocks...))
 		case RoleAssistant:
-			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+			blocks, err := anthropicContentBlocks(m)
+			if err != nil {
+				return anthropic.MessageNewParams{}, err
+			}
+			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
+		case RoleTool:
+			blocks, err := anthropicToolResultAsUser(m)
+			if err != nil {
+				return anthropic.MessageNewParams{}, err
+			}
+			messages = append(messages, anthropic.NewUserMessage(blocks...))
 		default:
 			return anthropic.MessageNewParams{}, fmt.Errorf("unsupported message role %q", m.Role)
 		}
@@ -108,9 +147,25 @@ func anthropicParams(req CompletionRequest) (anthropic.MessageNewParams, error) 
 	if len(system) > 0 {
 		params.System = system
 	}
+	tools, err := anthropicTools(req.Tools)
+	if err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+	if len(tools) > 0 {
+		params.Tools = tools
+	}
 	applyAnthropicParameters(&params, req.Parameters)
 	applyAnthropicReasoning(&params, req.Reasoning)
 	return params, nil
+}
+
+func anthropicToolResultAsUser(m Message) ([]anthropic.ContentBlockParamUnion, error) {
+	if strings.TrimSpace(m.ToolCallID) != "" && len(m.Blocks) == 0 && m.Content != "" {
+		return anthropicContentBlocks(Message{
+			Blocks: []ContentBlock{ToolResultBlock(m.ToolCallID, m.Content, false)},
+		})
+	}
+	return anthropicContentBlocks(m)
 }
 
 func applyAnthropicParameters(params *anthropic.MessageNewParams, p *manifest.ModelParameters) {

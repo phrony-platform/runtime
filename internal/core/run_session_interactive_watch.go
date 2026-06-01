@@ -3,11 +3,13 @@ package core
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/store"
 )
 
 type interactiveClientRecv struct {
@@ -30,6 +32,13 @@ func startInteractiveClientRecv(ctx context.Context, stream runtimev1.Runtime_Ru
 				return
 			}
 			msg, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				select {
+				case ch <- interactiveClientRecv{err: err}:
+				case <-ctx.Done():
+				}
+				return
+			}
 			select {
 			case ch <- interactiveClientRecv{msg: msg, err: err}:
 			case <-ctx.Done():
@@ -104,6 +113,13 @@ func (s *runtimeServer) handleInteractiveTurnError(
 		}
 		return true, nil
 	}
+	if executor.IsEscalationError(turnErr) {
+		state.blockInput(turnErr)
+		if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 	if errors.Is(turnErr, context.Canceled) {
 		if wc := state.sessionWallClockLimitError(); wc != nil {
 			state.blockInput(wc)
@@ -118,6 +134,7 @@ func (s *runtimeServer) handleInteractiveTurnError(
 
 func runInteractiveTurnAsync(
 	loopCtx context.Context,
+	q *store.Queries,
 	state *interactiveSessionState,
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	pendingInput []byte,
@@ -125,7 +142,7 @@ func runInteractiveTurnAsync(
 	turnCtx, cancel := context.WithCancel(loopCtx)
 	out := make(chan interactiveTurnOutcome, 1)
 	go func() {
-		stopReason, assistantText, turnUsage, err := state.runTurn(turnCtx, stream, pendingInput)
+		stopReason, assistantText, turnUsage, err := state.runTurn(turnCtx, q, stream, pendingInput)
 		out <- interactiveTurnOutcome{
 			stopReason:    stopReason,
 			assistantText: assistantText,

@@ -15,9 +15,9 @@ func TestAnthropicParams_mapsMessages(t *testing.T) {
 			{Role: RoleUser, Content: "Hello"},
 		},
 		Parameters: &manifest.ModelParameters{
-			Temperature:       &temp,
-			MaxOutputTokens:   intPtr(512),
-			StopSequences:     []string{"END"},
+			Temperature:     &temp,
+			MaxOutputTokens: intPtr(512),
+			StopSequences:   []string{"END"},
 		},
 		Reasoning: &manifest.ReasoningConfig{Effort: "low"},
 	})

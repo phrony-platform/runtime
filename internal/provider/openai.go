@@ -36,6 +36,7 @@ func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest, ch
 	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
 	stopReason := ""
 	var usage TokenUsage
+	var acc openai.ChatCompletionAccumulator
 	for stream.Next() {
 		chunk := stream.Current()
 		if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 {
@@ -44,12 +45,31 @@ func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest, ch
 				OutputTokens: int(chunk.Usage.CompletionTokens),
 			}
 		}
+		if !acc.AddChunk(chunk) {
+			err := fmt.Errorf("failed to accumulate streaming chunk")
+			emitFailed(ch, err)
+			return err
+		}
 		if len(chunk.Choices) == 0 {
 			continue
 		}
 		choice := chunk.Choices[0]
 		if choice.Delta.Content != "" {
 			ch <- CompletionEvent{Type: EventTextDelta, TextDelta: choice.Delta.Content}
+		}
+		for _, tc := range choice.Delta.ToolCalls {
+			if tc.ID != "" && tc.Function.Arguments != "" {
+				ch <- CompletionEvent{
+					Type:           EventToolInputDelta,
+					ToolCallID:     tc.ID,
+					ToolInputDelta: tc.Function.Arguments,
+				}
+			} else if tc.Function.Arguments != "" {
+				ch <- CompletionEvent{
+					Type:           EventToolInputDelta,
+					ToolInputDelta: tc.Function.Arguments,
+				}
+			}
 		}
 		if choice.FinishReason != "" {
 			stopReason = string(choice.FinishReason)
@@ -60,7 +80,14 @@ func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest, ch
 		return err
 	}
 
-	ch <- CompletionEvent{Type: EventCompleted, StopReason: stopReason, Usage: usage}
+	// Emit any tool calls not surfaced via JustFinishedToolCall during streaming.
+	emitOpenAIToolCalls(ch, acc.ChatCompletion)
+
+	ch <- CompletionEvent{
+		Type:       EventCompleted,
+		StopReason: NormalizeStopReason(stopReason),
+		Usage:      usage,
+	}
 	return nil
 }
 
@@ -72,14 +99,34 @@ func openAIParams(req CompletionRequest) (openai.ChatCompletionNewParams, error)
 
 	var messages []openai.ChatCompletionMessageParamUnion
 	for _, m := range req.Messages {
-		content := m.Content
 		switch strings.TrimSpace(m.Role) {
 		case RoleSystem:
-			messages = append(messages, openai.SystemMessage(content))
+			messages = append(messages, openai.SystemMessage(m.Content))
 		case RoleUser:
-			messages = append(messages, openai.UserMessage(content))
+			blocks := MessageBlocks(m)
+			if len(blocks) == 1 && blocks[0].Type == BlockText {
+				messages = append(messages, openai.UserMessage(blocks[0].Text))
+				continue
+			}
+			if hasOnlyToolResults(blocks) {
+				for _, b := range blocks {
+					messages = append(messages, openai.ToolMessage(b.ToolResultContent, b.ToolUseID))
+				}
+				continue
+			}
+			return openai.ChatCompletionNewParams{}, fmt.Errorf("openai user messages with structured blocks must be plain text or tool_result only")
 		case RoleAssistant:
-			messages = append(messages, openai.AssistantMessage(content))
+			msg, err := openAIAssistantMessage(m)
+			if err != nil {
+				return openai.ChatCompletionNewParams{}, err
+			}
+			messages = append(messages, msg)
+		case RoleTool:
+			msg, err := openAIToolResultMessage(m)
+			if err != nil {
+				return openai.ChatCompletionNewParams{}, err
+			}
+			messages = append(messages, msg)
 		default:
 			return openai.ChatCompletionNewParams{}, fmt.Errorf("unsupported message role %q", m.Role)
 		}
@@ -95,9 +142,28 @@ func openAIParams(req CompletionRequest) (openai.ChatCompletionNewParams, error)
 			IncludeUsage: openai.Bool(true),
 		},
 	}
+	tools, err := openAITools(req.Tools)
+	if err != nil {
+		return openai.ChatCompletionNewParams{}, err
+	}
+	if len(tools) > 0 {
+		params.Tools = tools
+	}
 	applyOpenAIParameters(&params, req.Parameters)
 	applyOpenAIReasoning(&params, req.Reasoning)
 	return params, nil
+}
+
+func hasOnlyToolResults(blocks []ContentBlock) bool {
+	if len(blocks) == 0 {
+		return false
+	}
+	for _, b := range blocks {
+		if b.Type != BlockToolResult {
+			return false
+		}
+	}
+	return true
 }
 
 func applyOpenAIParameters(params *openai.ChatCompletionNewParams, p *manifest.ModelParameters) {

@@ -28,7 +28,7 @@ func TestAnthropicProvider_Complete_unsupportedRole(t *testing.T) {
 	err := p.Complete(context.Background(), CompletionRequest{
 		Model: "claude-sonnet-4-5",
 		Messages: []Message{
-			{Role: "tool", Content: "data"},
+			{Role: "moderator", Content: "data"},
 		},
 	}, ch)
 	if err == nil {
@@ -42,6 +42,21 @@ func TestAnthropicProvider_Complete_unsupportedRole(t *testing.T) {
 	}
 	if !failed {
 		t.Fatal("want failed event on channel")
+	}
+}
+
+func TestAnthropicProvider_Complete_toolMessageWithoutID(t *testing.T) {
+	p := newAnthropicProvider("sk-test")
+	ch := make(chan CompletionEvent, 4)
+	err := p.Complete(context.Background(), CompletionRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []Message{
+			{Role: RoleUser, Content: "hi"},
+			{Role: RoleTool, Content: "data"},
+		},
+	}, ch)
+	if err == nil {
+		t.Fatal("Complete() = nil, want error")
 	}
 }
 

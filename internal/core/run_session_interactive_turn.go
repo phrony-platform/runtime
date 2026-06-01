@@ -10,20 +10,27 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/provider"
 	"github.com/phrony-platform/runtime/internal/store"
+	"github.com/phrony-platform/runtime/internal/tooldispatch"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type interactiveSessionState struct {
 	sessionID          string
+	agentVersionID     string
 	turnCount          int
 	sessionUsage       provider.TokenUsage
 	history            []provider.Message
 	version            *executor.Version
 	sessionStartedAt   time.Time
 	inputBlockedReason string
+	toolDispatch       tooldispatch.Dispatcher
+	policies           *policy.Evaluator
+	approvalGate       *sessionApprovalGate
+	clientRecvEOF      bool
 }
 
 func (st *interactiveSessionState) maxTokensPerRun() int {
@@ -39,6 +46,7 @@ func (st *interactiveSessionState) maxTokensPerRun() int {
 
 func (st *interactiveSessionState) runTurn(
 	ctx context.Context,
+	q *store.Queries,
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	input json.RawMessage,
 ) (stopReason, assistantText string, turnUsage provider.TokenUsage, err error) {
@@ -49,8 +57,17 @@ func (st *interactiveSessionState) runTurn(
 	runErrCh := make(chan error, 1)
 	go func() {
 		runErrCh <- st.version.StreamCompletion(runCtx, executor.RunParams{
-			Input:   input,
-			History: st.history,
+			SessionID:     st.sessionID,
+			Turn:          st.turnCount + 1,
+			Input:         input,
+			History:       st.history,
+			Dispatcher:    st.toolDispatch,
+			Policies:      st.policies,
+			ApprovalGate:  st.approvalGate,
+			NewApprovalID: newApprovalID,
+			BeforeToolDispatch: func(ctx context.Context, messages []provider.Message) error {
+				return st.persistBeforeToolDispatch(ctx, q, messages)
+			},
 		}, ch)
 	}()
 
@@ -66,6 +83,33 @@ func (st *interactiveSessionState) runTurn(
 			}); err != nil {
 				return "", "", provider.TokenUsage{}, err
 			}
+		case executor.EventToolCall:
+			if q != nil {
+				_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{
+					ID:     st.sessionID,
+					Status: model.SessionStatusAwaitingTool,
+				})
+			}
+			if err := sendToolCall(stream, ev.ToolCall); err != nil {
+				return "", "", provider.TokenUsage{}, err
+			}
+		case executor.EventToolResult:
+			if q != nil {
+				_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{
+					ID:     st.sessionID,
+					Status: model.SessionStatusRunning,
+				})
+			}
+			if err := sendToolResult(stream, ev.ToolResult); err != nil {
+				return "", "", provider.TokenUsage{}, err
+			}
+		case executor.EventApprovalRequired:
+			if q != nil {
+				_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{
+					ID:     st.sessionID,
+					Status: model.SessionStatusAwaitingApproval,
+				})
+			}
 		case executor.EventCompleted:
 			if err := <-runErrCh; err != nil {
 				return "", "", provider.TokenUsage{}, err
@@ -76,6 +120,11 @@ func (st *interactiveSessionState) runTurn(
 				return "", "", provider.TokenUsage{}, ev.Err
 			}
 			return "", "", provider.TokenUsage{}, fmt.Errorf("model completion failed")
+		case executor.EventEscalation:
+			if err := <-runErrCh; err != nil {
+				return "", "", provider.TokenUsage{}, err
+			}
+			return "", "", provider.TokenUsage{}, ev.Err
 		}
 	}
 

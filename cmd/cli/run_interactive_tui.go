@@ -401,6 +401,39 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 			}
 		}
 		m.layout()
+	case msg.GetToolCall() != nil:
+		tc := msg.GetToolCall()
+		if _, err := m.flushStreamingTurn(nil); err != nil {
+			return err
+		}
+		if m.status != "streaming" {
+			m.status = "streaming"
+		}
+		m.transcript.WriteString("\n")
+		m.transcript.WriteString(renderToolCallBlock(m.messageContentWidth(), tc))
+		m.statusHint = formatInteractiveToolCallLine(tc)
+		m.followTail = true
+		m.layout()
+	case msg.GetToolResult() != nil:
+		tr := msg.GetToolResult()
+		if m.status != "streaming" {
+			m.status = "streaming"
+		}
+		m.transcript.WriteString("\n")
+		m.transcript.WriteString(renderToolResultBlock(m.messageContentWidth(), tr))
+		m.statusHint = formatInteractiveToolResultLine(tr)
+		m.followTail = true
+		m.layout()
+	case msg.GetApprovalRequired() != nil:
+		ar := msg.GetApprovalRequired()
+		if _, err := m.flushStreamingTurn(nil); err != nil {
+			return err
+		}
+		m.transcript.WriteString("\n")
+		m.transcript.WriteString(renderToolApprovalBlock(m.messageContentWidth(), ar))
+		m.applyAwaitingInputState(formatInteractiveApprovalLine(ar) + " — approve via API (CLI approval not yet supported)")
+		m.followTail = true
+		m.layout()
 	case msg.GetFailed() != nil:
 		failed := msg.GetFailed()
 		if isInteractiveAttachReplay(m.start) && !m.inputEverEnabled {

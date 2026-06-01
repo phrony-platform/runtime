@@ -35,6 +35,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 
 	recvCh := startInteractiveClientRecv(loopCtx, stream)
 	wallC := state.wallClockTimerChan()
+	var queuedUserInput json.RawMessage
 
 	for {
 		if len(pendingInput) > 0 {
@@ -60,21 +61,53 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}
 
 			turnStart := time.Now()
-			turnCancel, turnDone := runInteractiveTurnAsync(loopCtx, state, stream, pendingInput)
+			turnCancel, turnDone := runInteractiveTurnAsync(loopCtx, q, state, stream, pendingInput)
 
 			var out interactiveTurnOutcome
 			wallExpired := false
-			if wallC != nil {
-				select {
-				case <-wallC:
-					wallC = nil
-					wallExpired = true
-					turnCancel()
-					out = <-turnDone
-				case out = <-turnDone:
+		turnWait:
+			for {
+				if wallC != nil {
+					select {
+					case <-wallC:
+						wallC = nil
+						wallExpired = true
+						turnCancel()
+						out = <-turnDone
+						break turnWait
+					case out = <-turnDone:
+						break turnWait
+					case r, ok := <-recvCh:
+						if !ok {
+							recvCh = nil
+							continue
+						}
+						eof, err := handleInteractiveRecvDuringTurn(r, state, &queuedUserInput)
+						if err != nil {
+							return err
+						}
+						if eof {
+							recvCh = nil
+						}
+					}
+				} else {
+					select {
+					case out = <-turnDone:
+						break turnWait
+					case r, ok := <-recvCh:
+						if !ok {
+							recvCh = nil
+							continue
+						}
+						eof, err := handleInteractiveRecvDuringTurn(r, state, &queuedUserInput)
+						if err != nil {
+							return err
+						}
+						if eof {
+							recvCh = nil
+						}
+					}
 				}
-			} else {
-				out = <-turnDone
 			}
 			turnCancel()
 
@@ -156,8 +189,19 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				return err
 			}
 			pendingInput = nil
+			if len(queuedUserInput) > 0 {
+				pendingInput = queuedUserInput
+				queuedUserInput = nil
+				continue
+			}
 			if !waitForUser {
 				return nil
+			}
+			if state.clientRecvEOF {
+				if len(lastOutput) == 0 {
+					return nil
+				}
+				return s.completeInteractiveSession(ctx, q, stream, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
 			}
 			continue
 		}
@@ -197,6 +241,14 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				return r.err
 			}
 
+			if ta := r.msg.GetToolApproval(); ta != nil {
+				if state.approvalGate != nil {
+					if err := state.approvalGate.deliverApproval(ta); err != nil {
+						return status.Error(codes.InvalidArgument, err.Error())
+					}
+				}
+				continue
+			}
 			um := r.msg.GetUserMessage()
 			if um == nil {
 				return status.Error(codes.InvalidArgument, "expected user_message after awaiting_input")
@@ -220,24 +272,64 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				}
 				continue
 			}
-			text := strings.TrimSpace(um.GetText())
-			if text == "" {
-				return status.Error(codes.InvalidArgument, "user_message.text must be non-empty")
-			}
-
 			if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 				ID:     sessionID,
 				Status: model.SessionStatusRunning,
 			}); err != nil {
 				return status.Errorf(codes.Internal, "update session: %v", err)
 			}
-			encoded, err := json.Marshal(map[string]string{"message": text})
+			encoded, err := encodeInteractiveUserMessageText(um.GetText())
 			if err != nil {
-				return status.Errorf(codes.Internal, "encode user message: %v", err)
+				return err
 			}
 			pendingInput = encoded
 		}
 	}
+}
+
+func encodeInteractiveUserMessageText(text string) (json.RawMessage, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_message.text must be non-empty")
+	}
+	encoded, err := json.Marshal(map[string]string{"message": text})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "encode user message: %v", err)
+	}
+	return encoded, nil
+}
+
+// handleInteractiveRecvDuringTurn delivers tool approvals and queues user messages
+// that arrive while a turn is still running.
+func handleInteractiveRecvDuringTurn(
+	r interactiveClientRecv,
+	state *interactiveSessionState,
+	queuedUserInput *json.RawMessage,
+) (eof bool, err error) {
+	if r.err != nil {
+		if errors.Is(r.err, io.EOF) {
+			state.clientRecvEOF = true
+			return true, nil
+		}
+		return false, r.err
+	}
+	if ta := r.msg.GetToolApproval(); ta != nil {
+		if state.approvalGate == nil {
+			return false, nil
+		}
+		return false, state.approvalGate.deliverApproval(ta)
+	}
+	if um := r.msg.GetUserMessage(); um != nil {
+		encoded, err := encodeInteractiveUserMessageText(um.GetText())
+		if err != nil {
+			return false, err
+		}
+		if len(*queuedUserInput) == 0 {
+			*queuedUserInput = encoded
+		}
+		return false, nil
+	}
+	return false, status.Error(codes.InvalidArgument, "unexpected client message during turn")
 }
 
 func sendAwaitingInput(

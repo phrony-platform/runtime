@@ -47,6 +47,58 @@ func TestRunTUI_wallClockBlockedFreezesDisplay(t *testing.T) {
 	}
 }
 
+func TestRunTUI_handleServerMsg_toolCallAndResult(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_ToolCall{
+			ToolCall: &runtimev1.RunSessionInteractiveToolCall{
+				CallId:  "call-1",
+				Tool:    "weather.get-forecast",
+				Version: "1.0.0",
+				Args:    []byte(`{"city":"Boston"}`),
+			},
+		},
+	}); err != nil {
+		t.Fatalf("tool_call: %v", err)
+	}
+	if m.status != "streaming" {
+		t.Fatalf("status = %q, want streaming", m.status)
+	}
+	if !strings.Contains(m.statusHint, "weather.get-forecast") {
+		t.Fatalf("statusHint = %q, want tool name", m.statusHint)
+	}
+	conv := m.conversationText()
+	for _, want := range []string{"TOOL CALL", "call-1", "weather.get-forecast@1.0.0", "Boston"} {
+		if !strings.Contains(conv, want) {
+			t.Fatalf("conversation = %q, want %q in transcript", conv, want)
+		}
+	}
+
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_ToolResult{
+			ToolResult: &runtimev1.RunSessionInteractiveToolResult{
+				CallId:  "call-1",
+				Payload: []byte(`{"temp":72}`),
+			},
+		},
+	}); err != nil {
+		t.Fatalf("tool_result: %v", err)
+	}
+	if !strings.Contains(m.statusHint, "tool result") {
+		t.Fatalf("statusHint = %q, want result hint", m.statusHint)
+	}
+	conv = m.conversationText()
+	for _, want := range []string{"TOOL RESULT", "call-1", "72"} {
+		if !strings.Contains(conv, want) {
+			t.Fatalf("conversation = %q, want %q after tool result", conv, want)
+		}
+	}
+}
+
 func TestRunTUI_handleServerMsg_inputBlocked(t *testing.T) {
 	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
 	m.width = 80

@@ -225,6 +225,6 @@ func (s *stubProvider) ID() string { return s.id }
 
 func (s *stubProvider) Complete(ctx context.Context, req CompletionRequest, ch chan<- CompletionEvent) error {
 	defer close(ch)
-	ch <- CompletionEvent{Type: EventCompleted, StopReason: "end_turn"}
+	ch <- CompletionEvent{Type: EventCompleted, StopReason: StopReasonEndTurn}
 	return nil
 }

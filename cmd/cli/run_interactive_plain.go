@@ -103,6 +103,21 @@ func runInteractiveSessionPlain(
 			if err := completionOut.WriteDelta(msg.GetTextDelta().GetDelta()); err != nil {
 				return err
 			}
+		case msg.GetToolCall() != nil:
+			if err := completionOut.Flush(); err != nil {
+				return err
+			}
+			completionPrinted = true
+			_, _ = fmt.Fprintf(stderr, "\n── %s ──\n", formatInteractiveToolCallLine(msg.GetToolCall()))
+		case msg.GetToolResult() != nil:
+			_, _ = fmt.Fprintf(stderr, "\n── %s ──\n", formatInteractiveToolResultLine(msg.GetToolResult()))
+		case msg.GetApprovalRequired() != nil:
+			if err := completionOut.Flush(); err != nil {
+				return err
+			}
+			completionPrinted = true
+			_, _ = fmt.Fprintf(stderr, "\n── %s ──\n", formatInteractiveApprovalLine(msg.GetApprovalRequired()))
+			_, _ = io.WriteString(stderr, "Approve or deny via API; this CLI cannot submit tool_approval yet.\n")
 		case msg.GetAwaitingInput() != nil:
 			if err := completionOut.Flush(); err != nil {
 				return err

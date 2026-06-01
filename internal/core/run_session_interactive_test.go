@@ -181,7 +181,7 @@ func TestInteractiveSessionState_runTurn_streamsDeltas(t *testing.T) {
 		version:   executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()),
 	}
 
-	stopReason, text, _, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
+	stopReason, text, _, err := st.runTurn(context.Background(), nil, stream, json.RawMessage(`{"message":"hi"}`))
 	if err != nil {
 		t.Fatalf("runTurn: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestInteractiveSessionState_runTurn_providerFailure(t *testing.T) {
 	st := &interactiveSessionState{
 		version: executor.NewVersionWithProvider("v", agent, providertest.Fail(fmt.Errorf("model unavailable"))),
 	}
-	_, _, _, err := st.runTurn(context.Background(), stream, json.RawMessage(`{"message":"hi"}`))
+	_, _, _, err := st.runTurn(context.Background(), nil, stream, json.RawMessage(`{"message":"hi"}`))
 	if err == nil {
 		t.Fatal("runTurn() = nil, want error")
 	}
