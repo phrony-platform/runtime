@@ -103,9 +103,10 @@ func (p *Policy) legacyPolicySpec() (PolicySpec, bool) {
 	default:
 		if strings.TrimSpace(p.Spec.Scope) != "" && isRequireApprovalDecision(decision.Type) {
 			return PolicySpec{
-				Name:   name,
-				Scope:  strings.TrimSpace(p.Spec.Scope),
-				Action: strings.TrimSpace(decision.Type),
+				Name:         name,
+				Scope:        strings.TrimSpace(p.Spec.Scope),
+				Action:       strings.TrimSpace(decision.Type),
+				AuthorityRef: strings.TrimSpace(decision.AuthorityRef),
 			}, true
 		}
 	}

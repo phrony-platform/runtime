@@ -27,11 +27,12 @@ func (a *Agent) DocumentKind() string {
 
 // AgentMetadata holds identity and versioning for an Agent.
 type AgentMetadata struct {
-	Name      string            `yaml:"name" json:"name"`
-	Namespace string            `yaml:"namespace" json:"namespace"`
-	Version   string            `yaml:"version" json:"version"`
-	Owner     string            `yaml:"owner,omitempty" json:"owner,omitempty"`
-	Labels    map[string]string `yaml:"labels,omitempty" json:"labels,omitempty"`
+	Name       string              `yaml:"name" json:"name"`
+	Namespace  string              `yaml:"namespace" json:"namespace"`
+	Version    string              `yaml:"version" json:"version"`
+	Owner      string              `yaml:"owner,omitempty" json:"owner,omitempty"`
+	Governance *GovernanceMetadata `yaml:"governance,omitempty" json:"governance,omitempty"`
+	Labels     map[string]string   `yaml:"labels,omitempty" json:"labels,omitempty"`
 }
 
 // AgentSpec is the behavior envelope for an Agent.
@@ -90,10 +91,11 @@ func CanRedispatchAfterIndeterminate(sideEffectClass string) bool {
 
 // PolicySpec declares one policy rule in the agent manifest (whitepaper shape).
 type PolicySpec struct {
-	Name   string   `yaml:"name" json:"name"`
-	Scope  string   `yaml:"scope,omitempty" json:"scope,omitempty"`
-	Action string   `yaml:"action,omitempty" json:"action,omitempty"`
-	Allow  []string `yaml:"allow,omitempty" json:"allow,omitempty"`
+	Name         string   `yaml:"name" json:"name"`
+	Scope        string   `yaml:"scope,omitempty" json:"scope,omitempty"`
+	Action       string   `yaml:"action,omitempty" json:"action,omitempty"`
+	Allow        []string `yaml:"allow,omitempty" json:"allow,omitempty"`
+	AuthorityRef string   `yaml:"authority_ref,omitempty" json:"authority_ref,omitempty"`
 }
 
 // HITLTrigger declares when the runtime suspends for human review.

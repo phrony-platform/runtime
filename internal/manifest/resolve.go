@@ -543,6 +543,13 @@ func cloneAgent(agent *Agent) *Agent {
 			out.Spec.Tools[i] = tool
 		}
 	}
+	if agent.Metadata.Governance != nil {
+		gov := *agent.Metadata.Governance
+		if len(gov.AuthorityBoundaries) > 0 {
+			gov.AuthorityBoundaries = append([]string(nil), gov.AuthorityBoundaries...)
+		}
+		out.Metadata.Governance = &gov
+	}
 	if len(agent.Spec.Policies) > 0 {
 		out.Spec.Policies = make([]PolicySpec, len(agent.Spec.Policies))
 		for i, p := range agent.Spec.Policies {

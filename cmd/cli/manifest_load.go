@@ -24,7 +24,7 @@ func loadResolvedManifest(manifestPath string) (*manifest.ResolvedAgent, bool, e
 		return nil, deprecated, errors.New(err.Error())
 	}
 
-	resolved, err := manifest.ResolveBundle(manifestPath, agent)
+	resolved, err := manifest.Compile(manifestPath, agent)
 	if err != nil {
 		return nil, deprecated, err
 	}
