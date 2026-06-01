@@ -24,6 +24,8 @@ service Runtime {
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   rpc DeprecateAgentVersion(DeprecateAgentVersionRequest) returns (DeprecateAgentVersionResponse);
   rpc ArchiveAgent(ArchiveAgentRequest) returns (ArchiveAgentResponse);
+  // Reverse worker stream: application workers register tool handlers and receive invocations.
+  rpc Work(stream WorkClientMsg) returns (stream WorkServerMsg);
 }
 
 message GetVersionRequest {}
@@ -58,6 +60,7 @@ message RunSessionInteractiveClientMsg {
   oneof body {
     RunSessionInteractiveStart start = 1;
     RunSessionInteractiveUserMessage user_message = 2;
+    RunSessionInteractiveToolApproval tool_approval = 3;
   }
 }
 
@@ -81,6 +84,9 @@ message RunSessionInteractiveServerMsg {
     RunSessionInteractiveAwaitingInput awaiting_input = 3;
     RunSessionInteractiveCompleted completed = 4;
     RunSessionInteractiveFailed failed = 5;
+    RunSessionInteractiveToolCall tool_call = 6;
+    RunSessionInteractiveToolResult tool_result = 7;
+    RunSessionInteractiveApprovalRequired approval_required = 8;
   }
 }
 
@@ -147,6 +153,35 @@ message RunSessionInteractiveCompleted {
 
 message RunSessionInteractiveFailed {
   string message = 1;
+}
+
+message RunSessionInteractiveToolCall {
+  string call_id = 1;
+  string tool = 2;
+  string version = 3;
+  bytes args = 4;
+}
+
+message RunSessionInteractiveToolResult {
+  string call_id = 1;
+  bytes payload = 2;
+  string error_message = 3;
+}
+
+message RunSessionInteractiveApprovalRequired {
+  string approval_id = 1;
+  string call_id = 2;
+  string tool = 3;
+  string version = 4;
+  bytes args = 5;
+  string route = 6;
+  string reason = 7;
+}
+
+message RunSessionInteractiveToolApproval {
+  string approval_id = 1;
+  bool approved = 2;
+  string comment = 3;
 }
 
 message PublishRequest {
@@ -313,3 +348,94 @@ message ArchiveAgentRequest {
 }
 
 message ArchiveAgentResponse {}
+
+// Work is the bidirectional reverse stream between the runtime and an application worker.
+
+message WorkClientMsg {
+  oneof body {
+    WorkRegister register = 1;
+    WorkHeartbeat heartbeat = 2;
+    WorkToolResult result = 3;
+    WorkToolNack nack = 4;
+  }
+}
+
+message WorkServerMsg {
+  oneof body {
+    WorkRegistered registered = 1;
+    WorkInvoke invoke = 2;
+    WorkToolCancel cancel = 3;
+    WorkResultAck result_ack = 4;
+    WorkHeartbeatAck heartbeat_ack = 5;
+  }
+}
+
+message WorkHandlerAdvertisement {
+  string tool = 1;
+  string version = 2;
+  string contract_version = 3;
+  // Maximum concurrent invocations this worker accepts for tool@version (0 = 1).
+  uint32 max_concurrency = 4;
+  // Descriptor hash of the handler contract (audit only; not an enforcement gate).
+  string descriptor_hash = 5;
+}
+
+message WorkInFlightCall {
+  string call_id = 1;
+}
+
+message WorkRegister {
+  string worker_id = 1;
+  string workload_identity = 2;
+  string image_digest = 3;
+  repeated WorkHandlerAdvertisement handlers = 4;
+  // Calls still executing or holding a result awaiting runtime ack (reconnect resync).
+  repeated WorkInFlightCall in_flight = 5;
+}
+
+message WorkRegistered {
+  string worker_id = 1;
+  // Worker should send heartbeats before this lease expires.
+  int64 lease_ttl_ms = 2;
+}
+
+message WorkHeartbeat {}
+
+message WorkHeartbeatAck {}
+
+message WorkInvoke {
+  string call_id = 1;
+  string session_id = 2;
+  string agent_version_id = 3;
+  int32 turn = 4;
+  string tool = 5;
+  string version = 6;
+  bytes args = 7;
+  string side_effect_class = 8;
+  int64 deadline_unix_ms = 9;
+}
+
+message WorkToolCancel {
+  string call_id = 1;
+}
+
+message WorkToolResult {
+  string call_id = 1;
+  bytes payload = 2;
+  WorkToolError error = 3;
+}
+
+message WorkToolNack {
+  string call_id = 1;
+  string code = 2;
+  string message = 3;
+}
+
+message WorkToolError {
+  string code = 1;
+  string message = 2;
+}
+
+message WorkResultAck {
+  string call_id = 1;
+}

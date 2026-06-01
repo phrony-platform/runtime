@@ -8,6 +8,10 @@ const (
 	SessionStatusRunning = "running"
 	// SessionStatusAwaitingInput means the agent is waiting for user input on the stream.
 	SessionStatusAwaitingInput = "awaiting_input"
+	// SessionStatusAwaitingTool means the session is waiting for tool dispatch to complete.
+	SessionStatusAwaitingTool = "awaiting_tool"
+	// SessionStatusAwaitingApproval means the session is suspended for human tool approval.
+	SessionStatusAwaitingApproval = "awaiting_approval"
 	// SessionStatusCompleted means the session finished successfully.
 	SessionStatusCompleted = "completed"
 	// SessionStatusFailed means the session ended with an error.

@@ -35,6 +35,7 @@ const (
 	Runtime_ListSessions_FullMethodName          = "/phrony.runtime.v1.Runtime/ListSessions"
 	Runtime_DeprecateAgentVersion_FullMethodName = "/phrony.runtime.v1.Runtime/DeprecateAgentVersion"
 	Runtime_ArchiveAgent_FullMethodName          = "/phrony.runtime.v1.Runtime/ArchiveAgent"
+	Runtime_Work_FullMethodName                  = "/phrony.runtime.v1.Runtime/Work"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -61,6 +62,8 @@ type RuntimeClient interface {
 	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
 	DeprecateAgentVersion(ctx context.Context, in *DeprecateAgentVersionRequest, opts ...grpc.CallOption) (*DeprecateAgentVersionResponse, error)
 	ArchiveAgent(ctx context.Context, in *ArchiveAgentRequest, opts ...grpc.CallOption) (*ArchiveAgentResponse, error)
+	// Reverse worker stream: application workers register tool handlers and receive invocations.
+	Work(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[WorkClientMsg, WorkServerMsg], error)
 }
 
 type runtimeClient struct {
@@ -234,6 +237,19 @@ func (c *runtimeClient) ArchiveAgent(ctx context.Context, in *ArchiveAgentReques
 	return out, nil
 }
 
+func (c *runtimeClient) Work(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[WorkClientMsg, WorkServerMsg], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Runtime_ServiceDesc.Streams[1], Runtime_Work_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WorkClientMsg, WorkServerMsg]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_WorkClient = grpc.BidiStreamingClient[WorkClientMsg, WorkServerMsg]
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -258,6 +274,8 @@ type RuntimeServer interface {
 	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
 	DeprecateAgentVersion(context.Context, *DeprecateAgentVersionRequest) (*DeprecateAgentVersionResponse, error)
 	ArchiveAgent(context.Context, *ArchiveAgentRequest) (*ArchiveAgentResponse, error)
+	// Reverse worker stream: application workers register tool handlers and receive invocations.
+	Work(grpc.BidiStreamingServer[WorkClientMsg, WorkServerMsg]) error
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -315,6 +333,9 @@ func (UnimplementedRuntimeServer) DeprecateAgentVersion(context.Context, *Deprec
 }
 func (UnimplementedRuntimeServer) ArchiveAgent(context.Context, *ArchiveAgentRequest) (*ArchiveAgentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ArchiveAgent not implemented")
+}
+func (UnimplementedRuntimeServer) Work(grpc.BidiStreamingServer[WorkClientMsg, WorkServerMsg]) error {
+	return status.Error(codes.Unimplemented, "method Work not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -614,6 +635,13 @@ func _Runtime_ArchiveAgent_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_Work_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(RuntimeServer).Work(&grpc.GenericServerStream[WorkClientMsg, WorkServerMsg]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_WorkServer = grpc.BidiStreamingServer[WorkClientMsg, WorkServerMsg]
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -686,6 +714,12 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "RunSessionInteractive",
 			Handler:       _Runtime_RunSessionInteractive_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "Work",
+			Handler:       _Runtime_Work_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

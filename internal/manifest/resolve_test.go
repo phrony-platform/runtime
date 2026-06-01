@@ -51,8 +51,10 @@ func TestResolveBundle_fullAgent(t *testing.T) {
 	if !strings.Contains(string(raw), `"text"`) || !strings.Contains(string(raw), `"inline"`) {
 		t.Fatalf("JSON() = %s, want resolved instructions.text and schema.inline", string(raw))
 	}
-	if strings.Contains(string(raw), `"ref"`) {
-		t.Fatalf("JSON() = %s, want refs cleared after resolve", string(raw))
+	// Bundle file refs (instructions, schemas) must be resolved away; tool refs
+	// are stable identifiers and are retained.
+	if strings.Contains(string(raw), "prompts/system") || strings.Contains(string(raw), "schemas/result") {
+		t.Fatalf("JSON() = %s, want bundle refs cleared after resolve", string(raw))
 	}
 }
 

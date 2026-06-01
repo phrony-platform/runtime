@@ -141,6 +141,91 @@ func TestValidate_fieldErrors(t *testing.T) {
 			},
 			wantPaths: nil,
 		},
+		{
+			name: "valid tool version and side_effect_class",
+			mutate: func(a *Agent) {
+				a.Spec.Tools = []ToolBinding{{
+					Ref:             "claims-db.read-claim",
+					Version:         "1.0.0",
+					SideEffectClass: SideEffectReadOnly,
+				}}
+			},
+			wantPaths: nil,
+		},
+		{
+			name: "invalid tool version",
+			mutate: func(a *Agent) {
+				a.Spec.Tools = []ToolBinding{{
+					Ref:     "claims-db.read-claim",
+					Version: "not-semver",
+				}}
+			},
+			wantPaths: []string{"spec.tools[0].version"},
+		},
+		{
+			name: "invalid side_effect_class",
+			mutate: func(a *Agent) {
+				a.Spec.Tools = []ToolBinding{{
+					Ref:             "claims-db.read-claim",
+					SideEffectClass: "destructive",
+				}}
+			},
+			wantPaths: []string{"spec.tools[0].side_effect_class"},
+		},
+		{
+			name: "valid policies and hitl",
+			mutate: func(a *Agent) {
+				a.Spec.Tools = []ToolBinding{
+					{Ref: "routing.assign-queue"},
+				}
+				a.Spec.Policies = []PolicySpec{{
+					Name:  "route-only-known-queues",
+					Scope: "tool:routing.assign-queue",
+					Allow: []string{"motor-standard", "motor-complex"},
+				}}
+				a.Spec.HITL = []HITLTrigger{{
+					Trigger:   "tool:routing.assign-queue",
+					Condition: "severity >= 3",
+					Route:     "claims-supervisor-queue",
+				}}
+			},
+			wantPaths: nil,
+		},
+		{
+			name: "policy missing name",
+			mutate: func(a *Agent) {
+				a.Spec.Policies = []PolicySpec{{Allow: []string{"a"}}}
+			},
+			wantPaths: []string{"spec.policies[0].name"},
+		},
+		{
+			name: "policy action and allow",
+			mutate: func(a *Agent) {
+				a.Spec.Policies = []PolicySpec{{
+					Name:   "bad",
+					Action: "redact",
+					Allow:  []string{"a"},
+				}}
+			},
+			wantPaths: []string{"spec.policies[0]"},
+		},
+		{
+			name: "hitl missing route",
+			mutate: func(a *Agent) {
+				a.Spec.HITL = []HITLTrigger{{Trigger: "tool:foo"}}
+			},
+			wantPaths: []string{"spec.hitl[0].route"},
+		},
+		{
+			name: "hitl undeclared tool ref",
+			mutate: func(a *Agent) {
+				a.Spec.HITL = []HITLTrigger{{
+					Trigger: "tool:unknown.tool",
+					Route:   "review-queue",
+				}}
+			},
+			wantPaths: []string{"spec.hitl[0].trigger"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

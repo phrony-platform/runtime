@@ -30,6 +30,33 @@ spec:
       effort: low
     provider_options: {}
 
+  tools:
+    - ref: weather.get-forecast
+      version: 1.0.0
+      side_effect_class: read_only
+      description: Look up the weather forecast for a city.
+      parameters:
+        inline:
+          type: object
+          properties:
+            city:
+              type: string
+          required: [city]
+    - ref: routing.assign-queue
+      version: 1.0.0
+      side_effect_class: non_idempotent_write
+      policy: require-approval-above-severity-3
+
+  policies:
+    - name: route-only-known-queues
+      scope: tool:routing.assign-queue
+      allow: [motor-standard, motor-complex, motor-fraud-review]
+
+  hitl:
+    - trigger: tool:routing.assign-queue
+      condition: severity >= 3
+      route: claims-supervisor-queue
+
   limits:
     max_tokens_per_run: 5000
     max_loop_iterations: 4

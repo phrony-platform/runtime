@@ -87,6 +87,33 @@ func assertGoldenAgentFields(t *testing.T, name string, agent *manifest.Agent) {
 		if agent.Output.OnInvalid != "retry" {
 			t.Fatalf("output.on_invalid = %q", agent.Output.OnInvalid)
 		}
+		if len(agent.Spec.Tools) != 2 {
+			t.Fatalf("spec.tools len = %d, want 2", len(agent.Spec.Tools))
+		}
+		if agent.Spec.Tools[0].Ref != "weather.get-forecast" {
+			t.Fatalf("spec.tools[0].ref = %q", agent.Spec.Tools[0].Ref)
+		}
+		if got := agent.Spec.Tools[0].ToolName(); got != "weather_get-forecast" {
+			t.Fatalf("spec.tools[0] tool name = %q, want weather_get-forecast", got)
+		}
+		if agent.Spec.Tools[0].Parameters == nil || agent.Spec.Tools[0].Parameters.Inline["type"] != "object" {
+			t.Fatalf("spec.tools[0].parameters = %+v", agent.Spec.Tools[0].Parameters)
+		}
+		if agent.Spec.Tools[0].Version != "1.0.0" {
+			t.Fatalf("spec.tools[0].version = %q", agent.Spec.Tools[0].Version)
+		}
+		if agent.Spec.Tools[0].SideEffectClass != manifest.SideEffectReadOnly {
+			t.Fatalf("spec.tools[0].side_effect_class = %q", agent.Spec.Tools[0].SideEffectClass)
+		}
+		if agent.Spec.Tools[1].Policy != "require-approval-above-severity-3" {
+			t.Fatalf("spec.tools[1].policy = %q", agent.Spec.Tools[1].Policy)
+		}
+		if len(agent.Spec.Policies) != 1 || agent.Spec.Policies[0].Name != "route-only-known-queues" {
+			t.Fatalf("spec.policies = %+v", agent.Spec.Policies)
+		}
+		if len(agent.Spec.HITL) != 1 || agent.Spec.HITL[0].Route != "claims-supervisor-queue" {
+			t.Fatalf("spec.hitl = %+v", agent.Spec.HITL)
+		}
 	}
 }
 
@@ -137,6 +164,11 @@ func TestValidate_negative(t *testing.T) {
 			name:    "secrets without provider default",
 			file:    "invalid-secrets-missing-default.yaml",
 			wantSub: "spec.model.secret",
+		},
+		{
+			name:    "duplicate tool refs",
+			file:    "invalid-tools-duplicate.yaml",
+			wantSub: "spec.tools[1].ref",
 		},
 	}
 	for _, tc := range cases {

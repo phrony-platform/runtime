@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,6 +66,27 @@ func ResolveBundle(agentPath string, agent *Agent) (*ResolvedAgent, error) {
 			}
 			resolved.Output.Schema = &SchemaSpec{Inline: inline}
 		}
+	}
+
+	for i := range resolved.Spec.Tools {
+		params := resolved.Spec.Tools[i].Parameters
+		if params == nil {
+			continue
+		}
+		ref := strings.TrimSpace(params.Ref)
+		if ref == "" {
+			continue
+		}
+		fieldPath := fmt.Sprintf("spec.tools[%d].parameters.ref", i)
+		path, err := locateBundleFile(bundleRoot, ref, params.Version, refKindSchema)
+		if err != nil {
+			return nil, retargetFieldError(err, fieldPath)
+		}
+		inline, err := loadSchemaFile(path)
+		if err != nil {
+			return nil, fieldResolveError(fieldPath, err)
+		}
+		resolved.Spec.Tools[i].Parameters = &SchemaSpec{Inline: inline}
 	}
 
 	return &ResolvedAgent{Agent: resolved}, nil
@@ -254,6 +276,17 @@ func fieldResolveError(path string, err error) FieldError {
 	return FieldError{Path: path, Message: err.Error()}
 }
 
+// retargetFieldError rewrites the Path of a FieldError so bundle-resolution
+// errors report the caller's field path instead of the generic ref kind path.
+func retargetFieldError(err error, path string) error {
+	var fe FieldError
+	if errors.As(err, &fe) {
+		fe.Path = path
+		return fe
+	}
+	return err
+}
+
 func cloneAgent(agent *Agent) *Agent {
 	out := *agent
 	if agent.Spec.Limits != nil {
@@ -270,6 +303,33 @@ func cloneAgent(agent *Agent) *Agent {
 	}
 	if len(agent.Spec.Model.ProviderOptions) > 0 {
 		out.Spec.Model.ProviderOptions = copyAnyMap(agent.Spec.Model.ProviderOptions)
+	}
+	if len(agent.Spec.Tools) > 0 {
+		out.Spec.Tools = make([]ToolBinding, len(agent.Spec.Tools))
+		for i, t := range agent.Spec.Tools {
+			tool := t
+			if t.Parameters != nil {
+				s := *t.Parameters
+				if len(s.Inline) > 0 {
+					s.Inline = copyAnyMap(s.Inline)
+				}
+				tool.Parameters = &s
+			}
+			out.Spec.Tools[i] = tool
+		}
+	}
+	if len(agent.Spec.Policies) > 0 {
+		out.Spec.Policies = make([]PolicySpec, len(agent.Spec.Policies))
+		for i, p := range agent.Spec.Policies {
+			policy := p
+			if len(p.Allow) > 0 {
+				policy.Allow = append([]string(nil), p.Allow...)
+			}
+			out.Spec.Policies[i] = policy
+		}
+	}
+	if len(agent.Spec.HITL) > 0 {
+		out.Spec.HITL = append([]HITLTrigger(nil), agent.Spec.HITL...)
 	}
 	if len(agent.Metadata.Labels) > 0 {
 		out.Metadata.Labels = make(map[string]string, len(agent.Metadata.Labels))

@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -14,6 +15,12 @@ var (
 	validOnInvalid = map[string]struct{}{"retry": {}, "repair": {}, "escalate": {}, "fail": {}}
 	validOutputFmt = map[string]struct{}{"text": {}, "json": {}}
 	validReasoning = map[string]struct{}{"low": {}, "medium": {}, "high": {}}
+	validSideEffect = map[string]struct{}{
+		SideEffectReadOnly:           {},
+		SideEffectIdempotentWrite:    {},
+		SideEffectNonIdempotentWrite: {},
+		SideEffectIrreversibleAction: {},
+	}
 )
 
 // Validate checks structural and semantic rules for a parsed Agent document.
@@ -74,10 +81,159 @@ func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition) []FieldE
 	}
 	errs = append(errs, validateInstructions(&spec.Instructions)...)
 	errs = append(errs, validateModel(&spec.Model, secrets)...)
+	errs = append(errs, validateTools(spec.Tools)...)
+	errs = append(errs, validatePolicies(spec.Policies, spec.Tools)...)
+	errs = append(errs, validateHITL(spec.HITL, spec.Tools)...)
 	if spec.Limits != nil {
 		errs = append(errs, validateLimits(spec.Limits)...)
 	}
 	return errs
+}
+
+func validateTools(tools []ToolBinding) []FieldError {
+	var errs []FieldError
+	seenRefs := make(map[string]struct{}, len(tools))
+	seenNames := make(map[string]struct{}, len(tools))
+	for i, t := range tools {
+		base := fmt.Sprintf("spec.tools[%d]", i)
+		ref := strings.TrimSpace(t.Ref)
+		if ref == "" {
+			errs = append(errs, FieldError{Path: base + ".ref", Message: "is required"})
+		} else if _, dup := seenRefs[ref]; dup {
+			errs = append(errs, FieldError{Path: base + ".ref", Message: "must be unique"})
+		} else {
+			seenRefs[ref] = struct{}{}
+		}
+
+		name := t.ToolName()
+		if name == "" {
+			errs = append(errs, FieldError{Path: base, Message: "tool name could not be derived from ref; set name"})
+		} else if !toolNamePattern.MatchString(name) {
+			errs = append(errs, FieldError{Path: base + ".name", Message: "must match [a-zA-Z0-9_-]{1,64}"})
+		} else if _, dup := seenNames[name]; dup {
+			errs = append(errs, FieldError{Path: base + ".name", Message: "resolves to a duplicate tool name"})
+		} else {
+			seenNames[name] = struct{}{}
+		}
+
+		if t.Parameters != nil {
+			for _, fe := range validateSchema(t.Parameters) {
+				errs = append(errs, FieldError{Path: base + ".parameters", Message: fe.Message})
+			}
+		}
+
+		version := strings.TrimSpace(t.Version)
+		if version != "" && !isValidSemver(version) {
+			errs = append(errs, FieldError{Path: base + ".version", Message: "must be valid semver"})
+		}
+
+		if sec := strings.TrimSpace(t.SideEffectClass); sec != "" {
+			if _, ok := validSideEffect[sec]; !ok {
+				errs = append(errs, FieldError{
+					Path:    base + ".side_effect_class",
+					Message: "must be one of read_only, idempotent_write, non_idempotent_write, irreversible_action",
+				})
+			}
+		}
+	}
+	return errs
+}
+
+func validatePolicies(policies []PolicySpec, tools []ToolBinding) []FieldError {
+	var errs []FieldError
+	seenNames := make(map[string]struct{}, len(policies))
+	toolRefs := toolRefSet(tools)
+	for i, p := range policies {
+		base := fmt.Sprintf("spec.policies[%d]", i)
+		name := strings.TrimSpace(p.Name)
+		if name == "" {
+			errs = append(errs, FieldError{Path: base + ".name", Message: "is required"})
+		} else if _, dup := seenNames[name]; dup {
+			errs = append(errs, FieldError{Path: base + ".name", Message: "must be unique"})
+		} else {
+			seenNames[name] = struct{}{}
+		}
+
+		hasAction := strings.TrimSpace(p.Action) != ""
+		hasAllow := len(p.Allow) > 0
+		switch {
+		case hasAction && hasAllow:
+			errs = append(errs, FieldError{
+				Path:    base,
+				Message: "set action or allow, not both",
+			})
+		case !hasAction && !hasAllow:
+			errs = append(errs, FieldError{
+				Path:    base,
+				Message: "must set action or allow",
+			})
+		case hasAllow:
+			for j, v := range p.Allow {
+				if strings.TrimSpace(v) == "" {
+					errs = append(errs, FieldError{
+						Path:    fmt.Sprintf("%s.allow[%d]", base, j),
+						Message: "must not be empty",
+					})
+				}
+			}
+			if scope := strings.TrimSpace(p.Scope); scope == "" {
+				errs = append(errs, FieldError{Path: base + ".scope", Message: "is required when allow is set"})
+			} else if ref, ok := toolRefFromScoped(scope); ok {
+				if _, known := toolRefs[ref]; !known {
+					errs = append(errs, FieldError{
+						Path:    base + ".scope",
+						Message: "references undeclared tool ref " + ref,
+					})
+				}
+			}
+		}
+	}
+	return errs
+}
+
+func validateHITL(triggers []HITLTrigger, tools []ToolBinding) []FieldError {
+	var errs []FieldError
+	toolRefs := toolRefSet(tools)
+	for i, h := range triggers {
+		base := fmt.Sprintf("spec.hitl[%d]", i)
+		if strings.TrimSpace(h.Trigger) == "" {
+			errs = append(errs, FieldError{Path: base + ".trigger", Message: "is required"})
+		} else if ref, ok := toolRefFromScoped(strings.TrimSpace(h.Trigger)); ok {
+			if _, known := toolRefs[ref]; !known {
+				errs = append(errs, FieldError{
+					Path:    base + ".trigger",
+					Message: "references undeclared tool ref " + ref,
+				})
+			}
+		}
+		if strings.TrimSpace(h.Route) == "" {
+			errs = append(errs, FieldError{Path: base + ".route", Message: "is required"})
+		}
+	}
+	return errs
+}
+
+func toolRefSet(tools []ToolBinding) map[string]struct{} {
+	refs := make(map[string]struct{}, len(tools))
+	for _, t := range tools {
+		if ref := strings.TrimSpace(t.Ref); ref != "" {
+			refs[ref] = struct{}{}
+		}
+	}
+	return refs
+}
+
+// toolRefFromScoped returns the tool ref when scope/trigger uses the tool: prefix.
+func toolRefFromScoped(scoped string) (string, bool) {
+	const prefix = "tool:"
+	if !strings.HasPrefix(scoped, prefix) {
+		return "", false
+	}
+	ref := strings.TrimSpace(scoped[len(prefix):])
+	if ref == "" {
+		return "", false
+	}
+	return ref, true
 }
 
 func validateInstructions(in *InstructionsSpec) []FieldError {
