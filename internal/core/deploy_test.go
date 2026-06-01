@@ -61,36 +61,21 @@ func TestRuntime_Publish_emptyManifest(t *testing.T) {
 	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
-func TestRuntime_Publish_deprecatedAPIVersion(t *testing.T) {
+func TestRuntime_Publish_rejectsDeprecatedAPIVersion(t *testing.T) {
 	manifestJSON := resolvedDeployManifestJSON(t)
 	var agent manifest.Agent
 	if err := json.Unmarshal(manifestJSON, &agent); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	agent.APIVersion = manifest.APIVersionV1Deprecated
+	agent.APIVersion = "phrony.dev/v1"
 	raw, err := json.Marshal(&agent)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
 
-	db, mock := testSQLxDB(t)
-	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO agents`).
-		WithArgs(sqlmock.AnyArg(), "demo", "echo-agent", "", sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("agent-uuid"))
-	expectActiveAgentByID(mock, "agent-uuid")
-	mock.ExpectQuery(`SELECT av.id, av.content_hash`).
-		WithArgs("agent-uuid", "1.2.0").
-		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(`INSERT INTO agent_versions`).
-		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", hashManifest(raw), raw).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
-	mock.ExpectCommit()
-
-	srv := &runtimeServer{db: db}
-	if _, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: raw}); err != nil {
-		t.Fatalf("Publish: %v", err)
-	}
+	srv := &runtimeServer{db: testServeDB(t)}
+	_, err = srv.Publish(context.Background(), &runtimev1.PublishRequest{Manifest: raw})
+	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
 func TestRuntime_Publish_invalidManifest(t *testing.T) {

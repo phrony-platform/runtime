@@ -31,14 +31,6 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 	return cmd
 }
 
-func newSessionCommand(runtimeAddr *string) *cobra.Command {
-	cmd := newRunCommand(runtimeAddr)
-	cmd.Use = "session AGENT[@VERSION]"
-	cmd.Hidden = true
-	cmd.Deprecated = "use phrony run instead"
-	return cmd
-}
-
 func runAgentSession(cmd *cobra.Command, runtimeAddr *string, agentRefArg, version, input string, attach bool) error {
 	ref, err := parseAgentRef(agentRefArg)
 	if err != nil {

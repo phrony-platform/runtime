@@ -31,7 +31,6 @@ func (s *runtimeServer) Publish(ctx context.Context, req *runtimev1.PublishReque
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-	manifest.NormalizeAPIVersion(agent)
 	if err := manifest.Validate(agent); err != nil {
 		return nil, deployValidationStatus(err)
 	}

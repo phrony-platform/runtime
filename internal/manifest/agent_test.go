@@ -90,29 +90,20 @@ func assertGoldenAgentFields(t *testing.T, name string, agent *manifest.Agent) {
 		if len(agent.Spec.Tools) != 2 {
 			t.Fatalf("spec.tools len = %d, want 2", len(agent.Spec.Tools))
 		}
-		if agent.Spec.Tools[0].Ref != "weather.get-forecast" {
+		if agent.Spec.Tools[0].Ref != "weather.get-forecast@1.0.0" {
 			t.Fatalf("spec.tools[0].ref = %q", agent.Spec.Tools[0].Ref)
 		}
-		if got := agent.Spec.Tools[0].ToolName(); got != "weather_get-forecast" {
-			t.Fatalf("spec.tools[0] tool name = %q, want weather_get-forecast", got)
+		if got := agent.Spec.Tools[0].ToolName(); got != "weather_get-forecast_1_0_0" {
+			t.Fatalf("spec.tools[0] tool name = %q, want weather_get-forecast_1_0_0", got)
 		}
-		if agent.Spec.Tools[0].Parameters == nil || agent.Spec.Tools[0].Parameters.Inline["type"] != "object" {
-			t.Fatalf("spec.tools[0].parameters = %+v", agent.Spec.Tools[0].Parameters)
-		}
-		if agent.Spec.Tools[0].Version != "1.0.0" {
-			t.Fatalf("spec.tools[0].version = %q", agent.Spec.Tools[0].Version)
+		if agent.Spec.Tools[0].InputSchema == nil || agent.Spec.Tools[0].InputSchema.Inline["type"] != "object" {
+			t.Fatalf("spec.tools[0].input_schema = %+v", agent.Spec.Tools[0].InputSchema)
 		}
 		if agent.Spec.Tools[0].SideEffectClass != manifest.SideEffectReadOnly {
 			t.Fatalf("spec.tools[0].side_effect_class = %q", agent.Spec.Tools[0].SideEffectClass)
 		}
-		if agent.Spec.Tools[1].Policy != "require-approval-above-severity-3" {
-			t.Fatalf("spec.tools[1].policy = %q", agent.Spec.Tools[1].Policy)
-		}
-		if len(agent.Spec.Policies) != 1 || agent.Spec.Policies[0].Name != "route-only-known-queues" {
-			t.Fatalf("spec.policies = %+v", agent.Spec.Policies)
-		}
-		if len(agent.Spec.HITL) != 1 || agent.Spec.HITL[0].Route != "claims-supervisor-queue" {
-			t.Fatalf("spec.hitl = %+v", agent.Spec.HITL)
+		if agent.Spec.Tools[1].Ref != "routing.assign-queue@1.0.0" {
+			t.Fatalf("spec.tools[1].ref = %q", agent.Spec.Tools[1].Ref)
 		}
 	}
 }

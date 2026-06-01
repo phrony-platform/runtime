@@ -305,7 +305,7 @@ func TestStreamCompletion_toolUseLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
 	}
-	if len(dispatched) != 1 || dispatched[0] != "weather.get-forecast" {
+	if len(dispatched) != 1 || dispatched[0] != "weather.get-forecast@1.0.0" {
 		t.Fatalf("dispatched = %v", dispatched)
 	}
 	if stub.Calls != 2 {
@@ -383,10 +383,10 @@ func testAgentWithTool(wireName string) *manifest.Agent {
 				Name:     "claude-sonnet-4-5",
 			},
 			Tools: []manifest.ToolBinding{{
-				Ref:         "weather.get-forecast",
-				Name:        wireName,
-				Version:     "1.0.0",
-				Parameters:  &manifest.SchemaSpec{Inline: map[string]any{"type": "object"}},
+				Ref:             "weather.get-forecast@1.0.0",
+				As:              wireName,
+				Version:         "1.0.0",
+				InputSchema:     &manifest.SchemaSpec{Inline: map[string]any{"type": "object"}},
 				SideEffectClass: manifest.SideEffectReadOnly,
 			}},
 		},

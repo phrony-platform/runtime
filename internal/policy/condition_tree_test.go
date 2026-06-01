@@ -15,11 +15,11 @@ func TestEvaluateConditions_allAndLeaf(t *testing.T) {
 			map[string]any{"field": "currency", "op": "eq", "value": "USD"},
 		},
 	}
-	if !evaluateConditions(conditions, args) {
+	if !evaluateConditions(conditions, args, EvalContext{}) {
 		t.Fatal("expected conditions to match")
 	}
 	args = json.RawMessage(`{"amount":5000,"currency":"USD"}`)
-	if evaluateConditions(conditions, args) {
+	if evaluateConditions(conditions, args, EvalContext{}) {
 		t.Fatal("expected conditions not to match")
 	}
 }
@@ -31,8 +31,20 @@ func TestEvaluateConditions_inOperator(t *testing.T) {
 		"value": []any{"US", "CA"},
 	}
 	args := json.RawMessage(`{"country":"CA"}`)
-	if !evaluateConditions(conditions, args) {
+	if !evaluateConditions(conditions, args, EvalContext{}) {
 		t.Fatal("expected in match")
+	}
+}
+
+func TestEvaluateConditions_dispatchTrigger(t *testing.T) {
+	conditions := map[string]any{
+		"field": FieldDispatchTrigger,
+		"op":    "eq",
+		"value": TriggerDispatchIndeterminate,
+	}
+	ctx := EvalContext{DispatchTrigger: TriggerDispatchIndeterminate}
+	if !evaluateConditions(conditions, json.RawMessage(`{}`), ctx) {
+		t.Fatal("expected dispatch trigger match")
 	}
 }
 
@@ -45,14 +57,13 @@ func TestEvaluateConditions_not(t *testing.T) {
 		},
 	}
 	args := json.RawMessage(`{"blocked":false}`)
-	if !evaluateConditions(conditions, args) {
+	if !evaluateConditions(conditions, args, EvalContext{}) {
 		t.Fatal("expected not to pass")
 	}
 }
 
 func TestEvaluateToolCall_denyBlock(t *testing.T) {
-	agent := &manifest.Agent{
-		Spec: manifest.AgentSpec{
+	agent := compiledAgent(manifest.AgentSpec{
 			Tools: []manifest.ToolBinding{{Ref: "claims.pay"}},
 			Policies: []manifest.PolicySpec{{
 				Name:   "block-fraud",
@@ -65,8 +76,7 @@ func TestEvaluateToolCall_denyBlock(t *testing.T) {
 					"value": 90,
 				},
 			}},
-		},
-	}
+	})
 	e := NewEvaluator(agent)
 	tc := ToolCallContext{
 		ToolRef: "claims.pay",
@@ -78,30 +88,3 @@ func TestEvaluateToolCall_denyBlock(t *testing.T) {
 	}
 }
 
-func TestEvaluateToolCall_requireApprovalConditionTree(t *testing.T) {
-	agent := &manifest.Agent{
-		Spec: manifest.AgentSpec{
-			Tools: []manifest.ToolBinding{{Ref: "claims.pay"}},
-			Policies: []manifest.PolicySpec{{
-				Name:   "large-payment",
-				Scope:  "tool:claims.pay",
-				Action: "require_approval",
-				Reason: "over limit",
-				Conditions: map[string]any{
-					"field": "amount",
-					"op":    "gt",
-					"value": 10000,
-				},
-			}},
-		},
-	}
-	e := NewEvaluator(agent)
-	tc := ToolCallContext{ToolRef: "claims.pay", Args: json.RawMessage(`{"amount":20000}`)}
-	if dec, _ := e.EvaluateToolCall(tc); dec != DecisionRequireApproval {
-		t.Fatalf("decision = %v, want require approval", dec)
-	}
-	tc.Args = json.RawMessage(`{"amount":100}`)
-	if dec, _ := e.EvaluateToolCall(tc); dec != DecisionAllow {
-		t.Fatalf("decision = %v, want allow", dec)
-	}
-}

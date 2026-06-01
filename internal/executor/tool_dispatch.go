@@ -104,11 +104,6 @@ func toolCallContext(agent *manifest.Agent, call provider.ToolCall, td tooldispa
 		Args:            call.Args,
 		SideEffectClass: td.SideEffectClass,
 	}
-	if agent != nil {
-		if tb, err := findToolBinding(agent, call.Name); err == nil && tb != nil {
-			tc.PolicyName = tb.Policy
-		}
-	}
 	return tc
 }
 

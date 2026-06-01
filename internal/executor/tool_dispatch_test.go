@@ -31,7 +31,7 @@ func TestStreamCompletion_policyDenyAllowList(t *testing.T) {
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
 			Tools: []manifest.ToolBinding{{
 				Ref:  "routing.assign-queue",
-				Name: toolName,
+				As: toolName,
 			}},
 			Policies: []manifest.PolicySpec{{
 				Name:  "route-only-known-queues",
@@ -66,17 +66,23 @@ func TestStreamCompletion_requireApproval(t *testing.T) {
 			Instructions: manifest.InstructionsSpec{Text: "System."},
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
 			Tools: []manifest.ToolBinding{{
-				Ref:    "routing.assign-queue",
-				Name:   toolName,
-				Policy: "require-approval-above-severity-3",
+				Ref:  "routing.assign-queue",
+				As: toolName,
 			}},
-			HITL: []manifest.HITLTrigger{{
-				Trigger:   "tool:routing.assign-queue",
-				Condition: "severity >= 3",
-				Route:     "supervisor",
+			Policies: []manifest.PolicySpec{{
+				Name:   "severity-approval",
+				Scope:  "tool:routing.assign-queue",
+				Action: "require_approval",
+				Conditions: map[string]any{
+					"field": "severity",
+					"op":    "gte",
+					"value": 3,
+				},
+				Runtime: map[string]any{"phrony.com/approver_role": "supervisor"},
 			}},
 		},
 	}
+	agent.Metadata.Annotations = map[string]string{manifest.AnnotationPoliciesCompiled: "true"}
 	call := provider.ToolCall{ID: "c1", Name: toolName, Args: json.RawMessage(`{"severity":4,"queue":"motor-standard"}`)}
 	dispatched := false
 	disp := &tooldispatch.FakeDispatcher{
@@ -127,13 +133,20 @@ func TestStreamCompletion_dispatchNoHandlerEscalate(t *testing.T) {
 		Spec: manifest.AgentSpec{
 			Instructions: manifest.InstructionsSpec{Text: "System."},
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
-			Tools:        []manifest.ToolBinding{{Ref: "weather.get-forecast", Name: toolName}},
-			HITL: []manifest.HITLTrigger{{
-				Trigger: policy.TriggerDispatchNoHandler,
-				Route:   "ops",
+			Tools: []manifest.ToolBinding{{Ref: "weather.get-forecast", As: toolName}},
+			Policies: []manifest.PolicySpec{{
+				Name: "no-handler",
+				Conditions: map[string]any{
+					"field": policy.FieldDispatchTrigger,
+					"op":    "eq",
+					"value": policy.TriggerDispatchNoHandler,
+				},
+				Action:  "escalate",
+				Runtime: map[string]any{"phrony.com/approver_role": "ops"},
 			}},
 		},
 	}
+	agent.Metadata.Annotations = map[string]string{manifest.AnnotationPoliciesCompiled: "true"}
 	call := provider.ToolCall{ID: "c1", Name: toolName, Args: json.RawMessage(`{}`)}
 	disp := &tooldispatch.FakeDispatcher{
 		DispatchFn: func(context.Context, tooldispatch.ToolCall) (tooldispatch.ToolResult, error) {

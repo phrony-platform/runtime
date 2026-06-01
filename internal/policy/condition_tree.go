@@ -8,39 +8,46 @@ import (
 	"strings"
 )
 
-// evaluateConditions reports whether a policy condition tree matches tool arguments.
-// An empty tree matches all invocations.
-func evaluateConditions(conditions map[string]any, args json.RawMessage) bool {
+const (
+	// FieldDispatchTrigger matches policy conditions against the active dispatch failure trigger.
+	FieldDispatchTrigger = "phrony.dispatch.trigger"
+	// FieldDispatchOutcome is a shorthand alias; value indeterminate maps to dispatch:indeterminate.
+	FieldDispatchOutcome = "dispatch.outcome"
+)
+
+// evaluateConditions reports whether a policy condition tree matches tool arguments
+// and optional evaluation context. An empty tree matches all invocations.
+func evaluateConditions(conditions map[string]any, args json.RawMessage, ctx EvalContext) bool {
 	if len(conditions) == 0 {
 		return true
 	}
-	return evalConditionNode(conditions, args)
+	return evalConditionNode(conditions, args, ctx)
 }
 
-func evalConditionNode(node map[string]any, args json.RawMessage) bool {
+func evalConditionNode(node map[string]any, args json.RawMessage, ctx EvalContext) bool {
 	if node == nil {
 		return true
 	}
 	if all, ok := node["all"]; ok {
-		return evalConditionList(all, args, true)
+		return evalConditionList(all, args, ctx, true)
 	}
 	if any, ok := node["any"]; ok {
-		return evalConditionList(any, args, false)
+		return evalConditionList(any, args, ctx, false)
 	}
 	if not, ok := node["not"]; ok {
 		child, ok := not.(map[string]any)
 		if !ok {
 			return false
 		}
-		return !evalConditionNode(child, args)
+		return !evalConditionNode(child, args, ctx)
 	}
 	if field, ok := node["field"].(string); ok && strings.TrimSpace(field) != "" {
-		return evalLeafCondition(field, node, args)
+		return evalLeafCondition(field, node, args, ctx)
 	}
 	return false
 }
 
-func evalConditionList(raw any, args json.RawMessage, requireAll bool) bool {
+func evalConditionList(raw any, args json.RawMessage, ctx EvalContext, requireAll bool) bool {
 	items, ok := raw.([]any)
 	if !ok || len(items) == 0 {
 		return requireAll
@@ -48,7 +55,7 @@ func evalConditionList(raw any, args json.RawMessage, requireAll bool) bool {
 	if requireAll {
 		for _, item := range items {
 			child, ok := item.(map[string]any)
-			if !ok || !evalConditionNode(child, args) {
+			if !ok || !evalConditionNode(child, args, ctx) {
 				return false
 			}
 		}
@@ -56,14 +63,67 @@ func evalConditionList(raw any, args json.RawMessage, requireAll bool) bool {
 	}
 	for _, item := range items {
 		child, ok := item.(map[string]any)
-		if ok && evalConditionNode(child, args) {
+		if ok && evalConditionNode(child, args, ctx) {
 			return true
 		}
 	}
 	return false
 }
 
-func evalLeafCondition(field string, node map[string]any, args json.RawMessage) bool {
+func evalLeafCondition(field string, node map[string]any, args json.RawMessage, ctx EvalContext) bool {
+	field = strings.TrimSpace(field)
+	switch field {
+	case FieldDispatchTrigger:
+		return compareDispatchTrigger(ctx.DispatchTrigger, node)
+	case FieldDispatchOutcome:
+		return compareDispatchOutcome(ctx.DispatchTrigger, node)
+	default:
+		return evalArgLeafCondition(field, node, args)
+	}
+}
+
+func compareDispatchTrigger(actual string, node map[string]any) bool {
+	if strings.TrimSpace(actual) == "" {
+		return false
+	}
+	op, _ := node["op"].(string)
+	op = strings.ToLower(strings.TrimSpace(op))
+	if op == "" {
+		op = "eq"
+	}
+	switch op {
+	case "eq", "==":
+		return compareEqual(actual, node["value"])
+	case "neq", "!=":
+		return !compareEqual(actual, node["value"])
+	default:
+		return false
+	}
+}
+
+func compareDispatchOutcome(actualTrigger string, node map[string]any) bool {
+	op, _ := node["op"].(string)
+	op = strings.ToLower(strings.TrimSpace(op))
+	if op == "" {
+		op = "eq"
+	}
+	want := strings.TrimSpace(valueString(node["value"]))
+	if want == "indeterminate" {
+		want = TriggerDispatchIndeterminate
+	} else if want != "" && !strings.Contains(want, ":") {
+		want = "dispatch:" + want
+	}
+	switch op {
+	case "eq", "==":
+		return compareEqual(actualTrigger, want)
+	case "neq", "!=":
+		return !compareEqual(actualTrigger, want)
+	default:
+		return false
+	}
+}
+
+func evalArgLeafCondition(field string, node map[string]any, args json.RawMessage) bool {
 	op, _ := node["op"].(string)
 	op = strings.ToLower(strings.TrimSpace(op))
 	if op == "" {
@@ -177,6 +237,42 @@ func toFloat64(v any) (float64, bool) {
 		return f, err == nil
 	default:
 		return 0, false
+	}
+}
+
+// allowValueFromArgs picks the first string-like field used for allow-list checks.
+func allowValueFromArgs(args json.RawMessage) (string, bool) {
+	if len(args) == 0 {
+		return "", false
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(args, &obj); err != nil {
+		return "", false
+	}
+	for _, key := range []string{"queue", "target", "value", "name", "id", "currency"} {
+		if v, ok := obj[key]; ok {
+			if s, ok := stringifyAllowValue(v); ok {
+				return s, true
+			}
+		}
+	}
+	for _, v := range obj {
+		if s, ok := stringifyAllowValue(v); ok {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+func stringifyAllowValue(v any) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		s := strings.TrimSpace(t)
+		return s, s != ""
+	case float64:
+		return fmt.Sprintf("%v", t), true
+	default:
+		return "", false
 	}
 }
 

@@ -8,4 +8,5 @@ metadata:
 
 spec:
   scope: tool:claims.approve-payment
-  action: require_approval
+  decision:
+    type: require_approval

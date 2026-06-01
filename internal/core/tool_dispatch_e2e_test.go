@@ -207,10 +207,10 @@ func e2eWeatherAgent(extra func(*manifest.Agent)) *manifest.Agent {
 				Name:     "claude-sonnet-4-5",
 			},
 			Tools: []manifest.ToolBinding{{
-				Ref:             "weather.get-forecast",
-				Name:            toolWire,
+				Ref:             "weather.get-forecast@1.0.0",
+				As:              toolWire,
 				Version:         "1.0.0",
-				Parameters:      &manifest.SchemaSpec{Inline: map[string]any{"type": "object"}},
+				InputSchema:     &manifest.SchemaSpec{Inline: map[string]any{"type": "object"}},
 				SideEffectClass: manifest.SideEffectReadOnly,
 			}},
 		},
@@ -336,7 +336,7 @@ func TestToolDispatchE2E_policyDeny(t *testing.T) {
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
 			Tools: []manifest.ToolBinding{{
 				Ref:  "routing.assign-queue",
-				Name: toolName,
+				As: toolName,
 			}},
 			Policies: []manifest.PolicySpec{{
 				Name:  "route-only-known-queues",
@@ -345,6 +345,7 @@ func TestToolDispatchE2E_policyDeny(t *testing.T) {
 			}},
 		},
 	}
+	agent.Metadata.Annotations = map[string]string{manifest.AnnotationPoliciesCompiled: "true"}
 	call := provider.ToolCall{ID: "c1", Name: toolName, Args: json.RawMessage(`{"queue":"unknown"}`)}
 	stub := e2eToolUseThenEndTurn(call)
 
@@ -382,17 +383,23 @@ func TestToolDispatchE2E_requireApproval(t *testing.T) {
 			Instructions: manifest.InstructionsSpec{Text: "System."},
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
 			Tools: []manifest.ToolBinding{{
-				Ref:    "routing.assign-queue",
-				Name:   toolName,
-				Policy: "require-approval-above-severity-3",
+				Ref:  "routing.assign-queue",
+				As: toolName,
 			}},
-			HITL: []manifest.HITLTrigger{{
-				Trigger:   "tool:routing.assign-queue",
-				Condition: "severity >= 3",
-				Route:     "supervisor",
+			Policies: []manifest.PolicySpec{{
+				Name:   "severity-approval",
+				Scope:  "tool:routing.assign-queue",
+				Action: "require_approval",
+				Conditions: map[string]any{
+					"field": "severity",
+					"op":    "gte",
+					"value": 3,
+				},
+				Runtime: map[string]any{"phrony.com/approver_role": "supervisor"},
 			}},
 		},
 	}
+	agent.Metadata.Annotations = map[string]string{manifest.AnnotationPoliciesCompiled: "true"}
 	call := provider.ToolCall{ID: "c1", Name: toolName, Args: json.RawMessage(`{"severity":4,"queue":"motor-standard"}`)}
 	stub := e2eToolUseThenEndTurn(call)
 
@@ -478,10 +485,17 @@ func TestToolDispatchE2E_noHandlerAfterTimeout(t *testing.T) {
 	max := 1
 	agent := e2eWeatherAgent(func(a *manifest.Agent) {
 		a.Spec.Limits = &manifest.Limits{MaxWallClockSeconds: &max, OnLimit: "halt"}
-		a.Spec.HITL = []manifest.HITLTrigger{{
-			Trigger: policy.TriggerDispatchNoHandler,
-			Route:   "ops",
+		a.Spec.Policies = []manifest.PolicySpec{{
+			Name: "no-handler",
+			Conditions: map[string]any{
+				"field": policy.FieldDispatchTrigger,
+				"op":    "eq",
+				"value": policy.TriggerDispatchNoHandler,
+			},
+			Action:  "escalate",
+			Runtime: map[string]any{"phrony.com/approver_role": "ops"},
 		}}
+		a.Metadata.Annotations = map[string]string{manifest.AnnotationPoliciesCompiled: "true"}
 	})
 	stub := e2eToolUseThenEndTurn(e2eWeatherToolCall())
 
@@ -525,10 +539,17 @@ func TestToolDispatchE2E_capacityQueueFull(t *testing.T) {
 	}()
 
 	agent := e2eWeatherAgent(func(a *manifest.Agent) {
-		a.Spec.HITL = []manifest.HITLTrigger{{
-			Trigger: policy.TriggerDispatchCapacityExhausted,
-			Route:   "capacity-ops",
+		a.Spec.Policies = []manifest.PolicySpec{{
+			Name: "capacity",
+			Conditions: map[string]any{
+				"field": policy.FieldDispatchTrigger,
+				"op":    "eq",
+				"value": policy.TriggerDispatchCapacityExhausted,
+			},
+			Action:  "escalate",
+			Runtime: map[string]any{"phrony.com/approver_role": "capacity-ops"},
 		}}
+		a.Metadata.Annotations = map[string]string{manifest.AnnotationPoliciesCompiled: "true"}
 	})
 
 	// Hold the single worker slot.

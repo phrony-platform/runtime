@@ -47,7 +47,7 @@ func Validate(agent *Agent) error {
 	if len(agent.Secrets) > 0 {
 		errs = append(errs, validateSecrets(agent.Secrets)...)
 	}
-	errs = append(errs, validateSpec(&agent.Spec, agent.Secrets)...)
+	errs = append(errs, validateSpec(&agent.Spec, agent.Secrets, agent)...)
 	if agent.Output != nil {
 		errs = append(errs, validateOutput(agent.Output)...)
 	}
@@ -74,23 +74,28 @@ func validateMetadata(m *AgentMetadata) []FieldError {
 	return errs
 }
 
-func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition) []FieldError {
+func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition, agent *Agent) []FieldError {
 	var errs []FieldError
 	if strings.TrimSpace(spec.Purpose) == "" {
 		errs = append(errs, FieldError{Path: "spec.purpose", Message: "is required"})
 	}
 	errs = append(errs, validateInstructions(&spec.Instructions)...)
 	errs = append(errs, validateModel(&spec.Model, secrets)...)
-	errs = append(errs, validateTools(spec.Tools)...)
-	errs = append(errs, validatePolicies(spec.Policies, spec.Tools)...)
-	errs = append(errs, validateHITL(spec.HITL, spec.Tools)...)
+	if !isCompiledPolicySnapshot(agent) && len(spec.Policies) > 0 {
+		errs = append(errs, FieldError{
+			Path:    "spec.policies",
+			Message: "must not be set on the Agent; use kind: Policy documents referenced from default_policies or binding policies",
+		})
+	}
+	errs = append(errs, validateTools(spec.Tools, isCompiledPolicySnapshot(agent))...)
+	errs = append(errs, validateCompiledPolicies(spec.Policies, spec.Tools)...)
 	if spec.Limits != nil {
 		errs = append(errs, validateLimits(spec.Limits)...)
 	}
 	return errs
 }
 
-func validateTools(tools []ToolBinding) []FieldError {
+func validateTools(tools []ToolBinding, compiledSnapshot bool) []FieldError {
 	var errs []FieldError
 	seenRefs := make(map[string]struct{}, len(tools))
 	seenNames := make(map[string]struct{}, len(tools))
@@ -118,8 +123,14 @@ func validateTools(tools []ToolBinding) []FieldError {
 
 		errs = append(errs, validateToolBindingSchema(&t, base)...)
 
-		version := strings.TrimSpace(t.Version)
-		if version != "" && !isValidSemver(version) {
+		if !compiledSnapshot {
+			if strings.TrimSpace(t.Version) != "" {
+				errs = append(errs, FieldError{
+					Path:    base + ".version",
+					Message: "must not be set on bindings; pin semver on ref (for example tool@1.0.0)",
+				})
+			}
+		} else if version := strings.TrimSpace(t.Version); version != "" && !isValidSemver(version) {
 			errs = append(errs, FieldError{Path: base + ".version", Message: "must be valid semver"})
 		}
 
@@ -135,7 +146,7 @@ func validateTools(tools []ToolBinding) []FieldError {
 	return errs
 }
 
-func validatePolicies(policies []PolicySpec, tools []ToolBinding) []FieldError {
+func validateCompiledPolicies(policies []PolicySpec, tools []ToolBinding) []FieldError {
 	var errs []FieldError
 	seenNames := make(map[string]struct{}, len(policies))
 	toolRefs := toolRefSet(tools)
@@ -188,28 +199,6 @@ func validatePolicies(policies []PolicySpec, tools []ToolBinding) []FieldError {
 					})
 				}
 			}
-		}
-	}
-	return errs
-}
-
-func validateHITL(triggers []HITLTrigger, tools []ToolBinding) []FieldError {
-	var errs []FieldError
-	toolRefs := toolRefSet(tools)
-	for i, h := range triggers {
-		base := fmt.Sprintf("spec.hitl[%d]", i)
-		if strings.TrimSpace(h.Trigger) == "" {
-			errs = append(errs, FieldError{Path: base + ".trigger", Message: "is required"})
-		} else if ref, ok := toolRefFromScoped(strings.TrimSpace(h.Trigger)); ok {
-			if _, known := toolRefs[ref]; !known {
-				errs = append(errs, FieldError{
-					Path:    base + ".trigger",
-					Message: "references undeclared tool ref " + ref,
-				})
-			}
-		}
-		if strings.TrimSpace(h.Route) == "" {
-			errs = append(errs, FieldError{Path: base + ".route", Message: "is required"})
 		}
 	}
 	return errs
@@ -386,19 +375,10 @@ func validateOutput(out *OutputSpec) []FieldError {
 }
 
 func validateToolBindingSchema(t *ToolBinding, base string) []FieldError {
-	hasParams := t.Parameters != nil
-	hasInput := t.InputSchema != nil
-	if hasParams && hasInput {
-		return []FieldError{{
-			Path:    base,
-			Message: "set input_schema or parameters, not both",
-		}}
-	}
-	schema := t.BindingSchema()
-	if schema == nil {
+	if t.InputSchema == nil {
 		return nil
 	}
-	return validateSchemaAt(schema, base+".input_schema")
+	return validateSchemaAt(t.InputSchema, base+".input_schema")
 }
 
 func validateSchema(s *SchemaSpec) []FieldError {

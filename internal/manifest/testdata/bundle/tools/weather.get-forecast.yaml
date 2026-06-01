@@ -1,0 +1,18 @@
+apiVersion: phrony.com/v1
+kind: Tool
+
+metadata:
+  name: get-forecast
+  namespace: weather
+  version: 1.0.0
+
+spec:
+  description: Look up the weather forecast for a city.
+  side_effect_class: read_only
+  input_schema:
+    inline:
+      type: object
+      properties:
+        city:
+          type: string
+      required: [city]

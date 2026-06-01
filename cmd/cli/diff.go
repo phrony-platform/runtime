@@ -27,7 +27,7 @@ func newDiffCommand(runtimeAddr *string) *cobra.Command {
 }
 
 func runDiff(cmd *cobra.Command, runtimeAddr *string, manifestPath, remoteRef string) error {
-	resolved, _, err := loadResolvedManifest(manifestPath)
+	resolved, err := loadResolvedManifest(manifestPath)
 	if err != nil {
 		return err
 	}

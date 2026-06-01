@@ -77,15 +77,15 @@ func TestValidate_fieldErrors(t *testing.T) {
 			wantPaths: nil,
 		},
 		{
-			name: "tool binding input_schema and parameters",
+			name: "embedded spec.policies on authoring agent",
 			mutate: func(a *Agent) {
-				a.Spec.Tools = []ToolBinding{{
-					Ref:         "demo.tool",
-					InputSchema: &SchemaSpec{Inline: map[string]any{"type": "object"}},
-					Parameters:  &SchemaSpec{Inline: map[string]any{"type": "object"}},
+				a.Spec.Policies = []PolicySpec{{
+					Name:  "route-only-known-queues",
+					Scope: "tool:routing.assign-queue",
+					Allow: []string{"motor-standard"},
 				}}
 			},
-			wantPaths: []string{"spec.tools[0]"},
+			wantPaths: []string{"spec.policies"},
 		},
 		{
 			name: "valid on_limit escalate",
@@ -153,22 +153,21 @@ func TestValidate_fieldErrors(t *testing.T) {
 			wantPaths: nil,
 		},
 		{
-			name: "valid tool version and side_effect_class",
+			name: "valid tool side_effect_class",
 			mutate: func(a *Agent) {
 				a.Spec.Tools = []ToolBinding{{
-					Ref:             "claims-db.read-claim",
-					Version:         "1.0.0",
+					Ref:             "claims-db.read-claim@1.0.0",
 					SideEffectClass: SideEffectReadOnly,
 				}}
 			},
 			wantPaths: nil,
 		},
 		{
-			name: "invalid tool version",
+			name: "binding version forbidden on authoring agent",
 			mutate: func(a *Agent) {
 				a.Spec.Tools = []ToolBinding{{
 					Ref:     "claims-db.read-claim",
-					Version: "not-semver",
+					Version: "1.0.0",
 				}}
 			},
 			wantPaths: []string{"spec.tools[0].version"},
@@ -184,58 +183,16 @@ func TestValidate_fieldErrors(t *testing.T) {
 			wantPaths: []string{"spec.tools[0].side_effect_class"},
 		},
 		{
-			name: "valid policies and hitl",
+			name: "compiled snapshot policies allowed",
 			mutate: func(a *Agent) {
-				a.Spec.Tools = []ToolBinding{
-					{Ref: "routing.assign-queue"},
-				}
+				a.Metadata.Annotations = map[string]string{AnnotationPoliciesCompiled: "true"}
 				a.Spec.Policies = []PolicySpec{{
-					Name:  "route-only-known-queues",
-					Scope: "tool:routing.assign-queue",
-					Allow: []string{"motor-standard", "motor-complex"},
-				}}
-				a.Spec.HITL = []HITLTrigger{{
-					Trigger:   "tool:routing.assign-queue",
-					Condition: "severity >= 3",
-					Route:     "claims-supervisor-queue",
+					Name:   "p1",
+					Scope:  "agent",
+					Action: "require_approval",
 				}}
 			},
 			wantPaths: nil,
-		},
-		{
-			name: "policy missing name",
-			mutate: func(a *Agent) {
-				a.Spec.Policies = []PolicySpec{{Allow: []string{"a"}}}
-			},
-			wantPaths: []string{"spec.policies[0].name"},
-		},
-		{
-			name: "policy action and allow",
-			mutate: func(a *Agent) {
-				a.Spec.Policies = []PolicySpec{{
-					Name:   "bad",
-					Action: "redact",
-					Allow:  []string{"a"},
-				}}
-			},
-			wantPaths: []string{"spec.policies[0]"},
-		},
-		{
-			name: "hitl missing route",
-			mutate: func(a *Agent) {
-				a.Spec.HITL = []HITLTrigger{{Trigger: "tool:foo"}}
-			},
-			wantPaths: []string{"spec.hitl[0].route"},
-		},
-		{
-			name: "hitl undeclared tool ref",
-			mutate: func(a *Agent) {
-				a.Spec.HITL = []HITLTrigger{{
-					Trigger: "tool:unknown.tool",
-					Route:   "review-queue",
-				}}
-			},
-			wantPaths: []string{"spec.hitl[0].trigger"},
 		},
 	}
 	for _, tc := range cases {

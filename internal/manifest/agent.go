@@ -7,6 +7,17 @@ import (
 
 const KindAgent = "Agent"
 
+func isCompiledPolicySnapshot(agent *Agent) bool {
+	if agent == nil || agent.Metadata.Annotations == nil {
+		return false
+	}
+	return agent.Metadata.Annotations[AnnotationPoliciesCompiled] == "true"
+}
+
+// AnnotationPoliciesCompiled marks a resolved deploy snapshot whose spec.policies
+// were inlined from kind: Policy documents at publish. Authoring manifests must not set it.
+const AnnotationPoliciesCompiled = "phrony.com/policies-compiled"
+
 // Agent is the v1 Agent document (Kubernetes-style envelope).
 type Agent struct {
 	APIVersion string                      `yaml:"apiVersion" json:"apiVersion"`
@@ -43,9 +54,9 @@ type AgentSpec struct {
 	Model           ModelConfig        `yaml:"model" json:"model"`
 	Tools           []ToolBinding      `yaml:"tools,omitempty" json:"tools,omitempty"`
 	DefaultPolicies []PolicyAttachment `yaml:"default_policies,omitempty" json:"default_policies,omitempty"`
-	Policies        []PolicySpec         `yaml:"policies,omitempty" json:"policies,omitempty"`
-	HITL            []HITLTrigger        `yaml:"hitl,omitempty" json:"hitl,omitempty"`
-	Limits          *Limits              `yaml:"limits,omitempty" json:"limits,omitempty"`
+	// Policies holds compiled rules on resolved snapshots only (see AnnotationPoliciesCompiled).
+	Policies []PolicySpec `yaml:"policies,omitempty" json:"policies,omitempty"`
+	Limits *Limits `yaml:"limits,omitempty" json:"limits,omitempty"`
 }
 
 // ToolBinding declares one tool the agent may call. The runtime presents the
@@ -54,19 +65,14 @@ type AgentSpec struct {
 // code itself. Each binding references a tool by stable identifier (ref).
 type ToolBinding struct {
 	Ref string `yaml:"ref" json:"ref"`
-	// As is the wire name presented to the model (preferred over name).
-	As string `yaml:"as,omitempty" json:"as,omitempty"`
-	// Name is the legacy wire name; use as for new manifests.
-	Name        string      `yaml:"name,omitempty" json:"name,omitempty"`
+	// As is the wire name presented to the model when set; otherwise derived from ref.
+	As          string      `yaml:"as,omitempty" json:"as,omitempty"`
 	Description string      `yaml:"description,omitempty" json:"description,omitempty"`
-	Parameters  *SchemaSpec `yaml:"parameters,omitempty" json:"parameters,omitempty"`
 	InputSchema *SchemaSpec `yaml:"input_schema,omitempty" json:"input_schema,omitempty"`
-	// Version is the tool contract version bound for dispatch (tool@version).
+	// Version is the pinned tool contract version (set at publish from the Tool document).
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 	// SideEffectClass classifies mutability for dispatch and recovery policy.
 	SideEffectClass string `yaml:"side_effect_class,omitempty" json:"side_effect_class,omitempty"`
-	// Policy references a named entry in spec.policies (legacy single policy).
-	Policy string `yaml:"policy,omitempty" json:"policy,omitempty"`
 	// Policies attaches Policy documents by logical id or bundle file ref.
 	Policies []PolicyAttachment `yaml:"policies,omitempty" json:"policies,omitempty"`
 }
@@ -103,28 +109,14 @@ type PolicySpec struct {
 	Runtime      map[string]any `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 }
 
-// HITLTrigger declares when the runtime suspends for human review.
-type HITLTrigger struct {
-	Trigger   string `yaml:"trigger" json:"trigger"`
-	Condition string `yaml:"condition,omitempty" json:"condition,omitempty"`
-	Route     string `yaml:"route,omitempty" json:"route,omitempty"`
-}
-
-// BindingSchema returns the tool argument schema, preferring input_schema over parameters.
+// BindingSchema returns the tool argument schema when set on the binding.
 func (t ToolBinding) BindingSchema() *SchemaSpec {
-	if t.InputSchema != nil {
-		return t.InputSchema
-	}
-	return t.Parameters
+	return t.InputSchema
 }
 
-// ToolName returns the wire name presented to the model. It prefers as, then name,
-// and otherwise derives a model-API-safe name from the ref.
+// ToolName returns the wire name presented to the model.
 func (t ToolBinding) ToolName() string {
 	if n := strings.TrimSpace(t.As); n != "" {
-		return n
-	}
-	if n := strings.TrimSpace(t.Name); n != "" {
 		return n
 	}
 	return sanitizeToolName(t.Ref)

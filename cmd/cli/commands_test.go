@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/version"
 )
 
@@ -234,24 +233,6 @@ func TestRunCommand_attach_failure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "session failed") {
 		t.Fatalf("err = %v, want session failed", err)
-	}
-}
-
-func TestRunCommand_deprecatedSessionAlias(t *testing.T) {
-	addr := startTestRuntimeAddrForRun(t)
-
-	var out bytes.Buffer
-	root := NewRootCommand()
-	root.SetOut(&out)
-	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"session", "demo/echo-agent", "--runtime-addr", addr})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	got := out.String()
-	if !strings.Contains(got, " started") {
-		t.Fatalf("output = %q, want detached session started line", got)
 	}
 }
 
@@ -505,35 +486,6 @@ func TestPublishCommand_missingSecretEnv(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
 		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestPublishCommand_deprecatedAPIVersionWarns(t *testing.T) {
-	manifestPath := writeDeployTestBundle(t, t.TempDir())
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	updated := strings.Replace(string(data), manifest.APIVersionV1, manifest.APIVersionV1Deprecated, 1)
-	if err := os.WriteFile(manifestPath, []byte(updated), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	addr := startTestRuntimeAddrForDeploy(t)
-	var out, errOut bytes.Buffer
-	root := NewRootCommand()
-	root.SetOut(&out)
-	root.SetErr(&errOut)
-	root.SetArgs([]string{"publish", manifestPath, "--runtime-addr", addr})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if !strings.Contains(errOut.String(), "deprecated") {
-		t.Fatalf("stderr = %q, want deprecation warning", errOut.String())
-	}
-	if !strings.Contains(out.String(), "demo/echo-agent 1.2.0") {
-		t.Fatalf("output = %q, want agent name and version", out.String())
 	}
 }
 

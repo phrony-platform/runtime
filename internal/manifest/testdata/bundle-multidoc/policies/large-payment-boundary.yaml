@@ -8,6 +8,8 @@ metadata:
 
 spec:
   scope: tool:claims.approve-payment
+  decision:
+    type: allow
   allow:
     - USD
     - CAD

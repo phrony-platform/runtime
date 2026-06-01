@@ -20,13 +20,9 @@ func newValidateCommand() *cobra.Command {
 }
 
 func runValidate(cmd *cobra.Command, manifestPath string) error {
-	resolved, deprecatedAPIVersion, err := loadResolvedManifest(manifestPath)
+	resolved, err := loadResolvedManifest(manifestPath)
 	if err != nil {
 		return err
-	}
-	if deprecatedAPIVersion {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: apiVersion %s is deprecated; use %s\n",
-			manifest.APIVersionV1Deprecated, manifest.APIVersionV1)
 	}
 
 	agent := resolved.Agent

@@ -27,8 +27,19 @@ func compileResolved(agent *Agent) error {
 	compiled := compileAuthorityBoundaries(agent)
 	agent.Spec.Policies = append(agent.Spec.Policies, compiled...)
 	agent.Spec.Policies = mergePoliciesDenyWins(agent.Spec.Policies)
+	markPoliciesCompiled(agent)
 	normalizeResolvedSnapshot(agent)
 	return nil
+}
+
+func markPoliciesCompiled(agent *Agent) {
+	if agent == nil {
+		return
+	}
+	if agent.Metadata.Annotations == nil {
+		agent.Metadata.Annotations = make(map[string]string)
+	}
+	agent.Metadata.Annotations[AnnotationPoliciesCompiled] = "true"
 }
 
 func compileAuthorityBoundaries(agent *Agent) []PolicySpec {
@@ -236,12 +247,6 @@ func normalizeResolvedSnapshot(agent *Agent) {
 }
 
 func normalizeToolBindingSchema(tb *ToolBinding) {
-	schema := tb.BindingSchema()
-	if schema == nil {
-		return
-	}
-	if tb.InputSchema == nil {
-		tb.InputSchema = cloneSchemaSpec(schema)
-	}
-	tb.Parameters = nil
+	// input_schema is the only binding schema field; nothing to normalize.
+	_ = tb
 }

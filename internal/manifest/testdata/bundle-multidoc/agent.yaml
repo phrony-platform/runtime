@@ -26,11 +26,3 @@ spec:
         ref: schemas/payment-input
       policies:
         - ref: policies/large-payment-boundary
-    - ref: weather.get-forecast
-      version: 1.0.0
-      parameters:
-        inline:
-          type: object
-          properties:
-            city: { type: string }
-          required: [city]

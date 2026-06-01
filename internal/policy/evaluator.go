@@ -10,7 +10,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
 )
 
-// HITL trigger prefixes for dispatch failures (whitepaper routing).
+// Dispatch trigger values for phrony.dispatch.trigger policy conditions.
 const (
 	TriggerDispatchNoHandler         = "dispatch:no_handler"
 	TriggerDispatchCapacityExhausted = "dispatch:capacity_exhausted"
@@ -33,12 +33,11 @@ type ApprovalResult struct {
 	Args json.RawMessage
 }
 
-// Evaluator applies manifest policies and HITL triggers at dispatch time.
+// Evaluator applies manifest policies at dispatch and on dispatch failures.
 type Evaluator struct {
 	agent    *manifest.Agent
 	byName   map[string]manifest.PolicySpec
 	policies []manifest.PolicySpec
-	hitl     []manifest.HITLTrigger
 }
 
 // NewEvaluator builds a policy evaluator from a resolved agent manifest.
@@ -57,7 +56,6 @@ func NewEvaluator(agent *manifest.Agent) *Evaluator {
 		}
 		e.byName[name] = p
 	}
-	e.hitl = append([]manifest.HITLTrigger(nil), agent.Spec.HITL...)
 	return e
 }
 
@@ -74,7 +72,7 @@ func (e *Evaluator) Evaluate(tc ToolCallContext) EvaluationOutcome {
 	}
 	var approval *ApprovalMatch
 	for _, p := range e.applicablePolicies(tc) {
-		if !e.policyMatches(p, tc) {
+		if !e.policyMatches(p, tc, EvalContext{}) {
 			continue
 		}
 		action := strings.ToLower(strings.TrimSpace(p.Action))
@@ -85,7 +83,7 @@ func (e *Evaluator) Evaluate(tc ToolCallContext) EvaluationOutcome {
 				msg = "tool call blocked by policy " + strings.TrimSpace(p.Name)
 			}
 			return EvaluationOutcome{Decision: DecisionDeny, DenyMessage: msg}
-		case isRequireApprovalAction(action):
+		case isRequireApprovalAction(action), isEscalateAction(action):
 			match := approvalFromPolicy(p)
 			if approval == nil || preferApproval(approval, match) {
 				approval = match
@@ -98,9 +96,6 @@ func (e *Evaluator) Evaluate(tc ToolCallContext) EvaluationOutcome {
 	}
 	if approval != nil {
 		return EvaluationOutcome{Decision: DecisionRequireApproval, Approval: approval}
-	}
-	if e.legacyHITLRequiresApproval(tc) {
-		return EvaluationOutcome{Decision: DecisionRequireApproval, Approval: e.legacyHITLApproval(tc)}
 	}
 	return EvaluationOutcome{Decision: DecisionAllow}
 }
@@ -135,11 +130,6 @@ func (e *Evaluator) applicablePolicies(tc ToolCallContext) []manifest.PolicySpec
 		seen[p.Name] = struct{}{}
 		out = append(out, p)
 	}
-	if name := strings.TrimSpace(tc.PolicyName); name != "" {
-		if p, ok := e.byName[name]; ok {
-			add(p)
-		}
-	}
 	for _, p := range e.policies {
 		if policyAppliesToTool(p.Scope, ref) {
 			add(p)
@@ -159,9 +149,9 @@ func policyAppliesToTool(scope, toolRef string) bool {
 	return false
 }
 
-func (e *Evaluator) policyMatches(p manifest.PolicySpec, tc ToolCallContext) bool {
+func (e *Evaluator) policyMatches(p manifest.PolicySpec, tc ToolCallContext, ctx EvalContext) bool {
 	if len(p.Conditions) > 0 {
-		return evaluateConditions(p.Conditions, tc.Args)
+		return evaluateConditions(p.Conditions, tc.Args, ctx)
 	}
 	return true
 }
@@ -190,45 +180,8 @@ func isRequireApprovalAction(action string) bool {
 	return strings.Contains(action, "require") && strings.Contains(action, "approval")
 }
 
-func (e *Evaluator) legacyHITLRequiresApproval(tc ToolCallContext) bool {
-	if e == nil {
-		return false
-	}
-	policyName := strings.TrimSpace(tc.PolicyName)
-	if policyName != "" {
-		if p, ok := e.byName[policyName]; ok && isRequireApprovalAction(strings.ToLower(p.Action)) {
-			return true
-		}
-		if strings.Contains(strings.ToLower(policyName), "require-approval") {
-			return e.hitlConditionMatchesTool(tc)
-		}
-	}
-	return e.hitlConditionMatchesTool(tc)
-}
-
-func (e *Evaluator) legacyHITLApproval(tc ToolCallContext) *ApprovalMatch {
-	route, reason := e.hitlRouteForTool(tc.ToolRef, tc.Args)
-	return &ApprovalMatch{
-		Reason: reason,
-		Route:  route,
-	}
-}
-
-func (e *Evaluator) hitlConditionMatchesTool(tc ToolCallContext) bool {
-	ref := strings.TrimSpace(tc.ToolRef)
-	if ref == "" {
-		return false
-	}
-	scope := "tool:" + ref
-	for _, h := range e.hitl {
-		if !strings.EqualFold(strings.TrimSpace(h.Trigger), scope) {
-			continue
-		}
-		if conditionMatches(h.Condition, tc.Args) {
-			return true
-		}
-	}
-	return false
+func isEscalateAction(action string) bool {
+	return strings.TrimSpace(action) == "escalate"
 }
 
 // ApprovalRequestFor builds the interactive approval payload for a tool call.
@@ -241,9 +194,6 @@ func (e *Evaluator) ApprovalRequestFor(approvalID, callID, sessionID string, tc 
 			reason = r
 		}
 		route = strings.TrimSpace(out.Approval.Route)
-	}
-	if route == "" {
-		route, _ = e.hitlRouteForTool(tc.ToolRef, tc.Args)
 	}
 	return ApprovalRequest{
 		ApprovalID: approvalID,
@@ -266,35 +216,15 @@ func (e *Evaluator) OnModifyFor(tc ToolCallContext) string {
 	return strings.TrimSpace(out.Approval.OnModify)
 }
 
-// HITLForLimitEscalation returns the route when spec.limits.on_limit is escalate.
+// HITLForLimitEscalation returns the route when a limit:escalate policy matches.
 func (e *Evaluator) HITLForLimitEscalation() (route string, ok bool) {
 	if e == nil {
 		return "", false
 	}
-	for _, h := range e.hitl {
-		if strings.EqualFold(strings.TrimSpace(h.Trigger), TriggerLimitEscalate) {
-			return strings.TrimSpace(h.Route), true
-		}
+	if p := e.matchingDispatchPolicy(TriggerLimitEscalate, ToolCallContext{}); p != nil {
+		return routeFromPolicy(*p), true
 	}
 	return "", false
-}
-
-func (e *Evaluator) hitlRouteForTool(toolRef string, args []byte) (route, reason string) {
-	scope := "tool:" + strings.TrimSpace(toolRef)
-	for _, h := range e.hitl {
-		if !strings.EqualFold(strings.TrimSpace(h.Trigger), scope) {
-			continue
-		}
-		if conditionMatches(h.Condition, args) {
-			return strings.TrimSpace(h.Route), strings.TrimSpace(h.Condition)
-		}
-	}
-	for _, h := range e.hitl {
-		if strings.EqualFold(strings.TrimSpace(h.Trigger), scope) {
-			return strings.TrimSpace(h.Route), strings.TrimSpace(h.Condition)
-		}
-	}
-	return "", ""
 }
 
 // RouteDispatchFailure maps dispatch errors to fail, tool error, or HITL escalation.
@@ -304,23 +234,23 @@ func (e *Evaluator) RouteDispatchFailure(err error, tc ToolCallContext) FailureR
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		if tooldispatch.IsNoHandler(err) {
-			return e.routeForTrigger(TriggerDispatchNoHandler, tc, RouteFail)
+			return e.routeForDispatchTrigger(TriggerDispatchNoHandler, tc, RouteFail)
 		}
 		if tooldispatch.IsCapacityExhausted(err) || tooldispatch.IsQueueFull(err) {
-			return e.routeForTrigger(TriggerDispatchCapacityExhausted, tc, RouteFail)
+			return e.routeForDispatchTrigger(TriggerDispatchCapacityExhausted, tc, RouteFail)
 		}
 		return RouteFail
 	}
 
 	switch {
 	case tooldispatch.IsNoHandler(err):
-		return e.routeForTrigger(TriggerDispatchNoHandler, tc, RouteFail)
+		return e.routeForDispatchTrigger(TriggerDispatchNoHandler, tc, RouteFail)
 	case tooldispatch.IsCapacityExhausted(err), tooldispatch.IsQueueFull(err):
-		return e.routeForTrigger(TriggerDispatchCapacityExhausted, tc, RouteFail)
+		return e.routeForDispatchTrigger(TriggerDispatchCapacityExhausted, tc, RouteFail)
 	case tooldispatch.IsLeaseExpired(err):
-		return e.routeForTrigger(TriggerDispatchLeaseExpired, tc, e.defaultIndeterminateRoute(tc))
+		return e.routeForDispatchTrigger(TriggerDispatchLeaseExpired, tc, e.defaultIndeterminateRoute(tc))
 	case tooldispatch.IsIndeterminate(err):
-		return e.routeForTrigger(TriggerDispatchIndeterminate, tc, e.defaultIndeterminateRoute(tc))
+		return e.routeForDispatchTrigger(TriggerDispatchIndeterminate, tc, e.defaultIndeterminateRoute(tc))
 	case tooldispatch.IsIntegrityError(err):
 		return RouteToolError
 	default:
@@ -337,25 +267,47 @@ func (e *Evaluator) defaultIndeterminateRoute(tc ToolCallContext) FailureRoute {
 	}
 }
 
-func (e *Evaluator) routeForTrigger(trigger string, tc ToolCallContext, fallback FailureRoute) FailureRoute {
-	if e == nil {
-		return fallback
-	}
-	for _, h := range e.hitl {
-		if !strings.EqualFold(strings.TrimSpace(h.Trigger), trigger) {
-			continue
-		}
-		if h.Condition == "" || conditionMatches(h.Condition, tc.Args) {
-			return RouteEscalateHITL
-		}
+func (e *Evaluator) routeForDispatchTrigger(trigger string, tc ToolCallContext, fallback FailureRoute) FailureRoute {
+	if e.matchingDispatchPolicy(trigger, tc) != nil {
+		return RouteEscalateHITL
 	}
 	return fallback
 }
 
+func (e *Evaluator) matchingDispatchPolicy(trigger string, tc ToolCallContext) *manifest.PolicySpec {
+	if e == nil || strings.TrimSpace(trigger) == "" {
+		return nil
+	}
+	ctx := EvalContext{DispatchTrigger: strings.TrimSpace(trigger)}
+	for _, p := range e.applicablePolicies(tc) {
+		if len(p.Conditions) == 0 {
+			continue
+		}
+		if !evaluateConditions(p.Conditions, tc.Args, ctx) {
+			continue
+		}
+		action := strings.ToLower(strings.TrimSpace(p.Action))
+		if isRequireApprovalAction(action) || isEscalateAction(action) {
+			cp := p
+			return &cp
+		}
+	}
+	return nil
+}
+
 // DispatchFailureApproval builds an approval request when dispatch failure routes to HITL.
 func (e *Evaluator) DispatchFailureApproval(approvalID, callID, sessionID string, tc ToolCallContext, dispatchErr error) ApprovalRequest {
-	route, _ := e.hitlRouteForDispatchError(dispatchErr)
+	trigger := dispatchTriggerForError(dispatchErr)
 	reason := dispatchErr.Error()
+	route := ""
+	if trigger != "" {
+		if p := e.matchingDispatchPolicy(trigger, tc); p != nil {
+			if r := strings.TrimSpace(p.Reason); r != "" {
+				reason = r
+			}
+			route = routeFromPolicy(*p)
+		}
+	}
 	return ApprovalRequest{
 		ApprovalID: approvalID,
 		CallID:     callID,
@@ -368,28 +320,26 @@ func (e *Evaluator) DispatchFailureApproval(approvalID, callID, sessionID string
 	}
 }
 
-func (e *Evaluator) hitlRouteForDispatchError(err error) (route, trigger string) {
+func dispatchTriggerForError(err error) string {
 	switch {
 	case tooldispatch.IsNoHandler(err):
-		trigger = TriggerDispatchNoHandler
+		return TriggerDispatchNoHandler
 	case tooldispatch.IsCapacityExhausted(err), tooldispatch.IsQueueFull(err):
-		trigger = TriggerDispatchCapacityExhausted
+		return TriggerDispatchCapacityExhausted
 	case tooldispatch.IsLeaseExpired(err):
-		trigger = TriggerDispatchLeaseExpired
+		return TriggerDispatchLeaseExpired
 	case tooldispatch.IsIndeterminate(err):
-		trigger = TriggerDispatchIndeterminate
+		return TriggerDispatchIndeterminate
 	default:
-		return "", ""
+		return ""
 	}
-	if e == nil {
-		return "", trigger
+}
+
+func routeFromPolicy(p manifest.PolicySpec) string {
+	if r := routeFromRuntime(p.Runtime); r != "" {
+		return r
 	}
-	for _, h := range e.hitl {
-		if strings.EqualFold(strings.TrimSpace(h.Trigger), trigger) {
-			return strings.TrimSpace(h.Route), trigger
-		}
-	}
-	return "", trigger
+	return strings.TrimSpace(p.Reason)
 }
 
 func toolRefFromScoped(scoped string) (string, bool) {
@@ -397,6 +347,5 @@ func toolRefFromScoped(scoped string) (string, bool) {
 	if !strings.HasPrefix(scoped, prefix) {
 		return "", false
 	}
-	ref := strings.TrimSpace(scoped[len(prefix):])
-	return ref, ref != ""
+	return strings.TrimSpace(scoped[len(prefix):]), true
 }

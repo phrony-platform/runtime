@@ -33,9 +33,6 @@ func TestCompile_multidocCatalog(t *testing.T) {
 	if len(tb.Policies) != 0 {
 		t.Fatalf("tool policies attachments = %v, want cleared", tb.Policies)
 	}
-	if tb.Parameters != nil {
-		t.Fatal("parameters should be normalized to input_schema")
-	}
 	if tb.InputSchema == nil || len(tb.InputSchema.Inline) == 0 {
 		t.Fatal("input_schema not inlined")
 	}

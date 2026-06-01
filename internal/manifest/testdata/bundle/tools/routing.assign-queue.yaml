@@ -1,0 +1,14 @@
+apiVersion: phrony.com/v1
+kind: Tool
+
+metadata:
+  name: assign-queue
+  namespace: routing
+  version: 1.0.0
+
+spec:
+  description: Assign a routing queue.
+  side_effect_class: non_idempotent_write
+  input_schema:
+    inline:
+      type: object

@@ -36,11 +36,9 @@ type PolicyMetadata struct {
 type PolicyDocSpec struct {
 	Description string           `yaml:"description,omitempty" json:"description,omitempty"`
 	Scope       string           `yaml:"scope,omitempty" json:"scope,omitempty"`
-	// Allow supports the legacy allow-list shape on standalone Policy documents.
-	Allow      []string         `yaml:"allow,omitempty" json:"allow,omitempty"`
-	Action     string           `yaml:"action,omitempty" json:"action,omitempty"`
-	Conditions map[string]any   `yaml:"conditions,omitempty" json:"conditions,omitempty"`
-	Decision   *PolicyDecision  `yaml:"decision,omitempty" json:"decision,omitempty"`
+	Allow      []string        `yaml:"allow,omitempty" json:"allow,omitempty"`
+	Conditions map[string]any  `yaml:"conditions,omitempty" json:"conditions,omitempty"`
+	Decision   *PolicyDecision `yaml:"decision,omitempty" json:"decision,omitempty"`
 }
 
 // PolicyDecision is the portable policy effect.
@@ -61,11 +59,6 @@ func (p *Policy) LogicalID() string {
 	return LogicalID(p.Metadata.Namespace, p.Metadata.Name)
 }
 
-// legacyPolicySpec returns an embedded PolicySpec for resolved Policy documents.
-func (p *Policy) legacyPolicySpec() (PolicySpec, bool) {
-	return p.resolvedPolicySpec()
-}
-
 // resolvedPolicySpec maps a Policy document into the resolved agent policy list.
 func (p *Policy) resolvedPolicySpec() (PolicySpec, bool) {
 	if p == nil {
@@ -84,21 +77,9 @@ func (p *Policy) resolvedPolicySpec() (PolicySpec, bool) {
 		Conditions: conditions,
 	}
 
-	hasAllow := len(p.Spec.Allow) > 0
-	legacyAction := strings.TrimSpace(p.Spec.Action)
 	decision := p.Spec.Decision
-
 	if decision == nil {
-		switch {
-		case hasAllow:
-			base.Allow = append([]string(nil), p.Spec.Allow...)
-			return base, true
-		case legacyAction != "" && scope != "":
-			base.Action = legacyAction
-			return base, true
-		default:
-			return PolicySpec{}, false
-		}
+		return PolicySpec{}, false
 	}
 
 	decisionType := strings.TrimSpace(decision.Type)
@@ -115,14 +96,14 @@ func (p *Policy) resolvedPolicySpec() (PolicySpec, bool) {
 
 	switch strings.ToLower(decisionType) {
 	case "allow":
-		if hasAllow {
+		if len(p.Spec.Allow) > 0 {
 			base.Allow = append([]string(nil), p.Spec.Allow...)
 		}
 		base.Action = "allow"
 		return base, scope != "" || len(base.Allow) > 0 || len(base.Conditions) > 0
 	default:
 		base.Action = decisionType
-		return base, scope != ""
+		return base, scope != "" || len(base.Conditions) > 0
 	}
 }
 

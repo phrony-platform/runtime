@@ -27,7 +27,7 @@ func TestStreamCompletion_onModifyRevalidate(t *testing.T) {
 		Spec: manifest.AgentSpec{
 			Instructions: manifest.InstructionsSpec{Text: "System."},
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
-			Tools:        []manifest.ToolBinding{{Ref: "claims.pay", Name: toolName}},
+			Tools:        []manifest.ToolBinding{{Ref: "claims.pay", As: toolName}},
 			Policies: []manifest.PolicySpec{
 				{
 					Name:     "large",

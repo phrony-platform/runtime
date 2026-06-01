@@ -132,7 +132,7 @@ func (r *bundleResolver) resolveToolBinding(tb *ToolBinding, fieldBase string) e
 		}
 	}
 	if err := r.resolveBindingSchema(tb, fieldBase+".input_schema"); err != nil {
-		return retargetFieldError(err, fieldBase+".parameters")
+		return err
 	}
 	return nil
 }
@@ -151,9 +151,8 @@ func (r *bundleResolver) mergeToolCatalog(tb *ToolBinding, parsed ParsedLogicalR
 	if strings.TrimSpace(tb.SideEffectClass) == "" {
 		tb.SideEffectClass = strings.TrimSpace(tool.Spec.SideEffectClass)
 	}
-	if tb.BindingSchema() == nil && tool.Spec.InputSchema != nil {
-		schema := cloneSchemaSpec(tool.Spec.InputSchema)
-		tb.Parameters = schema
+	if tb.InputSchema == nil && tool.Spec.InputSchema != nil {
+		tb.InputSchema = cloneSchemaSpec(tool.Spec.InputSchema)
 	}
 	if len(tb.Policies) == 0 && len(tool.Spec.DefaultPolicies) > 0 {
 		for _, id := range tool.Spec.DefaultPolicies {
@@ -164,8 +163,8 @@ func (r *bundleResolver) mergeToolCatalog(tb *ToolBinding, parsed ParsedLogicalR
 	if err := r.resolveToolDocSchemas(toolCopy, fieldBase); err != nil {
 		return err
 	}
-	if tb.BindingSchema() == nil && toolCopy.Spec.InputSchema != nil && len(toolCopy.Spec.InputSchema.Inline) > 0 {
-		tb.Parameters = cloneSchemaSpec(toolCopy.Spec.InputSchema)
+	if tb.InputSchema == nil && toolCopy.Spec.InputSchema != nil && len(toolCopy.Spec.InputSchema.Inline) > 0 {
+		tb.InputSchema = cloneSchemaSpec(toolCopy.Spec.InputSchema)
 	}
 	return nil
 }
@@ -200,11 +199,7 @@ func (r *bundleResolver) resolveBindingSchema(tb *ToolBinding, fieldPath string)
 	if err != nil {
 		return err
 	}
-	if tb.InputSchema != nil {
-		tb.InputSchema = &SchemaSpec{Inline: inline}
-	} else {
-		tb.Parameters = &SchemaSpec{Inline: inline}
-	}
+	tb.InputSchema = &SchemaSpec{Inline: inline}
 	return nil
 }
 
@@ -241,15 +236,15 @@ func (r *bundleResolver) resolvePolicies(agent *Agent) error {
 		if err != nil {
 			return err
 		}
-		legacy, ok := policy.legacyPolicySpec()
+		resolved, ok := policy.resolvedPolicySpec()
 		if !ok {
 			continue
 		}
-		if _, exists := seen[legacy.Name]; exists {
+		if _, exists := seen[resolved.Name]; exists {
 			continue
 		}
-		agent.Spec.Policies = append(agent.Spec.Policies, legacy)
-		seen[legacy.Name] = struct{}{}
+		agent.Spec.Policies = append(agent.Spec.Policies, resolved)
+		seen[resolved.Name] = struct{}{}
 		_ = fieldPath
 	}
 	return nil
@@ -270,7 +265,7 @@ func (r *bundleResolver) lookupPolicy(att PolicyAttachment) (*Policy, string, er
 			return nil, "policy", fieldResolveError("policy ref", err)
 		}
 		if !IsSupportedAPIVersion(policy.APIVersion) {
-			NormalizeAPIVersionForPolicy(policy)
+			return nil, "policy ref", fieldResolveError("policy ref", fmt.Errorf("apiVersion must be %s", APIVersionV1))
 		}
 		return policy, "policy ref", nil
 	}
@@ -283,18 +278,6 @@ func (r *bundleResolver) lookupPolicy(att PolicyAttachment) (*Policy, string, er
 		}
 	}
 	return policy, logical, nil
-}
-
-// NormalizeAPIVersionForPolicy rewrites deprecated apiVersion on Policy documents.
-func NormalizeAPIVersionForPolicy(policy *Policy) bool {
-	if policy == nil {
-		return false
-	}
-	if policy.APIVersion == APIVersionV1Deprecated {
-		policy.APIVersion = APIVersionV1
-		return true
-	}
-	return false
 }
 
 func policyNameSet(policies []PolicySpec) map[string]struct{} {
@@ -531,9 +514,6 @@ func cloneAgent(agent *Agent) *Agent {
 		out.Spec.Tools = make([]ToolBinding, len(agent.Spec.Tools))
 		for i, t := range agent.Spec.Tools {
 			tool := t
-			if t.Parameters != nil {
-				tool.Parameters = cloneSchemaSpec(t.Parameters)
-			}
 			if t.InputSchema != nil {
 				tool.InputSchema = cloneSchemaSpec(t.InputSchema)
 			}
@@ -576,9 +556,6 @@ func cloneAgent(agent *Agent) *Agent {
 			}
 			out.Spec.Policies[i] = policy
 		}
-	}
-	if len(agent.Spec.HITL) > 0 {
-		out.Spec.HITL = append([]HITLTrigger(nil), agent.Spec.HITL...)
 	}
 	if len(agent.Metadata.Labels) > 0 {
 		out.Metadata.Labels = make(map[string]string, len(agent.Metadata.Labels))
