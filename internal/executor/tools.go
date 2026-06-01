@@ -75,7 +75,11 @@ func buildToolDispatchCall(
 	if err != nil {
 		return tooldispatch.ToolCall{}, err
 	}
-	version := tb.Version
+	toolRef := strings.TrimSpace(tb.Ref)
+	if parsed, err := manifest.ParseLogicalRef(toolRef); err == nil {
+		toolRef = parsed.Raw
+	}
+	version := strings.TrimSpace(tb.Version)
 	if version == "" {
 		version = "default"
 	}
@@ -86,7 +90,7 @@ func buildToolDispatchCall(
 		AgentVersionID:  agentVersionID,
 		AgentKey:        agentKey,
 		Turn:            turn,
-		Tool:            tb.Ref,
+		Tool:            toolRef,
 		Version:         version,
 		Args:            call.Args,
 		SideEffectClass: tb.SideEffectClass,

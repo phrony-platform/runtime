@@ -305,7 +305,7 @@ func TestStreamCompletion_toolUseLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
 	}
-	if len(dispatched) != 1 || dispatched[0] != "weather.get-forecast@1.0.0" {
+	if len(dispatched) != 1 || dispatched[0] != "weather.get-forecast" {
 		t.Fatalf("dispatched = %v", dispatched)
 	}
 	if stub.Calls != 2 {

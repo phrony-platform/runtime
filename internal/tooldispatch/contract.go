@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// Dispatcher authorizes and routes a tool call to an application worker.
-// Implementations may use a reverse worker stream, inbound gRPC, or other
-// transport; callers only see ToolCall -> ToolResult.
+// Dispatcher authorizes and routes a tool call to an application worker over
+// the inbound Work gRPC stream; callers only see ToolCall -> ToolResult.
 type Dispatcher interface {
 	Dispatch(ctx context.Context, call ToolCall) (ToolResult, error)
 }
