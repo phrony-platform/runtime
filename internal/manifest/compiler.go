@@ -146,7 +146,17 @@ func mergePoliciesForScope(scopeKey string, group []PolicySpec) []PolicySpec {
 		})
 	}
 	if len(approvalSources) > 0 {
-		merged = append(merged, mergeApprovalPolicies(scopeKey, approvalSources))
+		var unconditional []PolicySpec
+		for _, p := range approvalSources {
+			if len(p.Conditions) > 0 {
+				merged = append(merged, p)
+				continue
+			}
+			unconditional = append(unconditional, p)
+		}
+		if len(unconditional) > 0 {
+			merged = append(merged, mergeApprovalPolicies(scopeKey, unconditional))
+		}
 	}
 	return append(merged, other...)
 }

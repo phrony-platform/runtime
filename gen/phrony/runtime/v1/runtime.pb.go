@@ -1635,10 +1635,12 @@ func (x *RunSessionInteractiveApprovalRequired) GetReason() string {
 }
 
 type RunSessionInteractiveToolApproval struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApprovalId    string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
-	Approved      bool                   `protobuf:"varint,2,opt,name=approved,proto3" json:"approved,omitempty"`
-	Comment       string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalId string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	Approved   bool                   `protobuf:"varint,2,opt,name=approved,proto3" json:"approved,omitempty"`
+	Comment    string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
+	// When set, replaces proposed tool arguments before dispatch (subject to on_modify: revalidate).
+	Args          []byte `protobuf:"bytes,4,opt,name=args,proto3" json:"args,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1692,6 +1694,13 @@ func (x *RunSessionInteractiveToolApproval) GetComment() string {
 		return x.Comment
 	}
 	return ""
+}
+
+func (x *RunSessionInteractiveToolApproval) GetArgs() []byte {
+	if x != nil {
+		return x.Args
+	}
+	return nil
 }
 
 type PublishRequest struct {
@@ -4392,12 +4401,13 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x12\n" +
 	"\x04args\x18\x05 \x01(\fR\x04args\x12\x14\n" +
 	"\x05route\x18\x06 \x01(\tR\x05route\x12\x16\n" +
-	"\x06reason\x18\a \x01(\tR\x06reason\"z\n" +
+	"\x06reason\x18\a \x01(\tR\x06reason\"\x8e\x01\n" +
 	"!RunSessionInteractiveToolApproval\x12\x1f\n" +
 	"\vapproval_id\x18\x01 \x01(\tR\n" +
 	"approvalId\x12\x1a\n" +
 	"\bapproved\x18\x02 \x01(\bR\bapproved\x12\x18\n" +
-	"\acomment\x18\x03 \x01(\tR\acomment\"\xe9\x01\n" +
+	"\acomment\x18\x03 \x01(\tR\acomment\x12\x12\n" +
+	"\x04args\x18\x04 \x01(\fR\x04args\"\xe9\x01\n" +
 	"\x0ePublishRequest\x12\x1a\n" +
 	"\bmanifest\x18\x01 \x01(\fR\bmanifest\x12a\n" +
 	"\x10resolved_secrets\x18\x02 \x03(\v26.phrony.runtime.v1.PublishRequest.ResolvedSecretsEntryR\x0fresolvedSecrets\x12\x14\n" +

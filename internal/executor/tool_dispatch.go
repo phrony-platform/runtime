@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/phrony-platform/runtime/internal/manifest"
@@ -65,7 +66,7 @@ func (v *Version) dispatchToolCalls(
 					emitToolResult(ch, tdCall.CallID, nil, denyMsg)
 					return nil
 				case policy.DecisionRequireApproval:
-					if err := v.waitForToolApproval(gctx, params, tdCall, tc, ch); err != nil {
+					if err := v.waitForToolApproval(gctx, params, tracker, &tdCall, tc, ch); err != nil {
 						var denied *ApprovalDeniedError
 						if errors.As(err, &denied) {
 							msg := err.Error()
@@ -81,7 +82,7 @@ func (v *Version) dispatchToolCalls(
 			emitToolCall(ch, tdCall)
 			res, err := dispatcher.Dispatch(gctx, tdCall)
 			if err != nil {
-				return v.handleDispatchError(gctx, params, call, tdCall, tc, err, dispatcher, ch, &results[i])
+				return v.handleDispatchError(gctx, params, tracker, call, tdCall, tc, err, dispatcher, ch, &results[i])
 			}
 			content, isErr := formatToolResult(res)
 			results[i] = provider.ToolResultBlock(call.ID, content, isErr)
@@ -114,7 +115,8 @@ func toolCallContext(agent *manifest.Agent, call provider.ToolCall, td tooldispa
 func (v *Version) waitForToolApproval(
 	ctx context.Context,
 	params RunParams,
-	tdCall tooldispatch.ToolCall,
+	tracker *limitTracker,
+	tdCall *tooldispatch.ToolCall,
 	tc policy.ToolCallContext,
 	ch chan<- Event,
 ) error {
@@ -122,23 +124,53 @@ func (v *Version) waitForToolApproval(
 	if gate == nil {
 		return fmt.Errorf("tool approval is required but no approval gate is configured")
 	}
-	approvalID := params.NewApprovalID()
-	if approvalID == "" {
-		approvalID = uuid.NewString()
+	eval := params.Policies
+	initial := eval.Evaluate(tc)
+	onModify := ""
+	if initial.Approval != nil {
+		onModify = strings.TrimSpace(initial.Approval.OnModify)
 	}
-	req := params.Policies.ApprovalRequestFor(approvalID, tdCall.CallID, params.SessionID, tc)
-	ch <- Event{
-		Type:     EventApprovalRequired,
-		Approval: req,
+	for {
+		approvalID := params.NewApprovalID()
+		if approvalID == "" {
+			approvalID = uuid.NewString()
+		}
+		req := eval.ApprovalRequestFor(approvalID, tdCall.CallID, params.SessionID, tc)
+		ch <- Event{
+			Type:     EventApprovalRequired,
+			Approval: req,
+		}
+		if tracker != nil {
+			tracker.beginHITLWait()
+		}
+		result, err := gate.WaitApproval(ctx, req)
+		if tracker != nil {
+			if waitErr := tracker.endHITLWait(); waitErr != nil {
+				return waitErr
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if !result.Approved {
+			return &ApprovalDeniedError{CallID: tdCall.CallID}
+		}
+		if len(result.Args) > 0 {
+			tc.Args = result.Args
+			tdCall.Args = result.Args
+		}
+		if onModify != "revalidate" {
+			return nil
+		}
+		switch dec, denyMsg := eval.EvaluateToolCall(tc); dec {
+		case policy.DecisionDeny:
+			return &ApprovalDeniedError{CallID: tdCall.CallID, Message: denyMsg}
+		case policy.DecisionRequireApproval:
+			continue
+		default:
+			return nil
+		}
 	}
-	approved, err := gate.WaitApproval(ctx, req)
-	if err != nil {
-		return err
-	}
-	if !approved {
-		return &ApprovalDeniedError{CallID: tdCall.CallID}
-	}
-	return nil
 }
 
 // IsApprovalDenied reports whether err is an operator denial of a tool call.
@@ -149,11 +181,18 @@ func IsApprovalDenied(err error) bool {
 
 // ApprovalDeniedError means the operator denied a pending tool call.
 type ApprovalDeniedError struct {
-	CallID string
+	CallID  string
+	Message string
 }
 
 func (e *ApprovalDeniedError) Error() string {
-	if e == nil || e.CallID == "" {
+	if e == nil {
+		return "tool call denied"
+	}
+	if msg := strings.TrimSpace(e.Message); msg != "" {
+		return msg
+	}
+	if e.CallID == "" {
 		return "tool call denied"
 	}
 	return fmt.Sprintf("tool call %s denied", e.CallID)
@@ -162,6 +201,7 @@ func (e *ApprovalDeniedError) Error() string {
 func (v *Version) handleDispatchError(
 	ctx context.Context,
 	params RunParams,
+	tracker *limitTracker,
 	call provider.ToolCall,
 	tdCall tooldispatch.ToolCall,
 	tc policy.ToolCallContext,
@@ -190,11 +230,19 @@ func (v *Version) handleDispatchError(
 		}
 		req := eval.DispatchFailureApproval(approvalID, tdCall.CallID, params.SessionID, tc, dispatchErr)
 		ch <- Event{Type: EventApprovalRequired, Approval: req}
-		approved, err := params.ApprovalGate.WaitApproval(ctx, req)
+		if tracker != nil {
+			tracker.beginHITLWait()
+		}
+		approval, err := params.ApprovalGate.WaitApproval(ctx, req)
+		if tracker != nil {
+			if waitErr := tracker.endHITLWait(); waitErr != nil {
+				return waitErr
+			}
+		}
 		if err != nil {
 			return err
 		}
-		if !approved {
+		if !approval.Approved {
 			msg := "tool dispatch denied after failure: " + dispatchErr.Error()
 			*result = provider.ToolResultBlock(call.ID, msg, true)
 			emitToolResult(ch, tdCall.CallID, nil, msg)

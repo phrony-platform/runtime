@@ -18,9 +18,9 @@ type recordingApprovalGate struct {
 	approved bool
 }
 
-func (g *recordingApprovalGate) WaitApproval(_ context.Context, req policy.ApprovalRequest) (bool, error) {
+func (g *recordingApprovalGate) WaitApproval(_ context.Context, req policy.ApprovalRequest) (policy.ApprovalResult, error) {
 	g.req = req
-	return g.approved, nil
+	return policy.ApprovalResult{Approved: g.approved}, nil
 }
 
 func TestStreamCompletion_policyDenyAllowList(t *testing.T) {

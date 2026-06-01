@@ -318,8 +318,9 @@ func (s *runtimeServer) continueRecoveredTurn(
 		sessionStartedAt: session.CreatedAt,
 		toolDispatch:     s.toolDispatch,
 		policies:         policy.NewEvaluator(ver.Agent),
-		approvalGate:     newSessionApprovalGate(stream, q, session.AgentVersionID),
 	}
+	state.approvalGate = newSessionApprovalGate(stream, q, session.AgentVersionID)
+	state.approvalGate.hitl = state
 
 	ch := make(chan executor.Event, 32)
 	runErrCh := make(chan error, 1)

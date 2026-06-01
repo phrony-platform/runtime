@@ -262,7 +262,7 @@ type e2eApprovalGate struct {
 	lastReq policy.ApprovalRequest
 }
 
-func (g *e2eApprovalGate) WaitApproval(_ context.Context, req policy.ApprovalRequest) (bool, error) {
+func (g *e2eApprovalGate) WaitApproval(_ context.Context, req policy.ApprovalRequest) (policy.ApprovalResult, error) {
 	g.lastReq = req
 	if g.stream != nil {
 		_ = g.stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
@@ -271,7 +271,7 @@ func (g *e2eApprovalGate) WaitApproval(_ context.Context, req policy.ApprovalReq
 			},
 		})
 	}
-	return g.approve, nil
+	return policy.ApprovalResult{Approved: g.approve}, nil
 }
 
 func TestToolDispatchE2E_workerRoundTrip(t *testing.T) {

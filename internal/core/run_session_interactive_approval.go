@@ -14,10 +14,16 @@ import (
 )
 
 // sessionApprovalGate blocks tool dispatch until the interactive client sends tool_approval.
+type hitlWaitBudget interface {
+	beginHITLWait()
+	endHITLWait() error
+}
+
 type sessionApprovalGate struct {
 	stream         runtimev1.Runtime_RunSessionInteractiveServer
 	q              *store.Queries
 	agentVersionID string
+	hitl           hitlWaitBudget
 
 	mu         sync.Mutex
 	decisionCh chan approvalDecision
@@ -26,6 +32,7 @@ type sessionApprovalGate struct {
 
 type approvalDecision struct {
 	approved bool
+	args     json.RawMessage
 	err      error
 }
 
@@ -38,18 +45,22 @@ func newSessionApprovalGate(stream runtimev1.Runtime_RunSessionInteractiveServer
 	}
 }
 
-func (g *sessionApprovalGate) WaitApproval(ctx context.Context, req policy.ApprovalRequest) (bool, error) {
+func (g *sessionApprovalGate) WaitApproval(ctx context.Context, req policy.ApprovalRequest) (policy.ApprovalResult, error) {
 	if err := g.stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_ApprovalRequired{
 			ApprovalRequired: approvalRequiredToProto(req),
 		},
 	}); err != nil {
-		return false, err
+		return policy.ApprovalResult{}, err
 	}
 
 	g.mu.Lock()
 	g.pendingReq = &req
 	g.mu.Unlock()
+
+	if g.hitl != nil {
+		g.hitl.beginHITLWait()
+	}
 
 	if g.q != nil && req.SessionID != "" && req.CallID != "" {
 		args := req.Args
@@ -81,9 +92,17 @@ func (g *sessionApprovalGate) WaitApproval(ctx context.Context, req policy.Appro
 		g.mu.Lock()
 		g.pendingReq = nil
 		g.mu.Unlock()
-		return dec.approved, dec.err
+		if g.hitl != nil {
+			if err := g.hitl.endHITLWait(); err != nil {
+				return policy.ApprovalResult{}, err
+			}
+		}
+		return policy.ApprovalResult{Approved: dec.approved, Args: dec.args}, dec.err
 	case <-ctx.Done():
-		return false, ctx.Err()
+		if g.hitl != nil {
+			_ = g.hitl.endHITLWait()
+		}
+		return policy.ApprovalResult{}, ctx.Err()
 	}
 }
 
@@ -123,7 +142,7 @@ func (g *sessionApprovalGate) deliverApproval(msg *runtimev1.RunSessionInteracti
 	}
 
 	select {
-	case g.decisionCh <- approvalDecision{approved: msg.GetApproved()}:
+	case g.decisionCh <- approvalDecision{approved: msg.GetApproved(), args: msg.GetArgs()}:
 		return nil
 	default:
 		return errors.New("approval decision already received")

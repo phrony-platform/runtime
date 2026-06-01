@@ -102,16 +102,7 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		return err
 	}
 
-	gate := newSessionApprovalGate(stream, q, agentVersionID)
-	state := &interactiveSessionState{
-		sessionID:        sessionID,
-		agentVersionID:   agentVersionID,
-		version:          ver,
-		sessionStartedAt: sessionStartedAt,
-		toolDispatch:     s.toolDispatch,
-		policies:         policy.NewEvaluator(ver.Agent),
-		approvalGate:     gate,
-	}
+	state := newInteractiveSessionState(sessionID, agentVersionID, ver, sessionStartedAt, s.toolDispatch, stream, q)
 	return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, inputJSON, true)
 }
 
@@ -167,19 +158,10 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	if session.Status == model.SessionStatusAwaitingInput {
 		var sessionUsage provider.TokenUsage
 		attachAwaitingLastTurn, sessionUsage = usageFromSessionOutputJSON(session.Output)
-		gate := newSessionApprovalGate(stream, q, session.AgentVersionID)
-		attachAwaitingState = &interactiveSessionState{
-			sessionID:        sessionID,
-			agentVersionID:   session.AgentVersionID,
-			version:          ver,
-			history:          history,
-			turnCount:        len(history) / 2,
-			sessionUsage:     sessionUsage,
-			sessionStartedAt: session.CreatedAt,
-			toolDispatch:     s.toolDispatch,
-			policies:         policy.NewEvaluator(ver.Agent),
-			approvalGate:     gate,
-		}
+		attachAwaitingState = newInteractiveSessionState(sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, stream, q)
+		attachAwaitingState.history = history
+		attachAwaitingState.turnCount = len(history) / 2
+		attachAwaitingState.sessionUsage = sessionUsage
 		if err := attachAwaitingState.sessionLimitErrorBeforeTurn(); err != nil && isWallClockLimitError(err) {
 			endedAt = &session.UpdatedAt
 		}
@@ -194,19 +176,9 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 
 	switch session.Status {
 	case model.SessionStatusAwaitingTool:
-		gate := newSessionApprovalGate(stream, q, session.AgentVersionID)
-		state := &interactiveSessionState{
-			sessionID:        sessionID,
-			agentVersionID:   session.AgentVersionID,
-			version:          ver,
-			history:          history,
-			turnCount:        len(history) / 2,
-			sessionUsage:     provider.TokenUsage{},
-			sessionStartedAt: session.CreatedAt,
-			toolDispatch:     s.toolDispatch,
-			policies:         policy.NewEvaluator(ver.Agent),
-			approvalGate:     gate,
-		}
+		state := newInteractiveSessionState(sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, stream, q)
+		state.history = history
+		state.turnCount = len(history) / 2
 		if invocations, err := q.ListUnfinishedInvocationsBySession(sessionCtx, sessionID); err == nil && len(invocations) > 0 {
 			if err := s.recoverOutstandingToolInvocations(sessionCtx, q, ver, session, history, invocations, false); err != nil {
 				return status.Errorf(codes.Internal, "resume tool dispatch: %v", err)
@@ -249,19 +221,9 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, nil, true)
 
 	case model.SessionStatusAwaitingApproval:
-		gate := newSessionApprovalGate(stream, q, session.AgentVersionID)
-		state := &interactiveSessionState{
-			sessionID:        sessionID,
-			agentVersionID:   session.AgentVersionID,
-			version:          ver,
-			history:          history,
-			turnCount:        len(history) / 2,
-			sessionUsage:     provider.TokenUsage{},
-			sessionStartedAt: session.CreatedAt,
-			toolDispatch:     s.toolDispatch,
-			policies:         policy.NewEvaluator(ver.Agent),
-			approvalGate:     gate,
-		}
+		state := newInteractiveSessionState(sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, stream, q)
+		state.history = history
+		state.turnCount = len(history) / 2
 		if pending, err := q.GetPendingApprovalBySession(sessionCtx, sessionID); err == nil {
 			req := policy.ApprovalRequest{
 				ApprovalID: pending.ID,
@@ -324,19 +286,10 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		// limits remain resumable so an operator can continue the conversation.
 		if executor.IsLimitErrorMessage(errMsg) && !isWallClockLimitMessage(errMsg) {
 			lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
-			gate := newSessionApprovalGate(stream, q, session.AgentVersionID)
-			state := &interactiveSessionState{
-				sessionID:        sessionID,
-				agentVersionID:   session.AgentVersionID,
-				version:          ver,
-				history:          history,
-				turnCount:        len(history) / 2,
-				sessionUsage:     sessionUsage,
-				sessionStartedAt: session.CreatedAt,
-				toolDispatch:     s.toolDispatch,
-				policies:         policy.NewEvaluator(ver.Agent),
-				approvalGate:     gate,
-			}
+			state := newInteractiveSessionState(sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, stream, q)
+			state.history = history
+			state.turnCount = len(history) / 2
+			state.sessionUsage = sessionUsage
 			return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, q, sessionID, session, state, lastTurnUsage, errMsg, true)
 		}
 		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{

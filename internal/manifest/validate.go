@@ -152,16 +152,22 @@ func validatePolicies(policies []PolicySpec, tools []ToolBinding) []FieldError {
 
 		hasAction := strings.TrimSpace(p.Action) != ""
 		hasAllow := len(p.Allow) > 0
+		hasConditions := len(p.Conditions) > 0
 		switch {
 		case hasAction && hasAllow:
 			errs = append(errs, FieldError{
 				Path:    base,
 				Message: "set action or allow, not both",
 			})
-		case !hasAction && !hasAllow:
+		case !hasAction && !hasAllow && !hasConditions:
 			errs = append(errs, FieldError{
 				Path:    base,
-				Message: "must set action or allow",
+				Message: "must set action, allow, or conditions with a decision",
+			})
+		case hasConditions && !hasAction && !hasAllow:
+			errs = append(errs, FieldError{
+				Path:    base + ".conditions",
+				Message: "conditions require action or allow",
 			})
 		case hasAllow:
 			for j, v := range p.Allow {

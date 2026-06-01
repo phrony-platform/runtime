@@ -176,6 +176,10 @@ func (s *runtimeServer) expireWallClockSession(sessionID, onLimit string) {
 	if err != nil || sessionStatusTerminal(session.Status) {
 		return
 	}
+	// Wall-clock budget excludes time parked for human approval.
+	if session.Status == model.SessionStatusAwaitingApproval {
+		return
+	}
 	msg := (&executor.LimitError{Kind: executor.LimitMaxWallClockSeconds, OnLimit: onLimit}).Error()
 	errText := msg
 	_, _ = q.UpdateSession(context.Background(), store.UpdateSessionParams{

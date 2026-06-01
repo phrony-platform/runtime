@@ -49,6 +49,7 @@ type PolicyDecision struct {
 	AuthorityRef          string         `yaml:"authority_ref,omitempty" json:"authority_ref,omitempty"`
 	ApprovalsRequired     int            `yaml:"approvals_required,omitempty" json:"approvals_required,omitempty"`
 	Reason                string         `yaml:"reason,omitempty" json:"reason,omitempty"`
+	OnModify              string         `yaml:"on_modify,omitempty" json:"on_modify,omitempty"`
 	Runtime               map[string]any `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 }
 
@@ -60,8 +61,13 @@ func (p *Policy) LogicalID() string {
 	return LogicalID(p.Metadata.Namespace, p.Metadata.Name)
 }
 
-// legacyPolicySpec returns an embedded PolicySpec when the document uses the allow-list shape.
+// legacyPolicySpec returns an embedded PolicySpec for resolved Policy documents.
 func (p *Policy) legacyPolicySpec() (PolicySpec, bool) {
+	return p.resolvedPolicySpec()
+}
+
+// resolvedPolicySpec maps a Policy document into the resolved agent policy list.
+func (p *Policy) resolvedPolicySpec() (PolicySpec, bool) {
 	if p == nil {
 		return PolicySpec{}, false
 	}
@@ -69,48 +75,67 @@ func (p *Policy) legacyPolicySpec() (PolicySpec, bool) {
 	if name == "" {
 		return PolicySpec{}, false
 	}
+	scope := strings.TrimSpace(p.Spec.Scope)
+	conditions := copyConditionsMap(p.Spec.Conditions)
+
+	base := PolicySpec{
+		Name:       name,
+		Scope:      scope,
+		Conditions: conditions,
+	}
+
 	hasAllow := len(p.Spec.Allow) > 0
-	hasLegacyAction := strings.TrimSpace(p.Spec.Action) != ""
-	if hasAllow {
-		return PolicySpec{
-			Name:   name,
-			Scope:  strings.TrimSpace(p.Spec.Scope),
-			Allow:  append([]string(nil), p.Spec.Allow...),
-		}, true
-	}
-	if hasLegacyAction && strings.TrimSpace(p.Spec.Scope) != "" {
-		return PolicySpec{
-			Name:   name,
-			Scope:  strings.TrimSpace(p.Spec.Scope),
-			Action: strings.TrimSpace(p.Spec.Action),
-		}, true
-	}
+	legacyAction := strings.TrimSpace(p.Spec.Action)
 	decision := p.Spec.Decision
+
 	if decision == nil {
+		switch {
+		case hasAllow:
+			base.Allow = append([]string(nil), p.Spec.Allow...)
+			return base, true
+		case legacyAction != "" && scope != "":
+			base.Action = legacyAction
+			return base, true
+		default:
+			return PolicySpec{}, false
+		}
+	}
+
+	decisionType := strings.TrimSpace(decision.Type)
+	if decisionType == "" {
 		return PolicySpec{}, false
 	}
-	switch strings.TrimSpace(decision.Type) {
+
+	base.AuthorityRef = strings.TrimSpace(decision.AuthorityRef)
+	base.Reason = strings.TrimSpace(decision.Reason)
+	base.OnModify = strings.TrimSpace(decision.OnModify)
+	if len(decision.Runtime) > 0 {
+		base.Runtime = copyAnyMap(decision.Runtime)
+	}
+
+	switch strings.ToLower(decisionType) {
 	case "allow":
-		if len(p.Spec.Allow) > 0 {
-			return PolicySpec{
-				Name:  name,
-				Scope: strings.TrimSpace(p.Spec.Scope),
-				Allow: append([]string(nil), p.Spec.Allow...),
-			}, true
+		if hasAllow {
+			base.Allow = append([]string(nil), p.Spec.Allow...)
 		}
-	case "":
-		return PolicySpec{}, false
+		base.Action = "allow"
+		return base, scope != "" || len(base.Allow) > 0 || len(base.Conditions) > 0
 	default:
-		if strings.TrimSpace(p.Spec.Scope) != "" && isRequireApprovalDecision(decision.Type) {
-			return PolicySpec{
-				Name:         name,
-				Scope:        strings.TrimSpace(p.Spec.Scope),
-				Action:       strings.TrimSpace(decision.Type),
-				AuthorityRef: strings.TrimSpace(decision.AuthorityRef),
-			}, true
-		}
+		base.Action = decisionType
+		return base, scope != ""
 	}
-	return PolicySpec{}, false
+}
+
+func copyConditionsMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	return copyAnyMap(in)
+}
+
+func isDenyOrBlockDecision(decisionType string) bool {
+	t := strings.ToLower(strings.TrimSpace(decisionType))
+	return t == "deny" || t == "block"
 }
 
 // ParsePolicy decodes YAML bytes into a Policy document.

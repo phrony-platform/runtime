@@ -38,6 +38,7 @@ const (
 	LimitMaxTokensPerRun     LimitKind = "max_tokens_per_run"
 	LimitMaxLoopIterations   LimitKind = "max_loop_iterations"
 	LimitMaxWallClockSeconds LimitKind = "max_wall_clock_seconds"
+	LimitMaxHITLWaitMinutes  LimitKind = "max_hitl_wait_minutes"
 )
 
 // LimitError is returned when a manifest run limit is hit.
@@ -77,11 +78,15 @@ func (e *LimitError) Error() string {
 }
 
 type limitTracker struct {
-	limits      *manifest.Limits
-	tokensUsed  int
-	iteration   int
-	startedAt   time.Time
-	onLimit     string
+	limits           *manifest.Limits
+	tokensUsed       int
+	iteration        int
+	startedAt        time.Time
+	onLimit          string
+	wallClockPaused  bool
+	pauseStartedAt   time.Time
+	totalWallPaused  time.Duration
+	hitlWaitAccum    time.Duration
 }
 
 func newLimitTracker(limits *manifest.Limits) *limitTracker {
@@ -131,10 +136,57 @@ func (t *limitTracker) checkWallClock() error {
 	if max <= 0 {
 		return nil
 	}
-	if time.Since(t.startedAt) > time.Duration(max)*time.Second {
+	if t.effectiveWallClockElapsed() > time.Duration(max)*time.Second {
 		return &LimitError{Kind: LimitMaxWallClockSeconds, OnLimit: t.onLimit}
 	}
 	return nil
+}
+
+func (t *limitTracker) beginHITLWait() {
+	if t == nil {
+		return
+	}
+	if !t.wallClockPaused {
+		t.wallClockPaused = true
+		t.pauseStartedAt = time.Now()
+	}
+}
+
+func (t *limitTracker) endHITLWait() error {
+	if t == nil {
+		return nil
+	}
+	if t.wallClockPaused {
+		waited := time.Since(t.pauseStartedAt)
+		t.totalWallPaused += waited
+		t.hitlWaitAccum += waited
+		t.wallClockPaused = false
+	}
+	if t.limits == nil || t.limits.MaxHITLWaitMinutes == nil {
+		return nil
+	}
+	max := *t.limits.MaxHITLWaitMinutes
+	if max <= 0 {
+		return nil
+	}
+	if t.hitlWaitAccum > time.Duration(max)*time.Minute {
+		return &LimitError{Kind: LimitMaxHITLWaitMinutes, OnLimit: t.onLimit}
+	}
+	return nil
+}
+
+func (t *limitTracker) effectiveWallClockElapsed() time.Duration {
+	if t == nil {
+		return 0
+	}
+	elapsed := time.Since(t.startedAt) - t.totalWallPaused
+	if t.wallClockPaused {
+		elapsed -= time.Since(t.pauseStartedAt)
+	}
+	if elapsed < 0 {
+		return 0
+	}
+	return elapsed
 }
 
 func (t *limitTracker) deadline(ctx context.Context) time.Time {
@@ -154,7 +206,11 @@ func (t *limitTracker) deadline(ctx context.Context) time.Time {
 	if max <= 0 {
 		return time.Time{}
 	}
-	return t.startedAt.Add(time.Duration(max) * time.Second)
+	remaining := time.Duration(max)*time.Second - t.effectiveWallClockElapsed()
+	if remaining <= 0 {
+		return time.Now()
+	}
+	return time.Now().Add(remaining)
 }
 
 func (t *limitTracker) context(ctx context.Context) (context.Context, context.CancelFunc) {

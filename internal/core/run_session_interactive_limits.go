@@ -31,6 +31,9 @@ func (st *interactiveSessionState) sessionLimitErrorBeforeTurn() error {
 	if err := st.sessionWallClockLimitError(); err != nil {
 		return err
 	}
+	if err := st.sessionHITLWaitLimitError(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -74,6 +77,61 @@ func (st *interactiveSessionState) maxWallClockSeconds() int {
 	return 0
 }
 
+func (st *interactiveSessionState) maxHITLWaitMinutes() int {
+	if lim := st.limits(); lim != nil && lim.MaxHITLWaitMinutes != nil {
+		return *lim.MaxHITLWaitMinutes
+	}
+	return 0
+}
+
+func (st *interactiveSessionState) beginHITLWait() {
+	if st == nil {
+		return
+	}
+	if !st.wallClockPaused {
+		st.wallClockPaused = true
+		st.pauseStartedAt = time.Now()
+	}
+}
+
+func (st *interactiveSessionState) endHITLWait() error {
+	if st == nil {
+		return nil
+	}
+	if st.wallClockPaused {
+		waited := time.Since(st.pauseStartedAt)
+		st.totalWallPaused += waited
+		st.hitlWaitAccum += waited
+		st.wallClockPaused = false
+	}
+	return st.sessionHITLWaitLimitError()
+}
+
+func (st *interactiveSessionState) effectiveWallClockElapsed() time.Duration {
+	if st == nil || st.sessionStartedAt.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(st.sessionStartedAt) - st.totalWallPaused
+	if st.wallClockPaused {
+		elapsed -= time.Since(st.pauseStartedAt)
+	}
+	if elapsed < 0 {
+		return 0
+	}
+	return elapsed
+}
+
+func (st *interactiveSessionState) sessionHITLWaitLimitError() error {
+	max := st.maxHITLWaitMinutes()
+	if max <= 0 {
+		return nil
+	}
+	if st.hitlWaitAccum > time.Duration(max)*time.Minute {
+		return &executor.LimitError{Kind: executor.LimitMaxHITLWaitMinutes, OnLimit: st.limitsOnLimit()}
+	}
+	return nil
+}
+
 // sessionTokenLimitError reports when cumulative provider session usage exceeds max_tokens_per_run.
 func (st *interactiveSessionState) sessionTokenLimitError() error {
 	max := st.maxTokensPerRun()
@@ -97,7 +155,7 @@ func (st *interactiveSessionState) sessionWallClockLimitError() error {
 	if max <= 0 || st.sessionStartedAt.IsZero() {
 		return nil
 	}
-	if time.Since(st.sessionStartedAt) <= time.Duration(max)*time.Second {
+	if st.effectiveWallClockElapsed() <= time.Duration(max)*time.Second {
 		return nil
 	}
 	return &executor.LimitError{Kind: executor.LimitMaxWallClockSeconds, OnLimit: st.limitsOnLimit()}
@@ -109,6 +167,9 @@ func (st *interactiveSessionState) runContext(ctx context.Context) (context.Cont
 	if max <= 0 || st.sessionStartedAt.IsZero() {
 		return ctx, func() {}
 	}
-	deadline := st.sessionStartedAt.Add(time.Duration(max) * time.Second)
-	return context.WithDeadline(ctx, deadline)
+	remaining := time.Duration(max)*time.Second - st.effectiveWallClockElapsed()
+	if remaining <= 0 {
+		return context.WithDeadline(ctx, time.Now())
+	}
+	return context.WithTimeout(ctx, remaining)
 }

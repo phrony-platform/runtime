@@ -101,6 +101,7 @@ func TestInteractiveSessionState_runTurn_requireApprovalViaToolApproval(t *testi
 		policies:       policy.NewEvaluator(agent),
 		approvalGate:   gate,
 	}
+	gate.hitl = st
 
 	approved := make(chan struct{})
 	go func() {

@@ -206,6 +206,8 @@ message RunSessionInteractiveToolApproval {
   string approval_id = 1;
   bool approved = 2;
   string comment = 3;
+  // When set, replaces proposed tool arguments before dispatch (subject to on_modify: revalidate).
+  bytes args = 4;
 }
 
 message PublishRequest {

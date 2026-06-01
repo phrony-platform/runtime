@@ -31,6 +31,32 @@ type interactiveSessionState struct {
 	policies           *policy.Evaluator
 	approvalGate       *sessionApprovalGate
 	clientRecvEOF      bool
+	wallClockPaused    bool
+	pauseStartedAt     time.Time
+	totalWallPaused    time.Duration
+	hitlWaitAccum      time.Duration
+}
+
+func newInteractiveSessionState(
+	sessionID, agentVersionID string,
+	ver *executor.Version,
+	startedAt time.Time,
+	dispatch tooldispatch.Dispatcher,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	q *store.Queries,
+) *interactiveSessionState {
+	gate := newSessionApprovalGate(stream, q, agentVersionID)
+	st := &interactiveSessionState{
+		sessionID:        sessionID,
+		agentVersionID:   agentVersionID,
+		version:          ver,
+		sessionStartedAt: startedAt,
+		toolDispatch:     dispatch,
+		policies:         policy.NewEvaluator(ver.Agent),
+		approvalGate:     gate,
+	}
+	gate.hitl = st
+	return st
 }
 
 func (st *interactiveSessionState) maxTokensPerRun() int {

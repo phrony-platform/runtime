@@ -92,11 +92,15 @@ func CanRedispatchAfterIndeterminate(sideEffectClass string) bool {
 
 // PolicySpec declares one policy rule in the agent manifest (whitepaper shape).
 type PolicySpec struct {
-	Name         string   `yaml:"name" json:"name"`
-	Scope        string   `yaml:"scope,omitempty" json:"scope,omitempty"`
-	Action       string   `yaml:"action,omitempty" json:"action,omitempty"`
-	Allow        []string `yaml:"allow,omitempty" json:"allow,omitempty"`
-	AuthorityRef string   `yaml:"authority_ref,omitempty" json:"authority_ref,omitempty"`
+	Name         string         `yaml:"name" json:"name"`
+	Scope        string         `yaml:"scope,omitempty" json:"scope,omitempty"`
+	Action       string         `yaml:"action,omitempty" json:"action,omitempty"`
+	Allow        []string       `yaml:"allow,omitempty" json:"allow,omitempty"`
+	Conditions   map[string]any `yaml:"conditions,omitempty" json:"conditions,omitempty"`
+	AuthorityRef string         `yaml:"authority_ref,omitempty" json:"authority_ref,omitempty"`
+	Reason       string         `yaml:"reason,omitempty" json:"reason,omitempty"`
+	OnModify     string         `yaml:"on_modify,omitempty" json:"on_modify,omitempty"`
+	Runtime      map[string]any `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 }
 
 // HITLTrigger declares when the runtime suspends for human review.
@@ -185,6 +189,7 @@ type Limits struct {
 	MaxTokensPerRun     *int   `yaml:"max_tokens_per_run,omitempty" json:"max_tokens_per_run,omitempty"`
 	MaxLoopIterations   *int   `yaml:"max_loop_iterations,omitempty" json:"max_loop_iterations,omitempty"`
 	MaxWallClockSeconds *int   `yaml:"max_wall_clock_seconds,omitempty" json:"max_wall_clock_seconds,omitempty"`
+	MaxHITLWaitMinutes  *int   `yaml:"max_hitl_wait_minutes,omitempty" json:"max_hitl_wait_minutes,omitempty"`
 	OnLimit             string `yaml:"on_limit,omitempty" json:"on_limit,omitempty"`
 }
 
