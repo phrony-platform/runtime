@@ -116,11 +116,7 @@ func validateTools(tools []ToolBinding) []FieldError {
 			seenNames[name] = struct{}{}
 		}
 
-		if t.Parameters != nil {
-			for _, fe := range validateSchema(t.Parameters) {
-				errs = append(errs, FieldError{Path: base + ".parameters", Message: fe.Message})
-			}
-		}
+		errs = append(errs, validateToolBindingSchema(&t, base)...)
 
 		version := strings.TrimSpace(t.Version)
 		if version != "" && !isValidSemver(version) {
@@ -383,18 +379,38 @@ func validateOutput(out *OutputSpec) []FieldError {
 	return errs
 }
 
+func validateToolBindingSchema(t *ToolBinding, base string) []FieldError {
+	hasParams := t.Parameters != nil
+	hasInput := t.InputSchema != nil
+	if hasParams && hasInput {
+		return []FieldError{{
+			Path:    base,
+			Message: "set input_schema or parameters, not both",
+		}}
+	}
+	schema := t.BindingSchema()
+	if schema == nil {
+		return nil
+	}
+	return validateSchemaAt(schema, base+".input_schema")
+}
+
 func validateSchema(s *SchemaSpec) []FieldError {
+	return validateSchemaAt(s, "output.schema")
+}
+
+func validateSchemaAt(s *SchemaSpec, path string) []FieldError {
 	hasRef := strings.TrimSpace(s.Ref) != ""
 	hasInline := len(s.Inline) > 0
 	switch {
 	case hasRef && hasInline:
 		return []FieldError{{
-			Path:    "output.schema",
+			Path:    path,
 			Message: "set exactly one of ref or inline, not both",
 		}}
 	case !hasRef && !hasInline:
 		return []FieldError{{
-			Path:    "output.schema",
+			Path:    path,
 			Message: "must set exactly one of ref or inline",
 		}}
 	}

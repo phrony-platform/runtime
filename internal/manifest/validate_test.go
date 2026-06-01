@@ -77,6 +77,17 @@ func TestValidate_fieldErrors(t *testing.T) {
 			wantPaths: nil,
 		},
 		{
+			name: "tool binding input_schema and parameters",
+			mutate: func(a *Agent) {
+				a.Spec.Tools = []ToolBinding{{
+					Ref:         "demo.tool",
+					InputSchema: &SchemaSpec{Inline: map[string]any{"type": "object"}},
+					Parameters:  &SchemaSpec{Inline: map[string]any{"type": "object"}},
+				}}
+			},
+			wantPaths: []string{"spec.tools[0]"},
+		},
+		{
 			name: "valid on_limit escalate",
 			mutate: func(a *Agent) {
 				a.Spec.Limits = &Limits{OnLimit: "escalate"}

@@ -1,0 +1,36 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: claims-triage
+  namespace: claims
+  version: 2.0.0
+
+spec:
+  purpose: Triage claims with catalog tools and policies.
+
+  instructions:
+    text: You triage claims.
+
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-5
+
+  default_policies:
+    - claims.audit-required
+
+  tools:
+    - ref: claims.approve-payment@^1.0
+      as: approve_payment
+      input_schema:
+        ref: schemas/payment-input
+      policies:
+        - ref: policies/large-payment-boundary
+    - ref: weather.get-forecast
+      version: 1.0.0
+      parameters:
+        inline:
+          type: object
+          properties:
+            city: { type: string }
+          required: [city]

@@ -17,7 +17,7 @@ func buildToolDefinitions(agent *manifest.Agent) ([]provider.ToolDefinition, err
 	}
 	out := make([]provider.ToolDefinition, 0, len(agent.Spec.Tools))
 	for _, tb := range agent.Spec.Tools {
-		schema, err := toolInputSchema(tb.Parameters)
+		schema, err := toolInputSchema(tb.BindingSchema())
 		if err != nil {
 			return nil, fmt.Errorf("tool %q parameters: %w", tb.Ref, err)
 		}

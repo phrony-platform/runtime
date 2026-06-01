@@ -24,7 +24,7 @@ func (r *ResolvedAgent) JSON() ([]byte, error) {
 	return json.Marshal(r.Agent)
 }
 
-// ResolveBundle loads instructions.ref and output.schema.ref relative to the agent YAML directory.
+// ResolveBundle loads bundle-relative refs for instructions, schemas, tools, and policies.
 // Ref paths are bundle-relative; default extensions are .yaml/.yml/.md for prompts and .json for schemas.
 // When version is set, candidates include "<ref>-<version>.<ext>", "<ref>/<version>.<ext>", and "<ref>/v<version>.<ext>".
 func ResolveBundle(agentPath string, agent *Agent) (*ResolvedAgent, error) {
@@ -37,59 +37,274 @@ func ResolveBundle(agentPath string, agent *Agent) (*ResolvedAgent, error) {
 	}
 	bundleRoot := filepath.Dir(absAgent)
 
+	bundle, err := LoadBundle(bundleRoot)
+	if err != nil {
+		return nil, err
+	}
+
 	resolved := cloneAgent(agent)
-
-	if ref := strings.TrimSpace(agent.Spec.Instructions.Ref); ref != "" {
-		path, err := locateBundleFile(bundleRoot, ref, agent.Spec.Instructions.Version, refKindInstructions)
-		if err != nil {
-			return nil, err
-		}
-		text, err := loadInstructionsFile(path)
-		if err != nil {
-			return nil, fieldResolveError("spec.instructions.ref", err)
-		}
-		resolved.Spec.Instructions = InstructionsSpec{Text: text}
+	resolver := &bundleResolver{
+		bundleRoot: bundleRoot,
+		bundle:     bundle,
 	}
 
-	if agent.Output != nil && agent.Output.Schema != nil {
-		if ref := strings.TrimSpace(agent.Output.Schema.Ref); ref != "" {
-			path, err := locateBundleFile(bundleRoot, ref, agent.Output.Schema.Version, refKindSchema)
-			if err != nil {
-				return nil, err
-			}
-			inline, err := loadSchemaFile(path)
-			if err != nil {
-				return nil, fieldResolveError("output.schema.ref", err)
-			}
-			if resolved.Output == nil {
-				resolved.Output = &OutputSpec{}
-			}
-			resolved.Output.Schema = &SchemaSpec{Inline: inline}
-		}
+	if err := resolver.resolveInstructions(resolved); err != nil {
+		return nil, err
 	}
-
-	for i := range resolved.Spec.Tools {
-		params := resolved.Spec.Tools[i].Parameters
-		if params == nil {
-			continue
-		}
-		ref := strings.TrimSpace(params.Ref)
-		if ref == "" {
-			continue
-		}
-		fieldPath := fmt.Sprintf("spec.tools[%d].parameters.ref", i)
-		path, err := locateBundleFile(bundleRoot, ref, params.Version, refKindSchema)
-		if err != nil {
-			return nil, retargetFieldError(err, fieldPath)
-		}
-		inline, err := loadSchemaFile(path)
-		if err != nil {
-			return nil, fieldResolveError(fieldPath, err)
-		}
-		resolved.Spec.Tools[i].Parameters = &SchemaSpec{Inline: inline}
+	if err := resolver.resolveOutputSchema(resolved); err != nil {
+		return nil, err
+	}
+	if err := resolver.resolveTools(resolved); err != nil {
+		return nil, err
+	}
+	if err := resolver.resolvePolicies(resolved); err != nil {
+		return nil, err
 	}
 
 	return &ResolvedAgent{Agent: resolved}, nil
+}
+
+type bundleResolver struct {
+	bundleRoot string
+	bundle     *Bundle
+}
+
+func (r *bundleResolver) resolveInstructions(agent *Agent) error {
+	ref := strings.TrimSpace(agent.Spec.Instructions.Ref)
+	if ref == "" {
+		return nil
+	}
+	path, err := locateBundleFile(r.bundleRoot, ref, agent.Spec.Instructions.Version, refKindInstructions)
+	if err != nil {
+		return err
+	}
+	text, err := loadInstructionsFile(path)
+	if err != nil {
+		return fieldResolveError("spec.instructions.ref", err)
+	}
+	agent.Spec.Instructions = InstructionsSpec{Text: text}
+	return nil
+}
+
+func (r *bundleResolver) resolveOutputSchema(agent *Agent) error {
+	if agent.Output == nil || agent.Output.Schema == nil {
+		return nil
+	}
+	ref := strings.TrimSpace(agent.Output.Schema.Ref)
+	if ref == "" {
+		return nil
+	}
+	inline, err := r.resolveSchema(agent.Output.Schema, "output.schema")
+	if err != nil {
+		return err
+	}
+	if agent.Output == nil {
+		agent.Output = &OutputSpec{}
+	}
+	agent.Output.Schema = &SchemaSpec{Inline: inline}
+	return nil
+}
+
+func (r *bundleResolver) resolveTools(agent *Agent) error {
+	for i := range agent.Spec.Tools {
+		fieldBase := fmt.Sprintf("spec.tools[%d]", i)
+		if err := r.resolveToolBinding(&agent.Spec.Tools[i], fieldBase); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *bundleResolver) resolveToolBinding(tb *ToolBinding, fieldBase string) error {
+	parsed, err := ParseLogicalRef(tb.Ref)
+	if err == nil {
+		tool, ok := r.bundle.Tool(parsed.Raw)
+		switch {
+		case ok:
+			if err := r.mergeToolCatalog(tb, parsed, tool, fieldBase); err != nil {
+				return err
+			}
+		case strings.TrimSpace(parsed.Constraint) != "":
+			return FieldError{
+				Path:    fieldBase + ".ref",
+				Message: fmt.Sprintf("tool %q not found in bundle tools/", parsed.Raw),
+			}
+		}
+	}
+	if err := r.resolveBindingSchema(tb, fieldBase+".input_schema"); err != nil {
+		return retargetFieldError(err, fieldBase+".parameters")
+	}
+	return nil
+}
+
+func (r *bundleResolver) mergeToolCatalog(tb *ToolBinding, parsed ParsedLogicalRef, tool *Tool, fieldBase string) error {
+	if err := parsed.MatchesVersion(tool.Metadata.Version); err != nil {
+		return FieldError{Path: fieldBase + ".ref", Message: err.Error()}
+	}
+	tb.Ref = parsed.Raw
+	if strings.TrimSpace(tb.Version) == "" {
+		tb.Version = strings.TrimSpace(tool.Metadata.Version)
+	}
+	if strings.TrimSpace(tb.Description) == "" {
+		tb.Description = strings.TrimSpace(tool.Spec.Description)
+	}
+	if strings.TrimSpace(tb.SideEffectClass) == "" {
+		tb.SideEffectClass = strings.TrimSpace(tool.Spec.SideEffectClass)
+	}
+	if tb.BindingSchema() == nil && tool.Spec.InputSchema != nil {
+		schema := cloneSchemaSpec(tool.Spec.InputSchema)
+		tb.Parameters = schema
+	}
+	if len(tb.Policies) == 0 && len(tool.Spec.DefaultPolicies) > 0 {
+		for _, id := range tool.Spec.DefaultPolicies {
+			tb.Policies = append(tb.Policies, PolicyAttachment{Logical: strings.TrimSpace(id)})
+		}
+	}
+	toolCopy := cloneTool(tool)
+	if err := r.resolveToolDocSchemas(toolCopy, fieldBase); err != nil {
+		return err
+	}
+	if tb.BindingSchema() == nil && toolCopy.Spec.InputSchema != nil && len(toolCopy.Spec.InputSchema.Inline) > 0 {
+		tb.Parameters = cloneSchemaSpec(toolCopy.Spec.InputSchema)
+	}
+	return nil
+}
+
+func (r *bundleResolver) resolveToolDocSchemas(tool *Tool, fieldBase string) error {
+	if tool.Spec.InputSchema != nil {
+		inline, err := r.resolveSchema(tool.Spec.InputSchema, fieldBase+".tool.input_schema")
+		if err != nil {
+			return err
+		}
+		tool.Spec.InputSchema = &SchemaSpec{Inline: inline}
+	}
+	if tool.Spec.OutputSchema != nil {
+		inline, err := r.resolveSchema(tool.Spec.OutputSchema, fieldBase+".tool.output_schema")
+		if err != nil {
+			return err
+		}
+		tool.Spec.OutputSchema = &SchemaSpec{Inline: inline}
+	}
+	return nil
+}
+
+func (r *bundleResolver) resolveBindingSchema(tb *ToolBinding, fieldPath string) error {
+	schema := tb.BindingSchema()
+	if schema == nil {
+		return nil
+	}
+	if strings.TrimSpace(schema.Ref) == "" {
+		return nil
+	}
+	inline, err := r.resolveSchema(schema, fieldPath)
+	if err != nil {
+		return err
+	}
+	if tb.InputSchema != nil {
+		tb.InputSchema = &SchemaSpec{Inline: inline}
+	} else {
+		tb.Parameters = &SchemaSpec{Inline: inline}
+	}
+	return nil
+}
+
+func (r *bundleResolver) resolveSchema(spec *SchemaSpec, fieldPath string) (map[string]any, error) {
+	ref := strings.TrimSpace(spec.Ref)
+	if ref == "" {
+		if len(spec.Inline) > 0 {
+			return copyAnyMap(spec.Inline), nil
+		}
+		return nil, FieldError{Path: fieldPath, Message: "must set exactly one of ref or inline"}
+	}
+	path, err := locateBundleFile(r.bundleRoot, ref, spec.Version, refKindSchema)
+	if err != nil {
+		return nil, retargetFieldError(err, fieldPath+".ref")
+	}
+	inline, err := loadSchemaFile(path)
+	if err != nil {
+		return nil, fieldResolveError(fieldPath+".ref", err)
+	}
+	return inline, nil
+}
+
+func (r *bundleResolver) resolvePolicies(agent *Agent) error {
+	seen := policyNameSet(agent.Spec.Policies)
+	attachments := append([]PolicyAttachment(nil), agent.Spec.DefaultPolicies...)
+	for i := range agent.Spec.Tools {
+		attachments = append(attachments, agent.Spec.Tools[i].Policies...)
+	}
+	for _, att := range attachments {
+		if att.IsZero() {
+			continue
+		}
+		policy, fieldPath, err := r.lookupPolicy(att)
+		if err != nil {
+			return err
+		}
+		legacy, ok := policy.legacyPolicySpec()
+		if !ok {
+			continue
+		}
+		if _, exists := seen[legacy.Name]; exists {
+			continue
+		}
+		agent.Spec.Policies = append(agent.Spec.Policies, legacy)
+		seen[legacy.Name] = struct{}{}
+		_ = fieldPath
+	}
+	return nil
+}
+
+func (r *bundleResolver) lookupPolicy(att PolicyAttachment) (*Policy, string, error) {
+	if file := strings.TrimSpace(att.File); file != "" {
+		path, err := locateBundleFile(r.bundleRoot, file, nil, refKindPolicy)
+		if err != nil {
+			return nil, "policy", retargetFieldError(err, "policy ref")
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, "policy", fieldResolveError("policy ref", err)
+		}
+		policy, err := ParsePolicy(data)
+		if err != nil {
+			return nil, "policy", fieldResolveError("policy ref", err)
+		}
+		if !IsSupportedAPIVersion(policy.APIVersion) {
+			NormalizeAPIVersionForPolicy(policy)
+		}
+		return policy, "policy ref", nil
+	}
+	logical := strings.TrimSpace(att.Logical)
+	policy, ok := r.bundle.Policy(logical)
+	if !ok {
+		return nil, logical, FieldError{
+			Path:    "policy",
+			Message: fmt.Sprintf("policy %q not found in bundle policies/", logical),
+		}
+	}
+	return policy, logical, nil
+}
+
+// NormalizeAPIVersionForPolicy rewrites deprecated apiVersion on Policy documents.
+func NormalizeAPIVersionForPolicy(policy *Policy) bool {
+	if policy == nil {
+		return false
+	}
+	if policy.APIVersion == APIVersionV1Deprecated {
+		policy.APIVersion = APIVersionV1
+		return true
+	}
+	return false
+}
+
+func policyNameSet(policies []PolicySpec) map[string]struct{} {
+	seen := make(map[string]struct{}, len(policies))
+	for _, p := range policies {
+		if name := strings.TrimSpace(p.Name); name != "" {
+			seen[name] = struct{}{}
+		}
+	}
+	return seen
 }
 
 type refKind int
@@ -97,12 +312,15 @@ type refKind int
 const (
 	refKindInstructions refKind = iota
 	refKindSchema
+	refKindPolicy
 )
 
 func (k refKind) extensions() []string {
 	switch k {
 	case refKindSchema:
 		return []string{".json"}
+	case refKindPolicy:
+		return []string{".yaml", ".yml"}
 	default:
 		return []string{".yaml", ".yml", ".md"}
 	}
@@ -189,6 +407,8 @@ func kindPath(kind refKind) string {
 	switch kind {
 	case refKindSchema:
 		return "output.schema.ref"
+	case refKindPolicy:
+		return "policy.ref"
 	default:
 		return "spec.instructions.ref"
 	}
@@ -304,16 +524,21 @@ func cloneAgent(agent *Agent) *Agent {
 	if len(agent.Spec.Model.ProviderOptions) > 0 {
 		out.Spec.Model.ProviderOptions = copyAnyMap(agent.Spec.Model.ProviderOptions)
 	}
+	if len(agent.Spec.DefaultPolicies) > 0 {
+		out.Spec.DefaultPolicies = append([]PolicyAttachment(nil), agent.Spec.DefaultPolicies...)
+	}
 	if len(agent.Spec.Tools) > 0 {
 		out.Spec.Tools = make([]ToolBinding, len(agent.Spec.Tools))
 		for i, t := range agent.Spec.Tools {
 			tool := t
 			if t.Parameters != nil {
-				s := *t.Parameters
-				if len(s.Inline) > 0 {
-					s.Inline = copyAnyMap(s.Inline)
-				}
-				tool.Parameters = &s
+				tool.Parameters = cloneSchemaSpec(t.Parameters)
+			}
+			if t.InputSchema != nil {
+				tool.InputSchema = cloneSchemaSpec(t.InputSchema)
+			}
+			if len(t.Policies) > 0 {
+				tool.Policies = append([]PolicyAttachment(nil), t.Policies...)
 			}
 			out.Spec.Tools[i] = tool
 		}
@@ -346,13 +571,43 @@ func cloneAgent(agent *Agent) *Agent {
 	if agent.Output != nil {
 		o := *agent.Output
 		if agent.Output.Schema != nil {
-			s := *agent.Output.Schema
-			if len(s.Inline) > 0 {
-				s.Inline = copyAnyMap(s.Inline)
-			}
-			o.Schema = &s
+			o.Schema = cloneSchemaSpec(agent.Output.Schema)
 		}
 		out.Output = &o
+	}
+	return &out
+}
+
+func cloneSchemaSpec(s *SchemaSpec) *SchemaSpec {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	if len(s.Inline) > 0 {
+		out.Inline = copyAnyMap(s.Inline)
+	}
+	return &out
+}
+
+func cloneTool(t *Tool) *Tool {
+	if t == nil {
+		return nil
+	}
+	out := *t
+	if t.Spec.InputSchema != nil {
+		out.Spec.InputSchema = cloneSchemaSpec(t.Spec.InputSchema)
+	}
+	if t.Spec.OutputSchema != nil {
+		out.Spec.OutputSchema = cloneSchemaSpec(t.Spec.OutputSchema)
+	}
+	if len(t.Spec.DefaultPolicies) > 0 {
+		out.Spec.DefaultPolicies = append([]string(nil), t.Spec.DefaultPolicies...)
+	}
+	if len(t.Metadata.Labels) > 0 {
+		out.Metadata.Labels = make(map[string]string, len(t.Metadata.Labels))
+		for k, v := range t.Metadata.Labels {
+			out.Metadata.Labels[k] = v
+		}
 	}
 	return &out
 }

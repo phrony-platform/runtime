@@ -1,0 +1,20 @@
+apiVersion: phrony.com/v1
+kind: Tool
+
+metadata:
+  name: approve-payment
+  namespace: claims
+  version: 1.2.0
+
+spec:
+  description: Approve a claim payment.
+  side_effect_class: non_idempotent_write
+  input_schema:
+    inline:
+      type: object
+      properties:
+        amount: { type: number }
+        currency: { type: string }
+      required: [amount, currency]
+  default_policies:
+    - claims.large-payment-boundary

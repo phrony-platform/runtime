@@ -1,0 +1,11 @@
+apiVersion: phrony.com/v1
+kind: Policy
+
+metadata:
+  name: audit-required
+  namespace: claims
+  version: 1.0.0
+
+spec:
+  scope: tool:claims.approve-payment
+  action: require_approval
