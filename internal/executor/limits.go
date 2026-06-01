@@ -11,7 +11,11 @@ import (
 	"github.com/phrony-platform/runtime/internal/manifest"
 )
 
-const defaultOnLimit = "halt"
+const (
+	OnLimitHalt     = "halt"
+	OnLimitEscalate = "escalate"
+	defaultOnLimit  = OnLimitHalt
+)
 
 const limitErrorPrefix = "run limit "
 
@@ -40,6 +44,25 @@ const (
 type LimitError struct {
 	Kind    LimitKind
 	OnLimit string
+}
+
+// EscalationError signals the run should suspend for human review (HITL) rather
+// than fail when spec.limits.on_limit is escalate.
+type EscalationError struct {
+	Limit *LimitError
+}
+
+func (e *EscalationError) Error() string {
+	if e == nil || e.Limit == nil {
+		return "run limit exceeded; human review required"
+	}
+	return e.Limit.Error() + "; human review required"
+}
+
+// IsEscalationError reports whether err requests HITL suspension for a limit.
+func IsEscalationError(err error) bool {
+	var esc *EscalationError
+	return errors.As(err, &esc)
 }
 
 func (e *LimitError) Error() string {
@@ -112,6 +135,26 @@ func (t *limitTracker) checkWallClock() error {
 		return &LimitError{Kind: LimitMaxWallClockSeconds, OnLimit: t.onLimit}
 	}
 	return nil
+}
+
+func (t *limitTracker) deadline(ctx context.Context) time.Time {
+	if t == nil {
+		if d, ok := ctx.Deadline(); ok {
+			return d
+		}
+		return time.Time{}
+	}
+	if d, ok := ctx.Deadline(); ok {
+		return d
+	}
+	if t.limits == nil || t.limits.MaxWallClockSeconds == nil {
+		return time.Time{}
+	}
+	max := *t.limits.MaxWallClockSeconds
+	if max <= 0 {
+		return time.Time{}
+	}
+	return t.startedAt.Add(time.Duration(max) * time.Second)
 }
 
 func (t *limitTracker) context(ctx context.Context) (context.Context, context.CancelFunc) {

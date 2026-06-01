@@ -15,6 +15,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/providertest"
 	"github.com/phrony-platform/runtime/internal/secrets"
 	"github.com/phrony-platform/runtime/internal/store"
+	"github.com/phrony-platform/runtime/internal/tooldispatch"
 )
 
 func TestExecutor_LoadVersion(t *testing.T) {
@@ -270,6 +271,125 @@ func TestStreamCompletion_enforcesTokenLimit(t *testing.T) {
 	}
 	if !failed {
 		t.Fatal("missing failed event on channel")
+	}
+}
+
+func TestStreamCompletion_toolUseLoop(t *testing.T) {
+	toolName := "weather_get_forecast"
+	call := provider.ToolCall{ID: "call_1", Name: toolName, Args: json.RawMessage(`{"city":"NYC"}`)}
+	stub := providertest.Sequence(
+		providertest.ToolUseCompleted(call).Events,
+		providertest.DeltaCompleted().Events,
+	)
+	agent := testAgentWithTool(toolName)
+	v := NewVersionWithProvider("version-uuid", agent, stub)
+
+	var dispatched []string
+	disp := &tooldispatch.FakeDispatcher{
+		DispatchFn: func(_ context.Context, call tooldispatch.ToolCall) (tooldispatch.ToolResult, error) {
+			dispatched = append(dispatched, call.Tool)
+			return tooldispatch.ToolResult{
+				CallID:  call.CallID,
+				Payload: json.RawMessage(`{"temp":72}`),
+			}, nil
+		},
+	}
+
+	ch := make(chan Event, 16)
+	err := v.StreamCompletion(context.Background(), RunParams{
+		SessionID:  "sess-1",
+		Turn:       1,
+		Input:      json.RawMessage(`{"message":"weather?"}`),
+		Dispatcher: disp,
+	}, ch)
+	if err != nil {
+		t.Fatalf("StreamCompletion: %v", err)
+	}
+	if len(dispatched) != 1 || dispatched[0] != "weather.get-forecast" {
+		t.Fatalf("dispatched = %v", dispatched)
+	}
+	if stub.Calls != 2 {
+		t.Fatalf("provider completions = %d, want 2", stub.Calls)
+	}
+
+	var completed bool
+	for ev := range ch {
+		switch ev.Type {
+		case EventCompleted:
+			completed = true
+			if ev.StopReason != provider.StopReasonEndTurn {
+				t.Fatalf("stop_reason = %q", ev.StopReason)
+			}
+		case EventFailed:
+			t.Fatalf("failed: %v", ev.Err)
+		}
+	}
+	if !completed {
+		t.Fatal("missing completed event")
+	}
+}
+
+func TestStreamCompletion_toolUseRequiresDispatcher(t *testing.T) {
+	toolName := "weather_get_forecast"
+	call := provider.ToolCall{ID: "call_1", Name: toolName, Args: json.RawMessage(`{}`)}
+	v := NewVersionWithProvider("v", testAgentWithTool(toolName), providertest.ToolUseCompleted(call))
+
+	ch := make(chan Event, 4)
+	err := v.StreamCompletion(context.Background(), RunParams{
+		Input: json.RawMessage(`{"message":"go"}`),
+	}, ch)
+	if err == nil {
+		t.Fatal("StreamCompletion() = nil, want error")
+	}
+	for range ch {
+	}
+}
+
+func TestStreamCompletion_loopIterationLimit_escalate(t *testing.T) {
+	max := 1
+	toolName := "weather_get_forecast"
+	call := provider.ToolCall{ID: "call_1", Name: toolName, Args: json.RawMessage(`{}`)}
+	stub := providertest.ToolUseCompleted(call)
+	agent := testAgentWithTool(toolName)
+	agent.Spec.Limits = &manifest.Limits{MaxLoopIterations: &max, OnLimit: OnLimitEscalate}
+	v := NewVersionWithProvider("v", agent, stub)
+
+	ch := make(chan Event, 8)
+	err := v.StreamCompletion(context.Background(), RunParams{
+		SessionID:  "sess",
+		Input:      json.RawMessage(`{"message":"go"}`),
+		Dispatcher: &tooldispatch.FakeDispatcher{},
+	}, ch)
+	if !IsEscalationError(err) {
+		t.Fatalf("err = %v, want EscalationError", err)
+	}
+	var escalated bool
+	for ev := range ch {
+		if ev.Type == EventEscalation {
+			escalated = true
+		}
+	}
+	if !escalated {
+		t.Fatal("missing escalation event")
+	}
+}
+
+func testAgentWithTool(wireName string) *manifest.Agent {
+	return &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Instructions: manifest.InstructionsSpec{Text: "System."},
+			Model: manifest.ModelConfig{
+				Provider: provider.IDAnthropic,
+				Name:     "claude-sonnet-4-5",
+			},
+			Tools: []manifest.ToolBinding{{
+				Ref:         "weather.get-forecast",
+				Name:        wireName,
+				Version:     "1.0.0",
+				Parameters:  &manifest.SchemaSpec{Inline: map[string]any{"type": "object"}},
+				SideEffectClass: manifest.SideEffectReadOnly,
+			}},
+		},
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -90,8 +91,11 @@ func (s *runtimeServer) runSessionBackground(
 
 	state := &interactiveSessionState{
 		sessionID:        sessionID,
+		agentVersionID:   agentVersionID,
 		version:          ver,
 		sessionStartedAt: time.Now(),
+		toolDispatch:     s.toolDispatch,
+		policies:         policy.NewEvaluator(ver.Agent),
 	}
 	loopErr := s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, inputJSON, false)
 	if loopErr != nil {

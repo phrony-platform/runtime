@@ -59,6 +59,24 @@ func decodeInputString(raw json.RawMessage, field string) (string, error) {
 	return strings.TrimSpace(s), nil
 }
 
+func messageTextForTokens(m provider.Message) string {
+	if strings.TrimSpace(m.Content) != "" {
+		return m.Content
+	}
+	var b strings.Builder
+	for _, bl := range provider.MessageBlocks(m) {
+		switch bl.Type {
+		case provider.BlockText:
+			b.WriteString(bl.Text)
+		case provider.BlockToolUse:
+			b.WriteString(string(bl.Input))
+		case provider.BlockToolResult:
+			b.WriteString(bl.ToolResultContent)
+		}
+	}
+	return b.String()
+}
+
 func buildMessages(agent *manifest.Agent, input json.RawMessage) ([]provider.Message, error) {
 	system, err := systemInstructions(agent)
 	if err != nil {

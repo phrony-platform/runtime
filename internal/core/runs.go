@@ -30,6 +30,9 @@ func (s *runtimeServer) CancelSession(ctx context.Context, req *runtimev1.Cancel
 	}
 
 	s.cancelActiveSession(sessionID)
+	if s.toolRegistry != nil {
+		s.toolRegistry.CancelSession(sessionID)
+	}
 
 	return &runtimev1.CancelSessionResponse{}, nil
 }

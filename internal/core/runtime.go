@@ -12,6 +12,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/secrets"
 	"github.com/phrony-platform/runtime/internal/store"
+	"github.com/phrony-platform/runtime/internal/tooldispatch"
 	"github.com/phrony-platform/runtime/internal/version"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,6 +28,9 @@ type runtimeServer struct {
 	startRunSessionBackgroundFn func(sessionID, agentVersionID string, inputJSON json.RawMessage)
 	// activeSessions tracks session IDs with an open interactive stream.
 	activeSessions *sync.Map
+	// toolRegistry routes Work-stream workers; toolDispatch is the executor-facing facade.
+	toolRegistry *tooldispatch.WorkerRegistry
+	toolDispatch tooldispatch.Dispatcher
 }
 
 // queries returns a store handle backed by the configured database, or a

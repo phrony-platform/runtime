@@ -29,7 +29,7 @@ func TestEncodeDecodeHistory_roundTrip(t *testing.T) {
 		t.Fatalf("len(decoded) = %d, want %d", len(decoded), len(in))
 	}
 	for i := range in {
-		if decoded[i] != in[i] {
+		if decoded[i].Role != in[i].Role || decoded[i].Content != in[i].Content {
 			t.Fatalf("decoded[%d] = %+v, want %+v", i, decoded[i], in[i])
 		}
 	}
@@ -59,10 +59,10 @@ func TestEncodeDecodeHistory_withTurnUsage(t *testing.T) {
 	in := []provider.Message{
 		{Role: provider.RoleUser, Content: "hi"},
 		{
-			Role:        provider.RoleAssistant,
-			Content:     "hello",
-			StopReason:  "end_turn",
-			TurnUsage:   provider.TokenUsage{InputTokens: 10, OutputTokens: 5},
+			Role:       provider.RoleAssistant,
+			Content:    "hello",
+			StopReason: "end_turn",
+			TurnUsage:  provider.TokenUsage{InputTokens: 10, OutputTokens: 5},
 		},
 	}
 	encoded, err := encodeHistory(in)

@@ -100,6 +100,17 @@ func TestLimitTracker_contextTimeout(t *testing.T) {
 	}
 }
 
+func TestIsEscalationError(t *testing.T) {
+	lim := &LimitError{Kind: LimitMaxLoopIterations, OnLimit: OnLimitEscalate}
+	esc := &EscalationError{Limit: lim}
+	if !IsEscalationError(esc) {
+		t.Fatal("expected escalation error")
+	}
+	if IsEscalationError(lim) {
+		t.Fatal("LimitError alone should not be escalation")
+	}
+}
+
 func TestEstimateTokens(t *testing.T) {
 	if estimateTokens("abcd") != 1 {
 		t.Fatalf("estimateTokens(abcd) = %d, want 1", estimateTokens("abcd"))
