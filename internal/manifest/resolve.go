@@ -548,7 +548,24 @@ func cloneAgent(agent *Agent) *Agent {
 		if len(gov.AuthorityBoundaries) > 0 {
 			gov.AuthorityBoundaries = append([]string(nil), gov.AuthorityBoundaries...)
 		}
+		if len(gov.Classifications) > 0 {
+			gov.Classifications = append([]string(nil), gov.Classifications...)
+		}
+		if len(gov.Frameworks) > 0 {
+			gov.Frameworks = make(map[string]json.RawMessage, len(agent.Metadata.Governance.Frameworks))
+			for k, v := range agent.Metadata.Governance.Frameworks {
+				if len(v) > 0 {
+					gov.Frameworks[k] = append(json.RawMessage(nil), v...)
+				}
+			}
+		}
 		out.Metadata.Governance = &gov
+	}
+	if len(agent.Metadata.Annotations) > 0 {
+		out.Metadata.Annotations = make(map[string]string, len(agent.Metadata.Annotations))
+		for k, v := range agent.Metadata.Annotations {
+			out.Metadata.Annotations[k] = v
+		}
 	}
 	if len(agent.Spec.Policies) > 0 {
 		out.Spec.Policies = make([]PolicySpec, len(agent.Spec.Policies))

@@ -357,6 +357,7 @@ func sendSessionStarted(
 	history []provider.Message,
 	sessionStartedAt time.Time,
 	sessionEndedAt *time.Time,
+	descriptiveMetadata *runtimev1.DescriptiveMetadataEvidence,
 ) error {
 	modelProvider := ""
 	modelName := ""
@@ -393,6 +394,7 @@ func sendSessionStarted(
 				MaxWallClockSeconds:    maxWallClockSeconds,
 				SessionStartedAtUnixMs: sessionStartedAt.UnixMilli(),
 				SessionEndedAtUnixMs:   sessionEndedAtUnixMs,
+				DescriptiveMetadata:    descriptiveMetadata,
 			},
 		},
 	})

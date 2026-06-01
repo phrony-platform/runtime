@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"time"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
@@ -80,6 +81,9 @@ func (s *runtimeServer) runSessionBackground(
 	if err != nil {
 		_ = s.failInteractiveSession(ctx, q, stream, sessionID, err)
 		return
+	}
+	if _, err := s.ensureSessionEvidence(ctx, q, sessionID, ver.Agent); err != nil {
+		slog.Error("session evidence", "session_id", sessionID, "error", err)
 	}
 
 	// The daemon eagerly enforces the wall-clock budget so a parked session is

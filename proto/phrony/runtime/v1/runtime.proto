@@ -115,6 +115,30 @@ message RunSessionInteractiveSessionStarted {
   int64 session_started_at_unix_ms = 8;
   // When set, the run has ended; clients should freeze wall-clock display at this time (session updated_at on attach).
   int64 session_ended_at_unix_ms = 9;
+  // Descriptive metadata from the deployed agent (labels, annotations, governance, framework packs).
+  DescriptiveMetadataEvidence descriptive_metadata = 10;
+}
+
+// DescriptiveMetadataEvidence is the session evidence snapshot (inert at evaluation).
+message DescriptiveMetadataEvidence {
+  string owner = 1;
+  map<string, string> labels = 2;
+  map<string, string> annotations = 3;
+  GovernanceMetadataEvidence governance = 4;
+}
+
+message GovernanceMetadataEvidence {
+  string risk_tier = 1;
+  repeated string classifications = 2;
+  repeated string authority_boundaries = 3;
+  repeated FrameworkPackEvidence frameworks = 4;
+}
+
+message FrameworkPackEvidence {
+  string id = 1;
+  // validated or unvalidated (unknown packs are always unvalidated).
+  string validation = 2;
+  bytes payload = 3;
 }
 
 message RunSessionInteractiveTextDelta {

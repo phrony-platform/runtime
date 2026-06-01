@@ -31,11 +31,6 @@ func compileResolved(agent *Agent) error {
 	return nil
 }
 
-// GovernanceMetadata is descriptive governance attached to an Agent (subset may compile to policies).
-type GovernanceMetadata struct {
-	AuthorityBoundaries []string `yaml:"authority_boundaries,omitempty" json:"authority_boundaries,omitempty"`
-}
-
 func compileAuthorityBoundaries(agent *Agent) []PolicySpec {
 	if agent == nil || agent.Metadata.Governance == nil {
 		return nil

@@ -30,9 +30,10 @@ type AgentMetadata struct {
 	Name       string              `yaml:"name" json:"name"`
 	Namespace  string              `yaml:"namespace" json:"namespace"`
 	Version    string              `yaml:"version" json:"version"`
-	Owner      string              `yaml:"owner,omitempty" json:"owner,omitempty"`
-	Governance *GovernanceMetadata `yaml:"governance,omitempty" json:"governance,omitempty"`
-	Labels     map[string]string   `yaml:"labels,omitempty" json:"labels,omitempty"`
+	Owner       string              `yaml:"owner,omitempty" json:"owner,omitempty"`
+	Governance  *GovernanceMetadata `yaml:"governance,omitempty" json:"governance,omitempty"`
+	Labels      map[string]string   `yaml:"labels,omitempty" json:"labels,omitempty"`
+	Annotations map[string]string   `yaml:"annotations,omitempty" json:"annotations,omitempty"`
 }
 
 // AgentSpec is the behavior envelope for an Agent.

@@ -92,8 +92,13 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		return s.failInteractiveSession(sessionCtx, q, stream, sessionID, err)
 	}
 
+	evidenceSnap, err := s.ensureSessionEvidence(sessionCtx, q, sessionID, ver.Agent)
+	if err != nil {
+		return status.Errorf(codes.Internal, "record session evidence: %v", err)
+	}
+
 	sessionStartedAt := time.Now()
-	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver, nil, sessionStartedAt, nil); err != nil {
+	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver, nil, sessionStartedAt, nil, evidenceSnapshotToProto(evidenceSnap)); err != nil {
 		return err
 	}
 
@@ -179,7 +184,11 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 			endedAt = &session.UpdatedAt
 		}
 	}
-	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, endedAt); err != nil {
+	evidenceSnap, err := s.ensureSessionEvidence(sessionCtx, q, sessionID, ver.Agent)
+	if err != nil {
+		return status.Errorf(codes.Internal, "record session evidence: %v", err)
+	}
+	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, endedAt, evidenceSnapshotToProto(evidenceSnap)); err != nil {
 		return err
 	}
 
