@@ -21,6 +21,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ApprovalDecision int32
+
+const (
+	ApprovalDecision_APPROVAL_DECISION_UNSPECIFIED ApprovalDecision = 0
+	ApprovalDecision_APPROVAL_DECISION_APPROVE     ApprovalDecision = 1
+	ApprovalDecision_APPROVAL_DECISION_REJECT      ApprovalDecision = 2
+)
+
+// Enum value maps for ApprovalDecision.
+var (
+	ApprovalDecision_name = map[int32]string{
+		0: "APPROVAL_DECISION_UNSPECIFIED",
+		1: "APPROVAL_DECISION_APPROVE",
+		2: "APPROVAL_DECISION_REJECT",
+	}
+	ApprovalDecision_value = map[string]int32{
+		"APPROVAL_DECISION_UNSPECIFIED": 0,
+		"APPROVAL_DECISION_APPROVE":     1,
+		"APPROVAL_DECISION_REJECT":      2,
+	}
+)
+
+func (x ApprovalDecision) Enum() *ApprovalDecision {
+	p := new(ApprovalDecision)
+	*p = x
+	return p
+}
+
+func (x ApprovalDecision) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ApprovalDecision) Descriptor() protoreflect.EnumDescriptor {
+	return file_phrony_runtime_v1_runtime_proto_enumTypes[0].Descriptor()
+}
+
+func (ApprovalDecision) Type() protoreflect.EnumType {
+	return &file_phrony_runtime_v1_runtime_proto_enumTypes[0]
+}
+
+func (x ApprovalDecision) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ApprovalDecision.Descriptor instead.
+func (ApprovalDecision) EnumDescriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{0}
+}
+
 type GetVersionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1543,14 +1592,23 @@ func (x *RunSessionInteractiveToolResult) GetErrorMessage() string {
 }
 
 type RunSessionInteractiveApprovalRequired struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApprovalId    string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
-	CallId        string                 `protobuf:"bytes,2,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
-	Tool          string                 `protobuf:"bytes,3,opt,name=tool,proto3" json:"tool,omitempty"`
-	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
-	Args          []byte                 `protobuf:"bytes,5,opt,name=args,proto3" json:"args,omitempty"`
-	Route         string                 `protobuf:"bytes,6,opt,name=route,proto3" json:"route,omitempty"`
-	Reason        string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalId   string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	CallId       string                 `protobuf:"bytes,2,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	Tool         string                 `protobuf:"bytes,3,opt,name=tool,proto3" json:"tool,omitempty"`
+	Version      string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	Args         []byte                 `protobuf:"bytes,5,opt,name=args,proto3" json:"args,omitempty"`
+	Route        string                 `protobuf:"bytes,6,opt,name=route,proto3" json:"route,omitempty"`
+	Reason       string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	AuthorityRef string                 `protobuf:"bytes,8,opt,name=authority_ref,json=authorityRef,proto3" json:"authority_ref,omitempty"`
+	PolicyName   string                 `protobuf:"bytes,9,opt,name=policy_name,json=policyName,proto3" json:"policy_name,omitempty"`
+	// JSON object: policy decision.runtime passthrough.
+	PolicyRuntime         []byte `protobuf:"bytes,10,opt,name=policy_runtime,json=policyRuntime,proto3" json:"policy_runtime,omitempty"`
+	ApprovalsRequired     int32  `protobuf:"varint,11,opt,name=approvals_required,json=approvalsRequired,proto3" json:"approvals_required,omitempty"`
+	ApprovalsReceived     int32  `protobuf:"varint,12,opt,name=approvals_received,json=approvalsReceived,proto3" json:"approvals_received,omitempty"`
+	ComprehensionRequired bool   `protobuf:"varint,13,opt,name=comprehension_required,json=comprehensionRequired,proto3" json:"comprehension_required,omitempty"`
+	// RFC3339; empty when no timeout is configured.
+	ExpiresAt     string `protobuf:"bytes,14,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1630,6 +1688,55 @@ func (x *RunSessionInteractiveApprovalRequired) GetRoute() string {
 func (x *RunSessionInteractiveApprovalRequired) GetReason() string {
 	if x != nil {
 		return x.Reason
+	}
+	return ""
+}
+
+func (x *RunSessionInteractiveApprovalRequired) GetAuthorityRef() string {
+	if x != nil {
+		return x.AuthorityRef
+	}
+	return ""
+}
+
+func (x *RunSessionInteractiveApprovalRequired) GetPolicyName() string {
+	if x != nil {
+		return x.PolicyName
+	}
+	return ""
+}
+
+func (x *RunSessionInteractiveApprovalRequired) GetPolicyRuntime() []byte {
+	if x != nil {
+		return x.PolicyRuntime
+	}
+	return nil
+}
+
+func (x *RunSessionInteractiveApprovalRequired) GetApprovalsRequired() int32 {
+	if x != nil {
+		return x.ApprovalsRequired
+	}
+	return 0
+}
+
+func (x *RunSessionInteractiveApprovalRequired) GetApprovalsReceived() int32 {
+	if x != nil {
+		return x.ApprovalsReceived
+	}
+	return 0
+}
+
+func (x *RunSessionInteractiveApprovalRequired) GetComprehensionRequired() bool {
+	if x != nil {
+		return x.ComprehensionRequired
+	}
+	return false
+}
+
+func (x *RunSessionInteractiveApprovalRequired) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
 	}
 	return ""
 }
@@ -3161,6 +3268,617 @@ func (x *ListSessionsResponse) GetSessions() []*SessionSummary {
 	return nil
 }
 
+type ApprovalVote struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	DecidedBy string                 `protobuf:"bytes,1,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
+	// approved or denied
+	Decision                  string `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"`
+	Comment                   string `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
+	ComprehensionAcknowledged bool   `protobuf:"varint,4,opt,name=comprehension_acknowledged,json=comprehensionAcknowledged,proto3" json:"comprehension_acknowledged,omitempty"`
+	CreatedAt                 string `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // RFC3339
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *ApprovalVote) Reset() {
+	*x = ApprovalVote{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApprovalVote) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApprovalVote) ProtoMessage() {}
+
+func (x *ApprovalVote) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApprovalVote.ProtoReflect.Descriptor instead.
+func (*ApprovalVote) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *ApprovalVote) GetDecidedBy() string {
+	if x != nil {
+		return x.DecidedBy
+	}
+	return ""
+}
+
+func (x *ApprovalVote) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *ApprovalVote) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *ApprovalVote) GetComprehensionAcknowledged() bool {
+	if x != nil {
+		return x.ComprehensionAcknowledged
+	}
+	return false
+}
+
+func (x *ApprovalVote) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+type Approval struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Id           string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId    string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	CallId       string                 `protobuf:"bytes,3,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	Status       string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	Route        string                 `protobuf:"bytes,5,opt,name=route,proto3" json:"route,omitempty"`
+	Reason       string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	Tool         string                 `protobuf:"bytes,7,opt,name=tool,proto3" json:"tool,omitempty"`
+	Version      string                 `protobuf:"bytes,8,opt,name=version,proto3" json:"version,omitempty"`
+	Args         []byte                 `protobuf:"bytes,9,opt,name=args,proto3" json:"args,omitempty"`
+	AuthorityRef string                 `protobuf:"bytes,10,opt,name=authority_ref,json=authorityRef,proto3" json:"authority_ref,omitempty"`
+	PolicyName   string                 `protobuf:"bytes,11,opt,name=policy_name,json=policyName,proto3" json:"policy_name,omitempty"`
+	// JSON object: policy decision.runtime passthrough.
+	PolicyRuntime         []byte `protobuf:"bytes,12,opt,name=policy_runtime,json=policyRuntime,proto3" json:"policy_runtime,omitempty"`
+	ApprovalsRequired     int32  `protobuf:"varint,13,opt,name=approvals_required,json=approvalsRequired,proto3" json:"approvals_required,omitempty"`
+	ApprovalsReceived     int32  `protobuf:"varint,14,opt,name=approvals_received,json=approvalsReceived,proto3" json:"approvals_received,omitempty"`
+	ComprehensionRequired bool   `protobuf:"varint,15,opt,name=comprehension_required,json=comprehensionRequired,proto3" json:"comprehension_required,omitempty"`
+	OnReject              string `protobuf:"bytes,16,opt,name=on_reject,json=onReject,proto3" json:"on_reject,omitempty"`
+	OnModify              string `protobuf:"bytes,17,opt,name=on_modify,json=onModify,proto3" json:"on_modify,omitempty"`
+	// RFC3339; empty when no timeout is configured.
+	ExpiresAt     string          `protobuf:"bytes,18,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	CreatedAt     string          `protobuf:"bytes,19,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // RFC3339
+	DecidedAt     string          `protobuf:"bytes,20,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"` // RFC3339
+	DecidedBy     string          `protobuf:"bytes,21,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
+	Comment       string          `protobuf:"bytes,22,opt,name=comment,proto3" json:"comment,omitempty"`
+	Votes         []*ApprovalVote `protobuf:"bytes,23,rep,name=votes,proto3" json:"votes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Approval) Reset() {
+	*x = Approval{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Approval) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Approval) ProtoMessage() {}
+
+func (x *Approval) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Approval.ProtoReflect.Descriptor instead.
+func (*Approval) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *Approval) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Approval) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *Approval) GetCallId() string {
+	if x != nil {
+		return x.CallId
+	}
+	return ""
+}
+
+func (x *Approval) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *Approval) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
+}
+
+func (x *Approval) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *Approval) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *Approval) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *Approval) GetArgs() []byte {
+	if x != nil {
+		return x.Args
+	}
+	return nil
+}
+
+func (x *Approval) GetAuthorityRef() string {
+	if x != nil {
+		return x.AuthorityRef
+	}
+	return ""
+}
+
+func (x *Approval) GetPolicyName() string {
+	if x != nil {
+		return x.PolicyName
+	}
+	return ""
+}
+
+func (x *Approval) GetPolicyRuntime() []byte {
+	if x != nil {
+		return x.PolicyRuntime
+	}
+	return nil
+}
+
+func (x *Approval) GetApprovalsRequired() int32 {
+	if x != nil {
+		return x.ApprovalsRequired
+	}
+	return 0
+}
+
+func (x *Approval) GetApprovalsReceived() int32 {
+	if x != nil {
+		return x.ApprovalsReceived
+	}
+	return 0
+}
+
+func (x *Approval) GetComprehensionRequired() bool {
+	if x != nil {
+		return x.ComprehensionRequired
+	}
+	return false
+}
+
+func (x *Approval) GetOnReject() string {
+	if x != nil {
+		return x.OnReject
+	}
+	return ""
+}
+
+func (x *Approval) GetOnModify() string {
+	if x != nil {
+		return x.OnModify
+	}
+	return ""
+}
+
+func (x *Approval) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+func (x *Approval) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *Approval) GetDecidedAt() string {
+	if x != nil {
+		return x.DecidedAt
+	}
+	return ""
+}
+
+func (x *Approval) GetDecidedBy() string {
+	if x != nil {
+		return x.DecidedBy
+	}
+	return ""
+}
+
+func (x *Approval) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *Approval) GetVotes() []*ApprovalVote {
+	if x != nil {
+		return x.Votes
+	}
+	return nil
+}
+
+type GetApprovalRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalId    string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetApprovalRequest) Reset() {
+	*x = GetApprovalRequest{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetApprovalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetApprovalRequest) ProtoMessage() {}
+
+func (x *GetApprovalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetApprovalRequest.ProtoReflect.Descriptor instead.
+func (*GetApprovalRequest) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *GetApprovalRequest) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
+type ListApprovalsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional filter; empty means all statuses.
+	Status         string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Route          string `protobuf:"bytes,2,opt,name=route,proto3" json:"route,omitempty"`
+	SessionId      string `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AgentNamespace string `protobuf:"bytes,4,opt,name=agent_namespace,json=agentNamespace,proto3" json:"agent_namespace,omitempty"`
+	AgentName      string `protobuf:"bytes,5,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListApprovalsRequest) Reset() {
+	*x = ListApprovalsRequest{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListApprovalsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListApprovalsRequest) ProtoMessage() {}
+
+func (x *ListApprovalsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListApprovalsRequest.ProtoReflect.Descriptor instead.
+func (*ListApprovalsRequest) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *ListApprovalsRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ListApprovalsRequest) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
+}
+
+func (x *ListApprovalsRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ListApprovalsRequest) GetAgentNamespace() string {
+	if x != nil {
+		return x.AgentNamespace
+	}
+	return ""
+}
+
+func (x *ListApprovalsRequest) GetAgentName() string {
+	if x != nil {
+		return x.AgentName
+	}
+	return ""
+}
+
+type ListApprovalsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Approvals     []*Approval            `protobuf:"bytes,1,rep,name=approvals,proto3" json:"approvals,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListApprovalsResponse) Reset() {
+	*x = ListApprovalsResponse{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListApprovalsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListApprovalsResponse) ProtoMessage() {}
+
+func (x *ListApprovalsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListApprovalsResponse.ProtoReflect.Descriptor instead.
+func (*ListApprovalsResponse) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *ListApprovalsResponse) GetApprovals() []*Approval {
+	if x != nil {
+		return x.Approvals
+	}
+	return nil
+}
+
+type DecideApprovalRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalId string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	Decision   ApprovalDecision       `protobuf:"varint,2,opt,name=decision,proto3,enum=phrony.runtime.v1.ApprovalDecision" json:"decision,omitempty"`
+	Comment    string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
+	// When set on approve, replaces proposed tool arguments before dispatch.
+	Args                      []byte `protobuf:"bytes,4,opt,name=args,proto3" json:"args,omitempty"`
+	ComprehensionAcknowledged bool   `protobuf:"varint,5,opt,name=comprehension_acknowledged,json=comprehensionAcknowledged,proto3" json:"comprehension_acknowledged,omitempty"`
+	// Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
+	Actor         string `protobuf:"bytes,6,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecideApprovalRequest) Reset() {
+	*x = DecideApprovalRequest{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecideApprovalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecideApprovalRequest) ProtoMessage() {}
+
+func (x *DecideApprovalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecideApprovalRequest.ProtoReflect.Descriptor instead.
+func (*DecideApprovalRequest) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *DecideApprovalRequest) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
+func (x *DecideApprovalRequest) GetDecision() ApprovalDecision {
+	if x != nil {
+		return x.Decision
+	}
+	return ApprovalDecision_APPROVAL_DECISION_UNSPECIFIED
+}
+
+func (x *DecideApprovalRequest) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *DecideApprovalRequest) GetArgs() []byte {
+	if x != nil {
+		return x.Args
+	}
+	return nil
+}
+
+func (x *DecideApprovalRequest) GetComprehensionAcknowledged() bool {
+	if x != nil {
+		return x.ComprehensionAcknowledged
+	}
+	return false
+}
+
+func (x *DecideApprovalRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+type DecideApprovalResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// pending, approved, denied, or escalated
+	Status            string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	ApprovalsReceived int32  `protobuf:"varint,2,opt,name=approvals_received,json=approvalsReceived,proto3" json:"approvals_received,omitempty"`
+	SessionStatus     string `protobuf:"bytes,3,opt,name=session_status,json=sessionStatus,proto3" json:"session_status,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *DecideApprovalResponse) Reset() {
+	*x = DecideApprovalResponse{}
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecideApprovalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecideApprovalResponse) ProtoMessage() {}
+
+func (x *DecideApprovalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecideApprovalResponse.ProtoReflect.Descriptor instead.
+func (*DecideApprovalResponse) Descriptor() ([]byte, []int) {
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *DecideApprovalResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *DecideApprovalResponse) GetApprovalsReceived() int32 {
+	if x != nil {
+		return x.ApprovalsReceived
+	}
+	return 0
+}
+
+func (x *DecideApprovalResponse) GetSessionStatus() string {
+	if x != nil {
+		return x.SessionStatus
+	}
+	return ""
+}
+
 type DeprecateAgentVersionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AgentRef      *AgentRef              `protobuf:"bytes,1,opt,name=agent_ref,json=agentRef,proto3" json:"agent_ref,omitempty"`
@@ -3170,7 +3888,7 @@ type DeprecateAgentVersionRequest struct {
 
 func (x *DeprecateAgentVersionRequest) Reset() {
 	*x = DeprecateAgentVersionRequest{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[50]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3182,7 +3900,7 @@ func (x *DeprecateAgentVersionRequest) String() string {
 func (*DeprecateAgentVersionRequest) ProtoMessage() {}
 
 func (x *DeprecateAgentVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[50]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3195,7 +3913,7 @@ func (x *DeprecateAgentVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeprecateAgentVersionRequest.ProtoReflect.Descriptor instead.
 func (*DeprecateAgentVersionRequest) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{50}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *DeprecateAgentVersionRequest) GetAgentRef() *AgentRef {
@@ -3214,7 +3932,7 @@ type DeprecateAgentVersionResponse struct {
 
 func (x *DeprecateAgentVersionResponse) Reset() {
 	*x = DeprecateAgentVersionResponse{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[51]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3226,7 +3944,7 @@ func (x *DeprecateAgentVersionResponse) String() string {
 func (*DeprecateAgentVersionResponse) ProtoMessage() {}
 
 func (x *DeprecateAgentVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[51]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3239,7 +3957,7 @@ func (x *DeprecateAgentVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeprecateAgentVersionResponse.ProtoReflect.Descriptor instead.
 func (*DeprecateAgentVersionResponse) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{51}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *DeprecateAgentVersionResponse) GetVersionId() string {
@@ -3258,7 +3976,7 @@ type ArchiveAgentRequest struct {
 
 func (x *ArchiveAgentRequest) Reset() {
 	*x = ArchiveAgentRequest{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[52]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3270,7 +3988,7 @@ func (x *ArchiveAgentRequest) String() string {
 func (*ArchiveAgentRequest) ProtoMessage() {}
 
 func (x *ArchiveAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[52]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3283,7 +4001,7 @@ func (x *ArchiveAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveAgentRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveAgentRequest) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{52}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ArchiveAgentRequest) GetAgentRef() *AgentRef {
@@ -3301,7 +4019,7 @@ type ArchiveAgentResponse struct {
 
 func (x *ArchiveAgentResponse) Reset() {
 	*x = ArchiveAgentResponse{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[53]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3313,7 +4031,7 @@ func (x *ArchiveAgentResponse) String() string {
 func (*ArchiveAgentResponse) ProtoMessage() {}
 
 func (x *ArchiveAgentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[53]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3326,7 +4044,7 @@ func (x *ArchiveAgentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveAgentResponse.ProtoReflect.Descriptor instead.
 func (*ArchiveAgentResponse) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{53}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{60}
 }
 
 type WorkClientMsg struct {
@@ -3344,7 +4062,7 @@ type WorkClientMsg struct {
 
 func (x *WorkClientMsg) Reset() {
 	*x = WorkClientMsg{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[54]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3356,7 +4074,7 @@ func (x *WorkClientMsg) String() string {
 func (*WorkClientMsg) ProtoMessage() {}
 
 func (x *WorkClientMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[54]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3369,7 +4087,7 @@ func (x *WorkClientMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkClientMsg.ProtoReflect.Descriptor instead.
 func (*WorkClientMsg) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{54}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *WorkClientMsg) GetBody() isWorkClientMsg_Body {
@@ -3459,7 +4177,7 @@ type WorkServerMsg struct {
 
 func (x *WorkServerMsg) Reset() {
 	*x = WorkServerMsg{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[55]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3471,7 +4189,7 @@ func (x *WorkServerMsg) String() string {
 func (*WorkServerMsg) ProtoMessage() {}
 
 func (x *WorkServerMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[55]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3484,7 +4202,7 @@ func (x *WorkServerMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkServerMsg.ProtoReflect.Descriptor instead.
 func (*WorkServerMsg) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{55}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *WorkServerMsg) GetBody() isWorkServerMsg_Body {
@@ -3588,7 +4306,7 @@ type WorkHandlerAdvertisement struct {
 
 func (x *WorkHandlerAdvertisement) Reset() {
 	*x = WorkHandlerAdvertisement{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[56]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3600,7 +4318,7 @@ func (x *WorkHandlerAdvertisement) String() string {
 func (*WorkHandlerAdvertisement) ProtoMessage() {}
 
 func (x *WorkHandlerAdvertisement) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[56]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3613,7 +4331,7 @@ func (x *WorkHandlerAdvertisement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkHandlerAdvertisement.ProtoReflect.Descriptor instead.
 func (*WorkHandlerAdvertisement) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{56}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *WorkHandlerAdvertisement) GetTool() string {
@@ -3660,7 +4378,7 @@ type WorkInFlightCall struct {
 
 func (x *WorkInFlightCall) Reset() {
 	*x = WorkInFlightCall{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[57]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3672,7 +4390,7 @@ func (x *WorkInFlightCall) String() string {
 func (*WorkInFlightCall) ProtoMessage() {}
 
 func (x *WorkInFlightCall) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[57]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3685,7 +4403,7 @@ func (x *WorkInFlightCall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkInFlightCall.ProtoReflect.Descriptor instead.
 func (*WorkInFlightCall) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{57}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *WorkInFlightCall) GetCallId() string {
@@ -3709,7 +4427,7 @@ type WorkRegister struct {
 
 func (x *WorkRegister) Reset() {
 	*x = WorkRegister{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[58]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3721,7 +4439,7 @@ func (x *WorkRegister) String() string {
 func (*WorkRegister) ProtoMessage() {}
 
 func (x *WorkRegister) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[58]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3734,7 +4452,7 @@ func (x *WorkRegister) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkRegister.ProtoReflect.Descriptor instead.
 func (*WorkRegister) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{58}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *WorkRegister) GetWorkerId() string {
@@ -3783,7 +4501,7 @@ type WorkRegistered struct {
 
 func (x *WorkRegistered) Reset() {
 	*x = WorkRegistered{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[59]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3795,7 +4513,7 @@ func (x *WorkRegistered) String() string {
 func (*WorkRegistered) ProtoMessage() {}
 
 func (x *WorkRegistered) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[59]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3808,7 +4526,7 @@ func (x *WorkRegistered) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkRegistered.ProtoReflect.Descriptor instead.
 func (*WorkRegistered) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{59}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *WorkRegistered) GetWorkerId() string {
@@ -3833,7 +4551,7 @@ type WorkHeartbeat struct {
 
 func (x *WorkHeartbeat) Reset() {
 	*x = WorkHeartbeat{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[60]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3845,7 +4563,7 @@ func (x *WorkHeartbeat) String() string {
 func (*WorkHeartbeat) ProtoMessage() {}
 
 func (x *WorkHeartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[60]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3858,7 +4576,7 @@ func (x *WorkHeartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkHeartbeat.ProtoReflect.Descriptor instead.
 func (*WorkHeartbeat) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{60}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{67}
 }
 
 type WorkHeartbeatAck struct {
@@ -3869,7 +4587,7 @@ type WorkHeartbeatAck struct {
 
 func (x *WorkHeartbeatAck) Reset() {
 	*x = WorkHeartbeatAck{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[61]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3881,7 +4599,7 @@ func (x *WorkHeartbeatAck) String() string {
 func (*WorkHeartbeatAck) ProtoMessage() {}
 
 func (x *WorkHeartbeatAck) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[61]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3894,7 +4612,7 @@ func (x *WorkHeartbeatAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkHeartbeatAck.ProtoReflect.Descriptor instead.
 func (*WorkHeartbeatAck) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{61}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{68}
 }
 
 type WorkInvoke struct {
@@ -3914,7 +4632,7 @@ type WorkInvoke struct {
 
 func (x *WorkInvoke) Reset() {
 	*x = WorkInvoke{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[62]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3926,7 +4644,7 @@ func (x *WorkInvoke) String() string {
 func (*WorkInvoke) ProtoMessage() {}
 
 func (x *WorkInvoke) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[62]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3939,7 +4657,7 @@ func (x *WorkInvoke) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkInvoke.ProtoReflect.Descriptor instead.
 func (*WorkInvoke) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{62}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *WorkInvoke) GetCallId() string {
@@ -4014,7 +4732,7 @@ type WorkToolCancel struct {
 
 func (x *WorkToolCancel) Reset() {
 	*x = WorkToolCancel{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[63]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4026,7 +4744,7 @@ func (x *WorkToolCancel) String() string {
 func (*WorkToolCancel) ProtoMessage() {}
 
 func (x *WorkToolCancel) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[63]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4039,7 +4757,7 @@ func (x *WorkToolCancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkToolCancel.ProtoReflect.Descriptor instead.
 func (*WorkToolCancel) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{63}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *WorkToolCancel) GetCallId() string {
@@ -4060,7 +4778,7 @@ type WorkToolResult struct {
 
 func (x *WorkToolResult) Reset() {
 	*x = WorkToolResult{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[64]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4072,7 +4790,7 @@ func (x *WorkToolResult) String() string {
 func (*WorkToolResult) ProtoMessage() {}
 
 func (x *WorkToolResult) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[64]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4085,7 +4803,7 @@ func (x *WorkToolResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkToolResult.ProtoReflect.Descriptor instead.
 func (*WorkToolResult) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{64}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *WorkToolResult) GetCallId() string {
@@ -4120,7 +4838,7 @@ type WorkToolNack struct {
 
 func (x *WorkToolNack) Reset() {
 	*x = WorkToolNack{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[65]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4132,7 +4850,7 @@ func (x *WorkToolNack) String() string {
 func (*WorkToolNack) ProtoMessage() {}
 
 func (x *WorkToolNack) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[65]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4145,7 +4863,7 @@ func (x *WorkToolNack) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkToolNack.ProtoReflect.Descriptor instead.
 func (*WorkToolNack) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{65}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *WorkToolNack) GetCallId() string {
@@ -4179,7 +4897,7 @@ type WorkToolError struct {
 
 func (x *WorkToolError) Reset() {
 	*x = WorkToolError{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[66]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4191,7 +4909,7 @@ func (x *WorkToolError) String() string {
 func (*WorkToolError) ProtoMessage() {}
 
 func (x *WorkToolError) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[66]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4204,7 +4922,7 @@ func (x *WorkToolError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkToolError.ProtoReflect.Descriptor instead.
 func (*WorkToolError) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{66}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *WorkToolError) GetCode() string {
@@ -4230,7 +4948,7 @@ type WorkResultAck struct {
 
 func (x *WorkResultAck) Reset() {
 	*x = WorkResultAck{}
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[67]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4242,7 +4960,7 @@ func (x *WorkResultAck) String() string {
 func (*WorkResultAck) ProtoMessage() {}
 
 func (x *WorkResultAck) ProtoReflect() protoreflect.Message {
-	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[67]
+	mi := &file_phrony_runtime_v1_runtime_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4255,7 +4973,7 @@ func (x *WorkResultAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkResultAck.ProtoReflect.Descriptor instead.
 func (*WorkResultAck) Descriptor() ([]byte, []int) {
-	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{67}
+	return file_phrony_runtime_v1_runtime_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *WorkResultAck) GetCallId() string {
@@ -4392,7 +5110,7 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x1fRunSessionInteractiveToolResult\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\xd1\x01\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\xf2\x03\n" +
 	"%RunSessionInteractiveApprovalRequired\x12\x1f\n" +
 	"\vapproval_id\x18\x01 \x01(\tR\n" +
 	"approvalId\x12\x17\n" +
@@ -4401,7 +5119,17 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x12\n" +
 	"\x04args\x18\x05 \x01(\fR\x04args\x12\x14\n" +
 	"\x05route\x18\x06 \x01(\tR\x05route\x12\x16\n" +
-	"\x06reason\x18\a \x01(\tR\x06reason\"\x8e\x01\n" +
+	"\x06reason\x18\a \x01(\tR\x06reason\x12#\n" +
+	"\rauthority_ref\x18\b \x01(\tR\fauthorityRef\x12\x1f\n" +
+	"\vpolicy_name\x18\t \x01(\tR\n" +
+	"policyName\x12%\n" +
+	"\x0epolicy_runtime\x18\n" +
+	" \x01(\fR\rpolicyRuntime\x12-\n" +
+	"\x12approvals_required\x18\v \x01(\x05R\x11approvalsRequired\x12-\n" +
+	"\x12approvals_received\x18\f \x01(\x05R\x11approvalsReceived\x125\n" +
+	"\x16comprehension_required\x18\r \x01(\bR\x15comprehensionRequired\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x0e \x01(\tR\texpiresAt\"\x8e\x01\n" +
 	"!RunSessionInteractiveToolApproval\x12\x1f\n" +
 	"\vapproval_id\x18\x01 \x01(\tR\n" +
 	"approvalId\x12\x1a\n" +
@@ -4513,7 +5241,71 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"U\n" +
 	"\x14ListSessionsResponse\x12=\n" +
-	"\bsessions\x18\x01 \x03(\v2!.phrony.runtime.v1.SessionSummaryR\bsessions\"X\n" +
+	"\bsessions\x18\x01 \x03(\v2!.phrony.runtime.v1.SessionSummaryR\bsessions\"\xc1\x01\n" +
+	"\fApprovalVote\x12\x1d\n" +
+	"\n" +
+	"decided_by\x18\x01 \x01(\tR\tdecidedBy\x12\x1a\n" +
+	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x18\n" +
+	"\acomment\x18\x03 \x01(\tR\acomment\x12=\n" +
+	"\x1acomprehension_acknowledged\x18\x04 \x01(\bR\x19comprehensionAcknowledged\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\xe3\x05\n" +
+	"\bApproval\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x17\n" +
+	"\acall_id\x18\x03 \x01(\tR\x06callId\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x12\x14\n" +
+	"\x05route\x18\x05 \x01(\tR\x05route\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\x12\x12\n" +
+	"\x04tool\x18\a \x01(\tR\x04tool\x12\x18\n" +
+	"\aversion\x18\b \x01(\tR\aversion\x12\x12\n" +
+	"\x04args\x18\t \x01(\fR\x04args\x12#\n" +
+	"\rauthority_ref\x18\n" +
+	" \x01(\tR\fauthorityRef\x12\x1f\n" +
+	"\vpolicy_name\x18\v \x01(\tR\n" +
+	"policyName\x12%\n" +
+	"\x0epolicy_runtime\x18\f \x01(\fR\rpolicyRuntime\x12-\n" +
+	"\x12approvals_required\x18\r \x01(\x05R\x11approvalsRequired\x12-\n" +
+	"\x12approvals_received\x18\x0e \x01(\x05R\x11approvalsReceived\x125\n" +
+	"\x16comprehension_required\x18\x0f \x01(\bR\x15comprehensionRequired\x12\x1b\n" +
+	"\ton_reject\x18\x10 \x01(\tR\bonReject\x12\x1b\n" +
+	"\ton_modify\x18\x11 \x01(\tR\bonModify\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x12 \x01(\tR\texpiresAt\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x13 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"decided_at\x18\x14 \x01(\tR\tdecidedAt\x12\x1d\n" +
+	"\n" +
+	"decided_by\x18\x15 \x01(\tR\tdecidedBy\x12\x18\n" +
+	"\acomment\x18\x16 \x01(\tR\acomment\x125\n" +
+	"\x05votes\x18\x17 \x03(\v2\x1f.phrony.runtime.v1.ApprovalVoteR\x05votes\"5\n" +
+	"\x12GetApprovalRequest\x12\x1f\n" +
+	"\vapproval_id\x18\x01 \x01(\tR\n" +
+	"approvalId\"\xab\x01\n" +
+	"\x14ListApprovalsRequest\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12\x14\n" +
+	"\x05route\x18\x02 \x01(\tR\x05route\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12'\n" +
+	"\x0fagent_namespace\x18\x04 \x01(\tR\x0eagentNamespace\x12\x1d\n" +
+	"\n" +
+	"agent_name\x18\x05 \x01(\tR\tagentName\"R\n" +
+	"\x15ListApprovalsResponse\x129\n" +
+	"\tapprovals\x18\x01 \x03(\v2\x1b.phrony.runtime.v1.ApprovalR\tapprovals\"\xfc\x01\n" +
+	"\x15DecideApprovalRequest\x12\x1f\n" +
+	"\vapproval_id\x18\x01 \x01(\tR\n" +
+	"approvalId\x12?\n" +
+	"\bdecision\x18\x02 \x01(\x0e2#.phrony.runtime.v1.ApprovalDecisionR\bdecision\x12\x18\n" +
+	"\acomment\x18\x03 \x01(\tR\acomment\x12\x12\n" +
+	"\x04args\x18\x04 \x01(\fR\x04args\x12=\n" +
+	"\x1acomprehension_acknowledged\x18\x05 \x01(\bR\x19comprehensionAcknowledged\x12\x14\n" +
+	"\x05actor\x18\x06 \x01(\tR\x05actor\"\x86\x01\n" +
+	"\x16DecideApprovalResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12-\n" +
+	"\x12approvals_received\x18\x02 \x01(\x05R\x11approvalsReceived\x12%\n" +
+	"\x0esession_status\x18\x03 \x01(\tR\rsessionStatus\"X\n" +
 	"\x1cDeprecateAgentVersionRequest\x128\n" +
 	"\tagent_ref\x18\x01 \x01(\v2\x1b.phrony.runtime.v1.AgentRefR\bagentRef\">\n" +
 	"\x1dDeprecateAgentVersionResponse\x12\x1d\n" +
@@ -4584,7 +5376,11 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"(\n" +
 	"\rWorkResultAck\x12\x17\n" +
-	"\acall_id\x18\x01 \x01(\tR\x06callId2\xaa\r\n" +
+	"\acall_id\x18\x01 \x01(\tR\x06callId*r\n" +
+	"\x10ApprovalDecision\x12!\n" +
+	"\x1dAPPROVAL_DECISION_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19APPROVAL_DECISION_APPROVE\x10\x01\x12\x1c\n" +
+	"\x18APPROVAL_DECISION_REJECT\x10\x022\xc8\x0f\n" +
 	"\aRuntime\x12Y\n" +
 	"\n" +
 	"GetVersion\x12$.phrony.runtime.v1.GetVersionRequest\x1a%.phrony.runtime.v1.GetVersionResponse\x12Y\n" +
@@ -4602,7 +5398,10 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
 	"ListAgents\x12$.phrony.runtime.v1.ListAgentsRequest\x1a%.phrony.runtime.v1.ListAgentsResponse\x12n\n" +
 	"\x11ListAgentVersions\x12+.phrony.runtime.v1.ListAgentVersionsRequest\x1a,.phrony.runtime.v1.ListAgentVersionsResponse\x12_\n" +
-	"\fListSessions\x12&.phrony.runtime.v1.ListSessionsRequest\x1a'.phrony.runtime.v1.ListSessionsResponse\x12z\n" +
+	"\fListSessions\x12&.phrony.runtime.v1.ListSessionsRequest\x1a'.phrony.runtime.v1.ListSessionsResponse\x12Q\n" +
+	"\vGetApproval\x12%.phrony.runtime.v1.GetApprovalRequest\x1a\x1b.phrony.runtime.v1.Approval\x12b\n" +
+	"\rListApprovals\x12'.phrony.runtime.v1.ListApprovalsRequest\x1a(.phrony.runtime.v1.ListApprovalsResponse\x12e\n" +
+	"\x0eDecideApproval\x12(.phrony.runtime.v1.DecideApprovalRequest\x1a).phrony.runtime.v1.DecideApprovalResponse\x12z\n" +
 	"\x15DeprecateAgentVersion\x12/.phrony.runtime.v1.DeprecateAgentVersionRequest\x1a0.phrony.runtime.v1.DeprecateAgentVersionResponse\x12_\n" +
 	"\fArchiveAgent\x12&.phrony.runtime.v1.ArchiveAgentRequest\x1a'.phrony.runtime.v1.ArchiveAgentResponse\x12N\n" +
 	"\x04Work\x12 .phrony.runtime.v1.WorkClientMsg\x1a .phrony.runtime.v1.WorkServerMsg(\x010\x01BDZBgithub.com/phrony-platform/runtime/gen/phrony/runtime/v1;runtimev1b\x06proto3"
@@ -4619,171 +5418,189 @@ func file_phrony_runtime_v1_runtime_proto_rawDescGZIP() []byte {
 	return file_phrony_runtime_v1_runtime_proto_rawDescData
 }
 
-var file_phrony_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
+var file_phrony_runtime_v1_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_phrony_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 78)
 var file_phrony_runtime_v1_runtime_proto_goTypes = []any{
-	(*GetVersionRequest)(nil),                     // 0: phrony.runtime.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),                    // 1: phrony.runtime.v1.GetVersionResponse
-	(*AgentRef)(nil),                              // 2: phrony.runtime.v1.AgentRef
-	(*RunSessionRequest)(nil),                     // 3: phrony.runtime.v1.RunSessionRequest
-	(*RunSessionResponse)(nil),                    // 4: phrony.runtime.v1.RunSessionResponse
-	(*RunSessionInteractiveClientMsg)(nil),        // 5: phrony.runtime.v1.RunSessionInteractiveClientMsg
-	(*RunSessionInteractiveStart)(nil),            // 6: phrony.runtime.v1.RunSessionInteractiveStart
-	(*RunSessionInteractiveUserMessage)(nil),      // 7: phrony.runtime.v1.RunSessionInteractiveUserMessage
-	(*RunSessionInteractiveServerMsg)(nil),        // 8: phrony.runtime.v1.RunSessionInteractiveServerMsg
-	(*InteractiveConversationMessage)(nil),        // 9: phrony.runtime.v1.InteractiveConversationMessage
-	(*RunSessionInteractiveSessionStarted)(nil),   // 10: phrony.runtime.v1.RunSessionInteractiveSessionStarted
-	(*DescriptiveMetadataEvidence)(nil),           // 11: phrony.runtime.v1.DescriptiveMetadataEvidence
-	(*GovernanceMetadataEvidence)(nil),            // 12: phrony.runtime.v1.GovernanceMetadataEvidence
-	(*FrameworkPackEvidence)(nil),                 // 13: phrony.runtime.v1.FrameworkPackEvidence
-	(*RunSessionInteractiveTextDelta)(nil),        // 14: phrony.runtime.v1.RunSessionInteractiveTextDelta
-	(*TokenUsage)(nil),                            // 15: phrony.runtime.v1.TokenUsage
-	(*InteractiveSessionStats)(nil),               // 16: phrony.runtime.v1.InteractiveSessionStats
-	(*RunSessionInteractiveAwaitingInput)(nil),    // 17: phrony.runtime.v1.RunSessionInteractiveAwaitingInput
-	(*RunSessionInteractiveCompleted)(nil),        // 18: phrony.runtime.v1.RunSessionInteractiveCompleted
-	(*RunSessionInteractiveFailed)(nil),           // 19: phrony.runtime.v1.RunSessionInteractiveFailed
-	(*RunSessionInteractiveToolCall)(nil),         // 20: phrony.runtime.v1.RunSessionInteractiveToolCall
-	(*RunSessionInteractiveToolResult)(nil),       // 21: phrony.runtime.v1.RunSessionInteractiveToolResult
-	(*RunSessionInteractiveApprovalRequired)(nil), // 22: phrony.runtime.v1.RunSessionInteractiveApprovalRequired
-	(*RunSessionInteractiveToolApproval)(nil),     // 23: phrony.runtime.v1.RunSessionInteractiveToolApproval
-	(*PublishRequest)(nil),                        // 24: phrony.runtime.v1.PublishRequest
-	(*PublishResponse)(nil),                       // 25: phrony.runtime.v1.PublishResponse
-	(*DeployRequest)(nil),                         // 26: phrony.runtime.v1.DeployRequest
-	(*DeployResponse)(nil),                        // 27: phrony.runtime.v1.DeployResponse
-	(*RollbackRequest)(nil),                       // 28: phrony.runtime.v1.RollbackRequest
-	(*RollbackResponse)(nil),                      // 29: phrony.runtime.v1.RollbackResponse
-	(*GetActiveVersionRequest)(nil),               // 30: phrony.runtime.v1.GetActiveVersionRequest
-	(*GetActiveVersionResponse)(nil),              // 31: phrony.runtime.v1.GetActiveVersionResponse
-	(*ListDeploymentsRequest)(nil),                // 32: phrony.runtime.v1.ListDeploymentsRequest
-	(*DeploymentEntry)(nil),                       // 33: phrony.runtime.v1.DeploymentEntry
-	(*ListDeploymentsResponse)(nil),               // 34: phrony.runtime.v1.ListDeploymentsResponse
-	(*GetAgentVersionRequest)(nil),                // 35: phrony.runtime.v1.GetAgentVersionRequest
-	(*GetAgentVersionResponse)(nil),               // 36: phrony.runtime.v1.GetAgentVersionResponse
-	(*RetireAgentVersionRequest)(nil),             // 37: phrony.runtime.v1.RetireAgentVersionRequest
-	(*RetireAgentVersionResponse)(nil),            // 38: phrony.runtime.v1.RetireAgentVersionResponse
-	(*CancelSessionRequest)(nil),                  // 39: phrony.runtime.v1.CancelSessionRequest
-	(*CancelSessionResponse)(nil),                 // 40: phrony.runtime.v1.CancelSessionResponse
-	(*ListAgentsRequest)(nil),                     // 41: phrony.runtime.v1.ListAgentsRequest
-	(*AgentSummary)(nil),                          // 42: phrony.runtime.v1.AgentSummary
-	(*ListAgentsResponse)(nil),                    // 43: phrony.runtime.v1.ListAgentsResponse
-	(*ListAgentVersionsRequest)(nil),              // 44: phrony.runtime.v1.ListAgentVersionsRequest
-	(*AgentVersionSummary)(nil),                   // 45: phrony.runtime.v1.AgentVersionSummary
-	(*ListAgentVersionsResponse)(nil),             // 46: phrony.runtime.v1.ListAgentVersionsResponse
-	(*ListSessionsRequest)(nil),                   // 47: phrony.runtime.v1.ListSessionsRequest
-	(*SessionSummary)(nil),                        // 48: phrony.runtime.v1.SessionSummary
-	(*ListSessionsResponse)(nil),                  // 49: phrony.runtime.v1.ListSessionsResponse
-	(*DeprecateAgentVersionRequest)(nil),          // 50: phrony.runtime.v1.DeprecateAgentVersionRequest
-	(*DeprecateAgentVersionResponse)(nil),         // 51: phrony.runtime.v1.DeprecateAgentVersionResponse
-	(*ArchiveAgentRequest)(nil),                   // 52: phrony.runtime.v1.ArchiveAgentRequest
-	(*ArchiveAgentResponse)(nil),                  // 53: phrony.runtime.v1.ArchiveAgentResponse
-	(*WorkClientMsg)(nil),                         // 54: phrony.runtime.v1.WorkClientMsg
-	(*WorkServerMsg)(nil),                         // 55: phrony.runtime.v1.WorkServerMsg
-	(*WorkHandlerAdvertisement)(nil),              // 56: phrony.runtime.v1.WorkHandlerAdvertisement
-	(*WorkInFlightCall)(nil),                      // 57: phrony.runtime.v1.WorkInFlightCall
-	(*WorkRegister)(nil),                          // 58: phrony.runtime.v1.WorkRegister
-	(*WorkRegistered)(nil),                        // 59: phrony.runtime.v1.WorkRegistered
-	(*WorkHeartbeat)(nil),                         // 60: phrony.runtime.v1.WorkHeartbeat
-	(*WorkHeartbeatAck)(nil),                      // 61: phrony.runtime.v1.WorkHeartbeatAck
-	(*WorkInvoke)(nil),                            // 62: phrony.runtime.v1.WorkInvoke
-	(*WorkToolCancel)(nil),                        // 63: phrony.runtime.v1.WorkToolCancel
-	(*WorkToolResult)(nil),                        // 64: phrony.runtime.v1.WorkToolResult
-	(*WorkToolNack)(nil),                          // 65: phrony.runtime.v1.WorkToolNack
-	(*WorkToolError)(nil),                         // 66: phrony.runtime.v1.WorkToolError
-	(*WorkResultAck)(nil),                         // 67: phrony.runtime.v1.WorkResultAck
-	nil,                                           // 68: phrony.runtime.v1.DescriptiveMetadataEvidence.LabelsEntry
-	nil,                                           // 69: phrony.runtime.v1.DescriptiveMetadataEvidence.AnnotationsEntry
-	nil,                                           // 70: phrony.runtime.v1.PublishRequest.ResolvedSecretsEntry
+	(ApprovalDecision)(0),                         // 0: phrony.runtime.v1.ApprovalDecision
+	(*GetVersionRequest)(nil),                     // 1: phrony.runtime.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),                    // 2: phrony.runtime.v1.GetVersionResponse
+	(*AgentRef)(nil),                              // 3: phrony.runtime.v1.AgentRef
+	(*RunSessionRequest)(nil),                     // 4: phrony.runtime.v1.RunSessionRequest
+	(*RunSessionResponse)(nil),                    // 5: phrony.runtime.v1.RunSessionResponse
+	(*RunSessionInteractiveClientMsg)(nil),        // 6: phrony.runtime.v1.RunSessionInteractiveClientMsg
+	(*RunSessionInteractiveStart)(nil),            // 7: phrony.runtime.v1.RunSessionInteractiveStart
+	(*RunSessionInteractiveUserMessage)(nil),      // 8: phrony.runtime.v1.RunSessionInteractiveUserMessage
+	(*RunSessionInteractiveServerMsg)(nil),        // 9: phrony.runtime.v1.RunSessionInteractiveServerMsg
+	(*InteractiveConversationMessage)(nil),        // 10: phrony.runtime.v1.InteractiveConversationMessage
+	(*RunSessionInteractiveSessionStarted)(nil),   // 11: phrony.runtime.v1.RunSessionInteractiveSessionStarted
+	(*DescriptiveMetadataEvidence)(nil),           // 12: phrony.runtime.v1.DescriptiveMetadataEvidence
+	(*GovernanceMetadataEvidence)(nil),            // 13: phrony.runtime.v1.GovernanceMetadataEvidence
+	(*FrameworkPackEvidence)(nil),                 // 14: phrony.runtime.v1.FrameworkPackEvidence
+	(*RunSessionInteractiveTextDelta)(nil),        // 15: phrony.runtime.v1.RunSessionInteractiveTextDelta
+	(*TokenUsage)(nil),                            // 16: phrony.runtime.v1.TokenUsage
+	(*InteractiveSessionStats)(nil),               // 17: phrony.runtime.v1.InteractiveSessionStats
+	(*RunSessionInteractiveAwaitingInput)(nil),    // 18: phrony.runtime.v1.RunSessionInteractiveAwaitingInput
+	(*RunSessionInteractiveCompleted)(nil),        // 19: phrony.runtime.v1.RunSessionInteractiveCompleted
+	(*RunSessionInteractiveFailed)(nil),           // 20: phrony.runtime.v1.RunSessionInteractiveFailed
+	(*RunSessionInteractiveToolCall)(nil),         // 21: phrony.runtime.v1.RunSessionInteractiveToolCall
+	(*RunSessionInteractiveToolResult)(nil),       // 22: phrony.runtime.v1.RunSessionInteractiveToolResult
+	(*RunSessionInteractiveApprovalRequired)(nil), // 23: phrony.runtime.v1.RunSessionInteractiveApprovalRequired
+	(*RunSessionInteractiveToolApproval)(nil),     // 24: phrony.runtime.v1.RunSessionInteractiveToolApproval
+	(*PublishRequest)(nil),                        // 25: phrony.runtime.v1.PublishRequest
+	(*PublishResponse)(nil),                       // 26: phrony.runtime.v1.PublishResponse
+	(*DeployRequest)(nil),                         // 27: phrony.runtime.v1.DeployRequest
+	(*DeployResponse)(nil),                        // 28: phrony.runtime.v1.DeployResponse
+	(*RollbackRequest)(nil),                       // 29: phrony.runtime.v1.RollbackRequest
+	(*RollbackResponse)(nil),                      // 30: phrony.runtime.v1.RollbackResponse
+	(*GetActiveVersionRequest)(nil),               // 31: phrony.runtime.v1.GetActiveVersionRequest
+	(*GetActiveVersionResponse)(nil),              // 32: phrony.runtime.v1.GetActiveVersionResponse
+	(*ListDeploymentsRequest)(nil),                // 33: phrony.runtime.v1.ListDeploymentsRequest
+	(*DeploymentEntry)(nil),                       // 34: phrony.runtime.v1.DeploymentEntry
+	(*ListDeploymentsResponse)(nil),               // 35: phrony.runtime.v1.ListDeploymentsResponse
+	(*GetAgentVersionRequest)(nil),                // 36: phrony.runtime.v1.GetAgentVersionRequest
+	(*GetAgentVersionResponse)(nil),               // 37: phrony.runtime.v1.GetAgentVersionResponse
+	(*RetireAgentVersionRequest)(nil),             // 38: phrony.runtime.v1.RetireAgentVersionRequest
+	(*RetireAgentVersionResponse)(nil),            // 39: phrony.runtime.v1.RetireAgentVersionResponse
+	(*CancelSessionRequest)(nil),                  // 40: phrony.runtime.v1.CancelSessionRequest
+	(*CancelSessionResponse)(nil),                 // 41: phrony.runtime.v1.CancelSessionResponse
+	(*ListAgentsRequest)(nil),                     // 42: phrony.runtime.v1.ListAgentsRequest
+	(*AgentSummary)(nil),                          // 43: phrony.runtime.v1.AgentSummary
+	(*ListAgentsResponse)(nil),                    // 44: phrony.runtime.v1.ListAgentsResponse
+	(*ListAgentVersionsRequest)(nil),              // 45: phrony.runtime.v1.ListAgentVersionsRequest
+	(*AgentVersionSummary)(nil),                   // 46: phrony.runtime.v1.AgentVersionSummary
+	(*ListAgentVersionsResponse)(nil),             // 47: phrony.runtime.v1.ListAgentVersionsResponse
+	(*ListSessionsRequest)(nil),                   // 48: phrony.runtime.v1.ListSessionsRequest
+	(*SessionSummary)(nil),                        // 49: phrony.runtime.v1.SessionSummary
+	(*ListSessionsResponse)(nil),                  // 50: phrony.runtime.v1.ListSessionsResponse
+	(*ApprovalVote)(nil),                          // 51: phrony.runtime.v1.ApprovalVote
+	(*Approval)(nil),                              // 52: phrony.runtime.v1.Approval
+	(*GetApprovalRequest)(nil),                    // 53: phrony.runtime.v1.GetApprovalRequest
+	(*ListApprovalsRequest)(nil),                  // 54: phrony.runtime.v1.ListApprovalsRequest
+	(*ListApprovalsResponse)(nil),                 // 55: phrony.runtime.v1.ListApprovalsResponse
+	(*DecideApprovalRequest)(nil),                 // 56: phrony.runtime.v1.DecideApprovalRequest
+	(*DecideApprovalResponse)(nil),                // 57: phrony.runtime.v1.DecideApprovalResponse
+	(*DeprecateAgentVersionRequest)(nil),          // 58: phrony.runtime.v1.DeprecateAgentVersionRequest
+	(*DeprecateAgentVersionResponse)(nil),         // 59: phrony.runtime.v1.DeprecateAgentVersionResponse
+	(*ArchiveAgentRequest)(nil),                   // 60: phrony.runtime.v1.ArchiveAgentRequest
+	(*ArchiveAgentResponse)(nil),                  // 61: phrony.runtime.v1.ArchiveAgentResponse
+	(*WorkClientMsg)(nil),                         // 62: phrony.runtime.v1.WorkClientMsg
+	(*WorkServerMsg)(nil),                         // 63: phrony.runtime.v1.WorkServerMsg
+	(*WorkHandlerAdvertisement)(nil),              // 64: phrony.runtime.v1.WorkHandlerAdvertisement
+	(*WorkInFlightCall)(nil),                      // 65: phrony.runtime.v1.WorkInFlightCall
+	(*WorkRegister)(nil),                          // 66: phrony.runtime.v1.WorkRegister
+	(*WorkRegistered)(nil),                        // 67: phrony.runtime.v1.WorkRegistered
+	(*WorkHeartbeat)(nil),                         // 68: phrony.runtime.v1.WorkHeartbeat
+	(*WorkHeartbeatAck)(nil),                      // 69: phrony.runtime.v1.WorkHeartbeatAck
+	(*WorkInvoke)(nil),                            // 70: phrony.runtime.v1.WorkInvoke
+	(*WorkToolCancel)(nil),                        // 71: phrony.runtime.v1.WorkToolCancel
+	(*WorkToolResult)(nil),                        // 72: phrony.runtime.v1.WorkToolResult
+	(*WorkToolNack)(nil),                          // 73: phrony.runtime.v1.WorkToolNack
+	(*WorkToolError)(nil),                         // 74: phrony.runtime.v1.WorkToolError
+	(*WorkResultAck)(nil),                         // 75: phrony.runtime.v1.WorkResultAck
+	nil,                                           // 76: phrony.runtime.v1.DescriptiveMetadataEvidence.LabelsEntry
+	nil,                                           // 77: phrony.runtime.v1.DescriptiveMetadataEvidence.AnnotationsEntry
+	nil,                                           // 78: phrony.runtime.v1.PublishRequest.ResolvedSecretsEntry
 }
 var file_phrony_runtime_v1_runtime_proto_depIdxs = []int32{
-	2,  // 0: phrony.runtime.v1.RunSessionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	6,  // 1: phrony.runtime.v1.RunSessionInteractiveClientMsg.start:type_name -> phrony.runtime.v1.RunSessionInteractiveStart
-	7,  // 2: phrony.runtime.v1.RunSessionInteractiveClientMsg.user_message:type_name -> phrony.runtime.v1.RunSessionInteractiveUserMessage
-	23, // 3: phrony.runtime.v1.RunSessionInteractiveClientMsg.tool_approval:type_name -> phrony.runtime.v1.RunSessionInteractiveToolApproval
-	2,  // 4: phrony.runtime.v1.RunSessionInteractiveStart.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	10, // 5: phrony.runtime.v1.RunSessionInteractiveServerMsg.session_started:type_name -> phrony.runtime.v1.RunSessionInteractiveSessionStarted
-	14, // 6: phrony.runtime.v1.RunSessionInteractiveServerMsg.text_delta:type_name -> phrony.runtime.v1.RunSessionInteractiveTextDelta
-	17, // 7: phrony.runtime.v1.RunSessionInteractiveServerMsg.awaiting_input:type_name -> phrony.runtime.v1.RunSessionInteractiveAwaitingInput
-	18, // 8: phrony.runtime.v1.RunSessionInteractiveServerMsg.completed:type_name -> phrony.runtime.v1.RunSessionInteractiveCompleted
-	19, // 9: phrony.runtime.v1.RunSessionInteractiveServerMsg.failed:type_name -> phrony.runtime.v1.RunSessionInteractiveFailed
-	20, // 10: phrony.runtime.v1.RunSessionInteractiveServerMsg.tool_call:type_name -> phrony.runtime.v1.RunSessionInteractiveToolCall
-	21, // 11: phrony.runtime.v1.RunSessionInteractiveServerMsg.tool_result:type_name -> phrony.runtime.v1.RunSessionInteractiveToolResult
-	22, // 12: phrony.runtime.v1.RunSessionInteractiveServerMsg.approval_required:type_name -> phrony.runtime.v1.RunSessionInteractiveApprovalRequired
-	15, // 13: phrony.runtime.v1.InteractiveConversationMessage.turn_usage:type_name -> phrony.runtime.v1.TokenUsage
-	9,  // 14: phrony.runtime.v1.RunSessionInteractiveSessionStarted.history:type_name -> phrony.runtime.v1.InteractiveConversationMessage
-	11, // 15: phrony.runtime.v1.RunSessionInteractiveSessionStarted.descriptive_metadata:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence
-	68, // 16: phrony.runtime.v1.DescriptiveMetadataEvidence.labels:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence.LabelsEntry
-	69, // 17: phrony.runtime.v1.DescriptiveMetadataEvidence.annotations:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence.AnnotationsEntry
-	12, // 18: phrony.runtime.v1.DescriptiveMetadataEvidence.governance:type_name -> phrony.runtime.v1.GovernanceMetadataEvidence
-	13, // 19: phrony.runtime.v1.GovernanceMetadataEvidence.frameworks:type_name -> phrony.runtime.v1.FrameworkPackEvidence
-	15, // 20: phrony.runtime.v1.InteractiveSessionStats.turn_usage:type_name -> phrony.runtime.v1.TokenUsage
-	15, // 21: phrony.runtime.v1.InteractiveSessionStats.session_usage:type_name -> phrony.runtime.v1.TokenUsage
-	16, // 22: phrony.runtime.v1.RunSessionInteractiveAwaitingInput.stats:type_name -> phrony.runtime.v1.InteractiveSessionStats
-	16, // 23: phrony.runtime.v1.RunSessionInteractiveCompleted.stats:type_name -> phrony.runtime.v1.InteractiveSessionStats
-	70, // 24: phrony.runtime.v1.PublishRequest.resolved_secrets:type_name -> phrony.runtime.v1.PublishRequest.ResolvedSecretsEntry
-	2,  // 25: phrony.runtime.v1.DeployRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	2,  // 26: phrony.runtime.v1.RollbackRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	2,  // 27: phrony.runtime.v1.GetActiveVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	2,  // 28: phrony.runtime.v1.ListDeploymentsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	33, // 29: phrony.runtime.v1.ListDeploymentsResponse.deployments:type_name -> phrony.runtime.v1.DeploymentEntry
-	2,  // 30: phrony.runtime.v1.GetAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	2,  // 31: phrony.runtime.v1.RetireAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	42, // 32: phrony.runtime.v1.ListAgentsResponse.agents:type_name -> phrony.runtime.v1.AgentSummary
-	2,  // 33: phrony.runtime.v1.ListAgentVersionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	45, // 34: phrony.runtime.v1.ListAgentVersionsResponse.versions:type_name -> phrony.runtime.v1.AgentVersionSummary
-	2,  // 35: phrony.runtime.v1.ListSessionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	48, // 36: phrony.runtime.v1.ListSessionsResponse.sessions:type_name -> phrony.runtime.v1.SessionSummary
-	2,  // 37: phrony.runtime.v1.DeprecateAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	2,  // 38: phrony.runtime.v1.ArchiveAgentRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	58, // 39: phrony.runtime.v1.WorkClientMsg.register:type_name -> phrony.runtime.v1.WorkRegister
-	60, // 40: phrony.runtime.v1.WorkClientMsg.heartbeat:type_name -> phrony.runtime.v1.WorkHeartbeat
-	64, // 41: phrony.runtime.v1.WorkClientMsg.result:type_name -> phrony.runtime.v1.WorkToolResult
-	65, // 42: phrony.runtime.v1.WorkClientMsg.nack:type_name -> phrony.runtime.v1.WorkToolNack
-	59, // 43: phrony.runtime.v1.WorkServerMsg.registered:type_name -> phrony.runtime.v1.WorkRegistered
-	62, // 44: phrony.runtime.v1.WorkServerMsg.invoke:type_name -> phrony.runtime.v1.WorkInvoke
-	63, // 45: phrony.runtime.v1.WorkServerMsg.cancel:type_name -> phrony.runtime.v1.WorkToolCancel
-	67, // 46: phrony.runtime.v1.WorkServerMsg.result_ack:type_name -> phrony.runtime.v1.WorkResultAck
-	61, // 47: phrony.runtime.v1.WorkServerMsg.heartbeat_ack:type_name -> phrony.runtime.v1.WorkHeartbeatAck
-	56, // 48: phrony.runtime.v1.WorkRegister.handlers:type_name -> phrony.runtime.v1.WorkHandlerAdvertisement
-	57, // 49: phrony.runtime.v1.WorkRegister.in_flight:type_name -> phrony.runtime.v1.WorkInFlightCall
-	66, // 50: phrony.runtime.v1.WorkToolResult.error:type_name -> phrony.runtime.v1.WorkToolError
-	0,  // 51: phrony.runtime.v1.Runtime.GetVersion:input_type -> phrony.runtime.v1.GetVersionRequest
-	3,  // 52: phrony.runtime.v1.Runtime.RunSession:input_type -> phrony.runtime.v1.RunSessionRequest
-	5,  // 53: phrony.runtime.v1.Runtime.RunSessionInteractive:input_type -> phrony.runtime.v1.RunSessionInteractiveClientMsg
-	24, // 54: phrony.runtime.v1.Runtime.Publish:input_type -> phrony.runtime.v1.PublishRequest
-	26, // 55: phrony.runtime.v1.Runtime.Deploy:input_type -> phrony.runtime.v1.DeployRequest
-	28, // 56: phrony.runtime.v1.Runtime.Rollback:input_type -> phrony.runtime.v1.RollbackRequest
-	30, // 57: phrony.runtime.v1.Runtime.GetActiveVersion:input_type -> phrony.runtime.v1.GetActiveVersionRequest
-	32, // 58: phrony.runtime.v1.Runtime.ListDeployments:input_type -> phrony.runtime.v1.ListDeploymentsRequest
-	35, // 59: phrony.runtime.v1.Runtime.GetAgentVersion:input_type -> phrony.runtime.v1.GetAgentVersionRequest
-	37, // 60: phrony.runtime.v1.Runtime.RetireAgentVersion:input_type -> phrony.runtime.v1.RetireAgentVersionRequest
-	39, // 61: phrony.runtime.v1.Runtime.CancelSession:input_type -> phrony.runtime.v1.CancelSessionRequest
-	41, // 62: phrony.runtime.v1.Runtime.ListAgents:input_type -> phrony.runtime.v1.ListAgentsRequest
-	44, // 63: phrony.runtime.v1.Runtime.ListAgentVersions:input_type -> phrony.runtime.v1.ListAgentVersionsRequest
-	47, // 64: phrony.runtime.v1.Runtime.ListSessions:input_type -> phrony.runtime.v1.ListSessionsRequest
-	50, // 65: phrony.runtime.v1.Runtime.DeprecateAgentVersion:input_type -> phrony.runtime.v1.DeprecateAgentVersionRequest
-	52, // 66: phrony.runtime.v1.Runtime.ArchiveAgent:input_type -> phrony.runtime.v1.ArchiveAgentRequest
-	54, // 67: phrony.runtime.v1.Runtime.Work:input_type -> phrony.runtime.v1.WorkClientMsg
-	1,  // 68: phrony.runtime.v1.Runtime.GetVersion:output_type -> phrony.runtime.v1.GetVersionResponse
-	4,  // 69: phrony.runtime.v1.Runtime.RunSession:output_type -> phrony.runtime.v1.RunSessionResponse
-	8,  // 70: phrony.runtime.v1.Runtime.RunSessionInteractive:output_type -> phrony.runtime.v1.RunSessionInteractiveServerMsg
-	25, // 71: phrony.runtime.v1.Runtime.Publish:output_type -> phrony.runtime.v1.PublishResponse
-	27, // 72: phrony.runtime.v1.Runtime.Deploy:output_type -> phrony.runtime.v1.DeployResponse
-	29, // 73: phrony.runtime.v1.Runtime.Rollback:output_type -> phrony.runtime.v1.RollbackResponse
-	31, // 74: phrony.runtime.v1.Runtime.GetActiveVersion:output_type -> phrony.runtime.v1.GetActiveVersionResponse
-	34, // 75: phrony.runtime.v1.Runtime.ListDeployments:output_type -> phrony.runtime.v1.ListDeploymentsResponse
-	36, // 76: phrony.runtime.v1.Runtime.GetAgentVersion:output_type -> phrony.runtime.v1.GetAgentVersionResponse
-	38, // 77: phrony.runtime.v1.Runtime.RetireAgentVersion:output_type -> phrony.runtime.v1.RetireAgentVersionResponse
-	40, // 78: phrony.runtime.v1.Runtime.CancelSession:output_type -> phrony.runtime.v1.CancelSessionResponse
-	43, // 79: phrony.runtime.v1.Runtime.ListAgents:output_type -> phrony.runtime.v1.ListAgentsResponse
-	46, // 80: phrony.runtime.v1.Runtime.ListAgentVersions:output_type -> phrony.runtime.v1.ListAgentVersionsResponse
-	49, // 81: phrony.runtime.v1.Runtime.ListSessions:output_type -> phrony.runtime.v1.ListSessionsResponse
-	51, // 82: phrony.runtime.v1.Runtime.DeprecateAgentVersion:output_type -> phrony.runtime.v1.DeprecateAgentVersionResponse
-	53, // 83: phrony.runtime.v1.Runtime.ArchiveAgent:output_type -> phrony.runtime.v1.ArchiveAgentResponse
-	55, // 84: phrony.runtime.v1.Runtime.Work:output_type -> phrony.runtime.v1.WorkServerMsg
-	68, // [68:85] is the sub-list for method output_type
-	51, // [51:68] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	3,  // 0: phrony.runtime.v1.RunSessionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	7,  // 1: phrony.runtime.v1.RunSessionInteractiveClientMsg.start:type_name -> phrony.runtime.v1.RunSessionInteractiveStart
+	8,  // 2: phrony.runtime.v1.RunSessionInteractiveClientMsg.user_message:type_name -> phrony.runtime.v1.RunSessionInteractiveUserMessage
+	24, // 3: phrony.runtime.v1.RunSessionInteractiveClientMsg.tool_approval:type_name -> phrony.runtime.v1.RunSessionInteractiveToolApproval
+	3,  // 4: phrony.runtime.v1.RunSessionInteractiveStart.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	11, // 5: phrony.runtime.v1.RunSessionInteractiveServerMsg.session_started:type_name -> phrony.runtime.v1.RunSessionInteractiveSessionStarted
+	15, // 6: phrony.runtime.v1.RunSessionInteractiveServerMsg.text_delta:type_name -> phrony.runtime.v1.RunSessionInteractiveTextDelta
+	18, // 7: phrony.runtime.v1.RunSessionInteractiveServerMsg.awaiting_input:type_name -> phrony.runtime.v1.RunSessionInteractiveAwaitingInput
+	19, // 8: phrony.runtime.v1.RunSessionInteractiveServerMsg.completed:type_name -> phrony.runtime.v1.RunSessionInteractiveCompleted
+	20, // 9: phrony.runtime.v1.RunSessionInteractiveServerMsg.failed:type_name -> phrony.runtime.v1.RunSessionInteractiveFailed
+	21, // 10: phrony.runtime.v1.RunSessionInteractiveServerMsg.tool_call:type_name -> phrony.runtime.v1.RunSessionInteractiveToolCall
+	22, // 11: phrony.runtime.v1.RunSessionInteractiveServerMsg.tool_result:type_name -> phrony.runtime.v1.RunSessionInteractiveToolResult
+	23, // 12: phrony.runtime.v1.RunSessionInteractiveServerMsg.approval_required:type_name -> phrony.runtime.v1.RunSessionInteractiveApprovalRequired
+	16, // 13: phrony.runtime.v1.InteractiveConversationMessage.turn_usage:type_name -> phrony.runtime.v1.TokenUsage
+	10, // 14: phrony.runtime.v1.RunSessionInteractiveSessionStarted.history:type_name -> phrony.runtime.v1.InteractiveConversationMessage
+	12, // 15: phrony.runtime.v1.RunSessionInteractiveSessionStarted.descriptive_metadata:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence
+	76, // 16: phrony.runtime.v1.DescriptiveMetadataEvidence.labels:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence.LabelsEntry
+	77, // 17: phrony.runtime.v1.DescriptiveMetadataEvidence.annotations:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence.AnnotationsEntry
+	13, // 18: phrony.runtime.v1.DescriptiveMetadataEvidence.governance:type_name -> phrony.runtime.v1.GovernanceMetadataEvidence
+	14, // 19: phrony.runtime.v1.GovernanceMetadataEvidence.frameworks:type_name -> phrony.runtime.v1.FrameworkPackEvidence
+	16, // 20: phrony.runtime.v1.InteractiveSessionStats.turn_usage:type_name -> phrony.runtime.v1.TokenUsage
+	16, // 21: phrony.runtime.v1.InteractiveSessionStats.session_usage:type_name -> phrony.runtime.v1.TokenUsage
+	17, // 22: phrony.runtime.v1.RunSessionInteractiveAwaitingInput.stats:type_name -> phrony.runtime.v1.InteractiveSessionStats
+	17, // 23: phrony.runtime.v1.RunSessionInteractiveCompleted.stats:type_name -> phrony.runtime.v1.InteractiveSessionStats
+	78, // 24: phrony.runtime.v1.PublishRequest.resolved_secrets:type_name -> phrony.runtime.v1.PublishRequest.ResolvedSecretsEntry
+	3,  // 25: phrony.runtime.v1.DeployRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 26: phrony.runtime.v1.RollbackRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 27: phrony.runtime.v1.GetActiveVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 28: phrony.runtime.v1.ListDeploymentsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	34, // 29: phrony.runtime.v1.ListDeploymentsResponse.deployments:type_name -> phrony.runtime.v1.DeploymentEntry
+	3,  // 30: phrony.runtime.v1.GetAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 31: phrony.runtime.v1.RetireAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	43, // 32: phrony.runtime.v1.ListAgentsResponse.agents:type_name -> phrony.runtime.v1.AgentSummary
+	3,  // 33: phrony.runtime.v1.ListAgentVersionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	46, // 34: phrony.runtime.v1.ListAgentVersionsResponse.versions:type_name -> phrony.runtime.v1.AgentVersionSummary
+	3,  // 35: phrony.runtime.v1.ListSessionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	49, // 36: phrony.runtime.v1.ListSessionsResponse.sessions:type_name -> phrony.runtime.v1.SessionSummary
+	51, // 37: phrony.runtime.v1.Approval.votes:type_name -> phrony.runtime.v1.ApprovalVote
+	52, // 38: phrony.runtime.v1.ListApprovalsResponse.approvals:type_name -> phrony.runtime.v1.Approval
+	0,  // 39: phrony.runtime.v1.DecideApprovalRequest.decision:type_name -> phrony.runtime.v1.ApprovalDecision
+	3,  // 40: phrony.runtime.v1.DeprecateAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 41: phrony.runtime.v1.ArchiveAgentRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	66, // 42: phrony.runtime.v1.WorkClientMsg.register:type_name -> phrony.runtime.v1.WorkRegister
+	68, // 43: phrony.runtime.v1.WorkClientMsg.heartbeat:type_name -> phrony.runtime.v1.WorkHeartbeat
+	72, // 44: phrony.runtime.v1.WorkClientMsg.result:type_name -> phrony.runtime.v1.WorkToolResult
+	73, // 45: phrony.runtime.v1.WorkClientMsg.nack:type_name -> phrony.runtime.v1.WorkToolNack
+	67, // 46: phrony.runtime.v1.WorkServerMsg.registered:type_name -> phrony.runtime.v1.WorkRegistered
+	70, // 47: phrony.runtime.v1.WorkServerMsg.invoke:type_name -> phrony.runtime.v1.WorkInvoke
+	71, // 48: phrony.runtime.v1.WorkServerMsg.cancel:type_name -> phrony.runtime.v1.WorkToolCancel
+	75, // 49: phrony.runtime.v1.WorkServerMsg.result_ack:type_name -> phrony.runtime.v1.WorkResultAck
+	69, // 50: phrony.runtime.v1.WorkServerMsg.heartbeat_ack:type_name -> phrony.runtime.v1.WorkHeartbeatAck
+	64, // 51: phrony.runtime.v1.WorkRegister.handlers:type_name -> phrony.runtime.v1.WorkHandlerAdvertisement
+	65, // 52: phrony.runtime.v1.WorkRegister.in_flight:type_name -> phrony.runtime.v1.WorkInFlightCall
+	74, // 53: phrony.runtime.v1.WorkToolResult.error:type_name -> phrony.runtime.v1.WorkToolError
+	1,  // 54: phrony.runtime.v1.Runtime.GetVersion:input_type -> phrony.runtime.v1.GetVersionRequest
+	4,  // 55: phrony.runtime.v1.Runtime.RunSession:input_type -> phrony.runtime.v1.RunSessionRequest
+	6,  // 56: phrony.runtime.v1.Runtime.RunSessionInteractive:input_type -> phrony.runtime.v1.RunSessionInteractiveClientMsg
+	25, // 57: phrony.runtime.v1.Runtime.Publish:input_type -> phrony.runtime.v1.PublishRequest
+	27, // 58: phrony.runtime.v1.Runtime.Deploy:input_type -> phrony.runtime.v1.DeployRequest
+	29, // 59: phrony.runtime.v1.Runtime.Rollback:input_type -> phrony.runtime.v1.RollbackRequest
+	31, // 60: phrony.runtime.v1.Runtime.GetActiveVersion:input_type -> phrony.runtime.v1.GetActiveVersionRequest
+	33, // 61: phrony.runtime.v1.Runtime.ListDeployments:input_type -> phrony.runtime.v1.ListDeploymentsRequest
+	36, // 62: phrony.runtime.v1.Runtime.GetAgentVersion:input_type -> phrony.runtime.v1.GetAgentVersionRequest
+	38, // 63: phrony.runtime.v1.Runtime.RetireAgentVersion:input_type -> phrony.runtime.v1.RetireAgentVersionRequest
+	40, // 64: phrony.runtime.v1.Runtime.CancelSession:input_type -> phrony.runtime.v1.CancelSessionRequest
+	42, // 65: phrony.runtime.v1.Runtime.ListAgents:input_type -> phrony.runtime.v1.ListAgentsRequest
+	45, // 66: phrony.runtime.v1.Runtime.ListAgentVersions:input_type -> phrony.runtime.v1.ListAgentVersionsRequest
+	48, // 67: phrony.runtime.v1.Runtime.ListSessions:input_type -> phrony.runtime.v1.ListSessionsRequest
+	53, // 68: phrony.runtime.v1.Runtime.GetApproval:input_type -> phrony.runtime.v1.GetApprovalRequest
+	54, // 69: phrony.runtime.v1.Runtime.ListApprovals:input_type -> phrony.runtime.v1.ListApprovalsRequest
+	56, // 70: phrony.runtime.v1.Runtime.DecideApproval:input_type -> phrony.runtime.v1.DecideApprovalRequest
+	58, // 71: phrony.runtime.v1.Runtime.DeprecateAgentVersion:input_type -> phrony.runtime.v1.DeprecateAgentVersionRequest
+	60, // 72: phrony.runtime.v1.Runtime.ArchiveAgent:input_type -> phrony.runtime.v1.ArchiveAgentRequest
+	62, // 73: phrony.runtime.v1.Runtime.Work:input_type -> phrony.runtime.v1.WorkClientMsg
+	2,  // 74: phrony.runtime.v1.Runtime.GetVersion:output_type -> phrony.runtime.v1.GetVersionResponse
+	5,  // 75: phrony.runtime.v1.Runtime.RunSession:output_type -> phrony.runtime.v1.RunSessionResponse
+	9,  // 76: phrony.runtime.v1.Runtime.RunSessionInteractive:output_type -> phrony.runtime.v1.RunSessionInteractiveServerMsg
+	26, // 77: phrony.runtime.v1.Runtime.Publish:output_type -> phrony.runtime.v1.PublishResponse
+	28, // 78: phrony.runtime.v1.Runtime.Deploy:output_type -> phrony.runtime.v1.DeployResponse
+	30, // 79: phrony.runtime.v1.Runtime.Rollback:output_type -> phrony.runtime.v1.RollbackResponse
+	32, // 80: phrony.runtime.v1.Runtime.GetActiveVersion:output_type -> phrony.runtime.v1.GetActiveVersionResponse
+	35, // 81: phrony.runtime.v1.Runtime.ListDeployments:output_type -> phrony.runtime.v1.ListDeploymentsResponse
+	37, // 82: phrony.runtime.v1.Runtime.GetAgentVersion:output_type -> phrony.runtime.v1.GetAgentVersionResponse
+	39, // 83: phrony.runtime.v1.Runtime.RetireAgentVersion:output_type -> phrony.runtime.v1.RetireAgentVersionResponse
+	41, // 84: phrony.runtime.v1.Runtime.CancelSession:output_type -> phrony.runtime.v1.CancelSessionResponse
+	44, // 85: phrony.runtime.v1.Runtime.ListAgents:output_type -> phrony.runtime.v1.ListAgentsResponse
+	47, // 86: phrony.runtime.v1.Runtime.ListAgentVersions:output_type -> phrony.runtime.v1.ListAgentVersionsResponse
+	50, // 87: phrony.runtime.v1.Runtime.ListSessions:output_type -> phrony.runtime.v1.ListSessionsResponse
+	52, // 88: phrony.runtime.v1.Runtime.GetApproval:output_type -> phrony.runtime.v1.Approval
+	55, // 89: phrony.runtime.v1.Runtime.ListApprovals:output_type -> phrony.runtime.v1.ListApprovalsResponse
+	57, // 90: phrony.runtime.v1.Runtime.DecideApproval:output_type -> phrony.runtime.v1.DecideApprovalResponse
+	59, // 91: phrony.runtime.v1.Runtime.DeprecateAgentVersion:output_type -> phrony.runtime.v1.DeprecateAgentVersionResponse
+	61, // 92: phrony.runtime.v1.Runtime.ArchiveAgent:output_type -> phrony.runtime.v1.ArchiveAgentResponse
+	63, // 93: phrony.runtime.v1.Runtime.Work:output_type -> phrony.runtime.v1.WorkServerMsg
+	74, // [74:94] is the sub-list for method output_type
+	54, // [54:74] is the sub-list for method input_type
+	54, // [54:54] is the sub-list for extension type_name
+	54, // [54:54] is the sub-list for extension extendee
+	0,  // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_phrony_runtime_v1_runtime_proto_init() }
@@ -4806,13 +5623,13 @@ func file_phrony_runtime_v1_runtime_proto_init() {
 		(*RunSessionInteractiveServerMsg_ToolResult)(nil),
 		(*RunSessionInteractiveServerMsg_ApprovalRequired)(nil),
 	}
-	file_phrony_runtime_v1_runtime_proto_msgTypes[54].OneofWrappers = []any{
+	file_phrony_runtime_v1_runtime_proto_msgTypes[61].OneofWrappers = []any{
 		(*WorkClientMsg_Register)(nil),
 		(*WorkClientMsg_Heartbeat)(nil),
 		(*WorkClientMsg_Result)(nil),
 		(*WorkClientMsg_Nack)(nil),
 	}
-	file_phrony_runtime_v1_runtime_proto_msgTypes[55].OneofWrappers = []any{
+	file_phrony_runtime_v1_runtime_proto_msgTypes[62].OneofWrappers = []any{
 		(*WorkServerMsg_Registered)(nil),
 		(*WorkServerMsg_Invoke)(nil),
 		(*WorkServerMsg_Cancel)(nil),
@@ -4824,13 +5641,14 @@ func file_phrony_runtime_v1_runtime_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_phrony_runtime_v1_runtime_proto_rawDesc), len(file_phrony_runtime_v1_runtime_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   71,
+			NumEnums:      1,
+			NumMessages:   78,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_phrony_runtime_v1_runtime_proto_goTypes,
 		DependencyIndexes: file_phrony_runtime_v1_runtime_proto_depIdxs,
+		EnumInfos:         file_phrony_runtime_v1_runtime_proto_enumTypes,
 		MessageInfos:      file_phrony_runtime_v1_runtime_proto_msgTypes,
 	}.Build()
 	File_phrony_runtime_v1_runtime_proto = out.File

@@ -33,6 +33,9 @@ const (
 	Runtime_ListAgents_FullMethodName            = "/phrony.runtime.v1.Runtime/ListAgents"
 	Runtime_ListAgentVersions_FullMethodName     = "/phrony.runtime.v1.Runtime/ListAgentVersions"
 	Runtime_ListSessions_FullMethodName          = "/phrony.runtime.v1.Runtime/ListSessions"
+	Runtime_GetApproval_FullMethodName           = "/phrony.runtime.v1.Runtime/GetApproval"
+	Runtime_ListApprovals_FullMethodName         = "/phrony.runtime.v1.Runtime/ListApprovals"
+	Runtime_DecideApproval_FullMethodName        = "/phrony.runtime.v1.Runtime/DecideApproval"
 	Runtime_DeprecateAgentVersion_FullMethodName = "/phrony.runtime.v1.Runtime/DeprecateAgentVersion"
 	Runtime_ArchiveAgent_FullMethodName          = "/phrony.runtime.v1.Runtime/ArchiveAgent"
 	Runtime_Work_FullMethodName                  = "/phrony.runtime.v1.Runtime/Work"
@@ -60,6 +63,9 @@ type RuntimeClient interface {
 	ListAgents(ctx context.Context, in *ListAgentsRequest, opts ...grpc.CallOption) (*ListAgentsResponse, error)
 	ListAgentVersions(ctx context.Context, in *ListAgentVersionsRequest, opts ...grpc.CallOption) (*ListAgentVersionsResponse, error)
 	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
+	GetApproval(ctx context.Context, in *GetApprovalRequest, opts ...grpc.CallOption) (*Approval, error)
+	ListApprovals(ctx context.Context, in *ListApprovalsRequest, opts ...grpc.CallOption) (*ListApprovalsResponse, error)
+	DecideApproval(ctx context.Context, in *DecideApprovalRequest, opts ...grpc.CallOption) (*DecideApprovalResponse, error)
 	DeprecateAgentVersion(ctx context.Context, in *DeprecateAgentVersionRequest, opts ...grpc.CallOption) (*DeprecateAgentVersionResponse, error)
 	ArchiveAgent(ctx context.Context, in *ArchiveAgentRequest, opts ...grpc.CallOption) (*ArchiveAgentResponse, error)
 	// Reverse worker stream: application workers register tool handlers and receive invocations.
@@ -217,6 +223,36 @@ func (c *runtimeClient) ListSessions(ctx context.Context, in *ListSessionsReques
 	return out, nil
 }
 
+func (c *runtimeClient) GetApproval(ctx context.Context, in *GetApprovalRequest, opts ...grpc.CallOption) (*Approval, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Approval)
+	err := c.cc.Invoke(ctx, Runtime_GetApproval_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListApprovals(ctx context.Context, in *ListApprovalsRequest, opts ...grpc.CallOption) (*ListApprovalsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListApprovalsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListApprovals_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) DecideApproval(ctx context.Context, in *DecideApprovalRequest, opts ...grpc.CallOption) (*DecideApprovalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DecideApprovalResponse)
+	err := c.cc.Invoke(ctx, Runtime_DecideApproval_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) DeprecateAgentVersion(ctx context.Context, in *DeprecateAgentVersionRequest, opts ...grpc.CallOption) (*DeprecateAgentVersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeprecateAgentVersionResponse)
@@ -272,6 +308,9 @@ type RuntimeServer interface {
 	ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error)
 	ListAgentVersions(context.Context, *ListAgentVersionsRequest) (*ListAgentVersionsResponse, error)
 	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
+	GetApproval(context.Context, *GetApprovalRequest) (*Approval, error)
+	ListApprovals(context.Context, *ListApprovalsRequest) (*ListApprovalsResponse, error)
+	DecideApproval(context.Context, *DecideApprovalRequest) (*DecideApprovalResponse, error)
 	DeprecateAgentVersion(context.Context, *DeprecateAgentVersionRequest) (*DeprecateAgentVersionResponse, error)
 	ArchiveAgent(context.Context, *ArchiveAgentRequest) (*ArchiveAgentResponse, error)
 	// Reverse worker stream: application workers register tool handlers and receive invocations.
@@ -327,6 +366,15 @@ func (UnimplementedRuntimeServer) ListAgentVersions(context.Context, *ListAgentV
 }
 func (UnimplementedRuntimeServer) ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
+}
+func (UnimplementedRuntimeServer) GetApproval(context.Context, *GetApprovalRequest) (*Approval, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetApproval not implemented")
+}
+func (UnimplementedRuntimeServer) ListApprovals(context.Context, *ListApprovalsRequest) (*ListApprovalsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListApprovals not implemented")
+}
+func (UnimplementedRuntimeServer) DecideApproval(context.Context, *DecideApprovalRequest) (*DecideApprovalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DecideApproval not implemented")
 }
 func (UnimplementedRuntimeServer) DeprecateAgentVersion(context.Context, *DeprecateAgentVersionRequest) (*DeprecateAgentVersionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeprecateAgentVersion not implemented")
@@ -599,6 +647,60 @@ func _Runtime_ListSessions_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_GetApproval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetApprovalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).GetApproval(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_GetApproval_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).GetApproval(ctx, req.(*GetApprovalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListApprovals_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListApprovalsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListApprovals(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListApprovals_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListApprovals(ctx, req.(*ListApprovalsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_DecideApproval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecideApprovalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).DecideApproval(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_DecideApproval_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).DecideApproval(ctx, req.(*DecideApprovalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Runtime_DeprecateAgentVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeprecateAgentVersionRequest)
 	if err := dec(in); err != nil {
@@ -700,6 +802,18 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSessions",
 			Handler:    _Runtime_ListSessions_Handler,
+		},
+		{
+			MethodName: "GetApproval",
+			Handler:    _Runtime_GetApproval_Handler,
+		},
+		{
+			MethodName: "ListApprovals",
+			Handler:    _Runtime_ListApprovals_Handler,
+		},
+		{
+			MethodName: "DecideApproval",
+			Handler:    _Runtime_DecideApproval_Handler,
 		},
 		{
 			MethodName: "DeprecateAgentVersion",
