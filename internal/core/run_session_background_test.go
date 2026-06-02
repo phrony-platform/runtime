@@ -36,7 +36,20 @@ func TestRuntime_RunSessionBackground_reachesAwaitingInput(t *testing.T) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}
-	srv.runSessionBackground(context.Background(), "sess-bg", "version-uuid", []byte(`{"message":"hi"}`))
+	driverCtx, cancel := context.WithCancel(context.Background())
+	events := newSessionEventHub()
+	inputMux := newSessionInputMux(driverCtx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.runSessionBackground(driverCtx, "sess-bg", "version-uuid", []byte(`{"message":"hi"}`), events, inputMux)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -55,7 +68,20 @@ func TestRuntime_RunSessionBackground_loadFailureMarksFailed(t *testing.T) {
 			return nil, context.Canceled
 		},
 	}
-	srv.runSessionBackground(context.Background(), "sess-bg", "version-uuid", []byte(`{"message":"hi"}`))
+	driverCtx, cancel := context.WithCancel(context.Background())
+	events := newSessionEventHub()
+	inputMux := newSessionInputMux(driverCtx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.runSessionBackground(driverCtx, "sess-bg", "version-uuid", []byte(`{"message":"hi"}`), events, inputMux)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -82,17 +108,22 @@ func TestRuntime_RunSessionBackground_registersActiveSession(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			sessionCtx, sessionCancel := context.WithCancel(context.Background())
-			if err := srv.registerActiveSession(sessionID, activeSessionEntry{cancel: sessionCancel}); err != nil {
+			eventHub := newSessionEventHub()
+			inputMux := newSessionInputMux(sessionCtx)
+			if err := srv.registerActiveSession(sessionID, activeSessionEntry{
+				cancel: sessionCancel, eventHub: eventHub, inputMux: inputMux,
+			}); err != nil {
 				sessionCancel()
 				close(done)
 				return
 			}
 			defer func() {
 				sessionCancel()
+				inputMux.close()
 				srv.unregisterActiveSession(sessionID)
 				close(done)
 			}()
-			srv.runSessionBackground(sessionCtx, sessionID, agentVersionID, inputJSON)
+			srv.runSessionBackground(sessionCtx, sessionID, agentVersionID, inputJSON, eventHub, inputMux)
 		}()
 	}
 
@@ -133,10 +164,14 @@ func TestRuntime_RunSessionBackground_registersActiveSession(t *testing.T) {
 		}
 	}
 
+	if v, ok := srv.activeSessions.Load(resp.GetSessionId()); ok {
+		entry, _ := v.(activeSessionEntry)
+		entry.cancel()
+	}
 	wg.Wait()
 	<-done
 	if _, ok := srv.activeSessions.Load(resp.GetSessionId()); ok {
-		t.Fatal("session still active after background run finished")
+		t.Fatal("session still active after driver stopped")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)

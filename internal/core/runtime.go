@@ -26,7 +26,7 @@ type runtimeServer struct {
 	loadSessionVersionFn func(context.Context, *store.Queries, string) (*executor.Version, error)
 	// startRunSessionBackgroundFn replaces detached session startup (tests only).
 	startRunSessionBackgroundFn func(sessionID, agentVersionID string, inputJSON json.RawMessage)
-	// activeSessions tracks session IDs with an open interactive stream.
+	// activeSessions tracks session IDs with a background session driver.
 	activeSessions *sync.Map
 	approvalCoordinator *approvalCoordinator
 	// toolRegistry routes Work-stream workers; toolDispatch is the executor-facing facade.

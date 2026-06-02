@@ -3,66 +3,39 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"io"
+	"errors"
 	"log/slog"
 	"time"
 
-	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
-
-// noopInteractiveStream discards outbound events for detached RunSession execution.
-type noopInteractiveStream struct {
-	ctx context.Context
-}
-
-func (n *noopInteractiveStream) Context() context.Context { return n.ctx }
-
-func (n *noopInteractiveStream) Recv() (*runtimev1.RunSessionInteractiveClientMsg, error) {
-	return nil, io.EOF
-}
-
-func (n *noopInteractiveStream) Send(*runtimev1.RunSessionInteractiveServerMsg) error { return nil }
-
-func (n *noopInteractiveStream) RecvMsg(msg interface{}) error {
-	in, err := n.Recv()
-	if err != nil {
-		return err
-	}
-	out, ok := msg.(*runtimev1.RunSessionInteractiveClientMsg)
-	if !ok {
-		return io.EOF
-	}
-	*out = *in
-	return nil
-}
-
-func (n *noopInteractiveStream) SendMsg(interface{}) error { return nil }
-
-func (n *noopInteractiveStream) SetHeader(metadata.MD) error  { return nil }
-func (n *noopInteractiveStream) SendHeader(metadata.MD) error { return nil }
-func (n *noopInteractiveStream) SetTrailer(metadata.MD)       {}
 
 func (s *runtimeServer) startRunSessionBackground(sessionID, agentVersionID string, inputJSON json.RawMessage) {
 	if s.startRunSessionBackgroundFn != nil {
 		s.startRunSessionBackgroundFn(sessionID, agentVersionID, inputJSON)
 		return
 	}
-	sessionCtx, sessionCancel := context.WithCancel(context.Background())
-	if err := s.registerActiveSession(sessionID, activeSessionEntry{cancel: sessionCancel}); err != nil {
+	driverCtx, sessionCancel := context.WithCancel(context.Background())
+	eventHub := newSessionEventHub()
+	inputMux := newSessionInputMux(driverCtx)
+	if err := s.registerActiveSession(sessionID, activeSessionEntry{
+		cancel:   sessionCancel,
+		eventHub: eventHub,
+		inputMux: inputMux,
+	}); err != nil {
 		sessionCancel()
 		return
 	}
 	go func() {
 		defer sessionCancel()
+		defer inputMux.close()
 		defer s.unregisterActiveSession(sessionID)
-		s.runSessionBackground(sessionCtx, sessionID, agentVersionID, inputJSON)
+		s.runSessionBackground(driverCtx, sessionID, agentVersionID, inputJSON, eventHub, inputMux)
 	}()
 }
 
@@ -70,14 +43,14 @@ func (s *runtimeServer) runSessionBackground(
 	ctx context.Context,
 	sessionID, agentVersionID string,
 	inputJSON json.RawMessage,
+	events *sessionEventHub,
+	inputMux *sessionInputMux,
 ) {
 	q, err := s.queries()
 	if err != nil {
 		return
 	}
 
-	stream := &noopInteractiveStream{ctx: ctx}
-	events := newSessionEventHub()
 	ver, err := s.loadSessionVersion(ctx, q, agentVersionID)
 	if err != nil {
 		_ = s.failInteractiveSession(ctx, q, events, sessionID, err)
@@ -107,13 +80,38 @@ func (s *runtimeServer) runSessionBackground(
 	gate.hitl = state
 	s.attachActiveSessionGate(sessionID, gate)
 
-	loopErr := s.runSessionInteractiveLoop(ctx, stream, events, q, sessionID, state, inputJSON, false)
-	if loopErr != nil {
+	loopErr := s.runSessionInteractiveLoop(ctx, inputMux, events, q, sessionID, state, inputJSON, true)
+	if loopErr != nil && !isBenignDriverLoopExit(ctx, q, sessionID, loopErr) {
 		session, loadErr := q.GetSession(ctx, sessionID)
 		if loadErr == nil && !sessionStatusTerminal(session.Status) {
 			_ = s.failInteractiveSession(ctx, q, events, sessionID, loopErr)
 		}
 	}
+}
+
+// isBenignDriverLoopExit reports whether the driver loop ended without needing to
+// mark the session failed (explicit cancel or parked awaiting operator input).
+func isBenignDriverLoopExit(ctx context.Context, q *store.Queries, sessionID string, loopErr error) bool {
+	if loopErr == nil {
+		return true
+	}
+	if errors.Is(loopErr, context.Canceled) {
+		wasCancelled, err := sessionWasCancelled(ctx, q, sessionID)
+		if err == nil && wasCancelled {
+			return true
+		}
+		session, err := q.GetSession(ctx, sessionID)
+		if err != nil {
+			return false
+		}
+		switch session.Status {
+		case model.SessionStatusAwaitingInput,
+			model.SessionStatusAwaitingApproval,
+			model.SessionStatusAwaitingTool:
+			return true
+		}
+	}
+	return false
 }
 
 // sessionStatusTerminal reports whether a session status can no longer change.

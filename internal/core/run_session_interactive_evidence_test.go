@@ -78,7 +78,20 @@ func TestRuntime_RunSessionBackground_recordsSessionEvidence(t *testing.T) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}
-	srv.runSessionBackground(context.Background(), "sess-bg", "version-uuid", []byte(`{"message":"hi"}`))
+	driverCtx, cancel := context.WithCancel(context.Background())
+	events := newSessionEventHub()
+	inputMux := newSessionInputMux(driverCtx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.runSessionBackground(driverCtx, "sess-bg", "version-uuid", []byte(`{"message":"hi"}`), events, inputMux)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)

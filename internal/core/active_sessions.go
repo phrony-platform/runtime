@@ -8,9 +8,41 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// activeSessionEntry tracks a background session driver: one loop owns execution
+// until the session is terminal or explicitly cancelled.
 type activeSessionEntry struct {
 	cancel       context.CancelFunc
+	eventHub     *sessionEventHub
+	inputMux     *sessionInputMux
 	approvalGate *sessionApprovalGate
+}
+
+func (s *runtimeServer) activeSessionEntryFor(sessionID string) (activeSessionEntry, bool) {
+	if s.activeSessions == nil {
+		return activeSessionEntry{}, false
+	}
+	v, ok := s.activeSessions.Load(sessionID)
+	if !ok {
+		return activeSessionEntry{}, false
+	}
+	entry, ok := v.(activeSessionEntry)
+	return entry, ok
+}
+
+func (s *runtimeServer) activeSessionEventHub(sessionID string) *sessionEventHub {
+	entry, ok := s.activeSessionEntryFor(sessionID)
+	if !ok {
+		return nil
+	}
+	return entry.eventHub
+}
+
+func (s *runtimeServer) activeSessionInputMux(sessionID string) *sessionInputMux {
+	entry, ok := s.activeSessionEntryFor(sessionID)
+	if !ok {
+		return nil
+	}
+	return entry.inputMux
 }
 
 func (s *runtimeServer) approvalCoord() *approvalCoordinator {

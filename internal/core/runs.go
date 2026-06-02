@@ -43,7 +43,11 @@ func (s *runtimeServer) cancelActiveSession(sessionID string) {
 	}
 	if v, ok := s.activeSessions.LoadAndDelete(sessionID); ok {
 		if entry, ok := v.(activeSessionEntry); ok {
+			if entry.inputMux != nil {
+				entry.inputMux.close()
+			}
 			entry.cancel()
+			s.approvalCoord().unregisterGate(sessionID)
 		}
 	}
 }
