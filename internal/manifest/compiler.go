@@ -17,6 +17,9 @@ func Compile(agentPath string, agent *Agent) (*ResolvedAgent, error) {
 	if err := compileResolved(resolved.Agent); err != nil {
 		return nil, err
 	}
+	if err := InlineStubScript(agentPath, resolved.Agent); err != nil {
+		return nil, err
+	}
 	return resolved, nil
 }
 

@@ -80,7 +80,9 @@ func (v *Version) dispatchToolCalls(
 			}
 
 			emitToolCall(ch, tdCall)
-			res, err := dispatcher.Dispatch(gctx, tdCall)
+			dctx, cancelDispatch := dispatchQueueContext(gctx)
+			res, err := dispatcher.Dispatch(dctx, tdCall)
+			cancelDispatch()
 			if err != nil {
 				return v.handleDispatchError(gctx, params, tracker, call, tdCall, tc, err, dispatcher, ch, &results[i])
 			}
@@ -244,7 +246,9 @@ func (v *Version) handleDispatchError(
 			return nil
 		}
 		emitToolCall(ch, tdCall)
-		res, redispatchErr := dispatcher.Dispatch(ctx, tdCall)
+		dctx, cancelDispatch := dispatchQueueContext(ctx)
+		res, redispatchErr := dispatcher.Dispatch(dctx, tdCall)
+		cancelDispatch()
 		if redispatchErr != nil {
 			return redispatchErr
 		}

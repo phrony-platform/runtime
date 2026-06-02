@@ -70,6 +70,16 @@ func NewForAgentVersion(
 		return nil, fmt.Errorf("spec.model.provider is required")
 	}
 
+	if providerID == IDStub {
+		p, err := newStubProvider(manifest.StubScriptFromAgent(agent))
+		if err != nil {
+			return nil, err
+		}
+		reg := NewRegistry()
+		reg.Register(p)
+		return reg, nil
+	}
+
 	apiKey, err := APIKeyForModel(ctx, enc, q, agentVersionID, agent)
 	if err != nil {
 		return nil, err
@@ -92,6 +102,8 @@ func New(id, apiKey string) (Provider, error) {
 		return newAnthropicProvider(apiKey), nil
 	case IDOpenAI:
 		return newOpenAIProvider(apiKey), nil
+	case IDStub:
+		return newStubProvider(apiKey)
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", id)
 	}
