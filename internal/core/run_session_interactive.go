@@ -123,11 +123,11 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return status.Errorf(codes.Internal, "load session: %v", err)
 	}
 
-	if session.Status == model.SessionStatusRunning && s.sessionIsActive(sessionID) {
-		return status.Error(codes.FailedPrecondition, "session is running on another stream")
-	}
 	if session.Status == model.SessionStatusPending {
 		return status.Error(codes.FailedPrecondition, "session is pending execution")
+	}
+	if s.sessionIsActive(sessionID) {
+		return s.runSessionInteractiveAttachDriver(ctx, stream, q, sessionID, session)
 	}
 
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
