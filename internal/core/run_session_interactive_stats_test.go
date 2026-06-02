@@ -17,15 +17,14 @@ import (
 
 func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"hi"}`), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
+	expectGetRunningSessionForAttach(mock, "version-uuid", []byte(`{"message":"hi"}`))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusCompleted, sqlmock.AnyArg(), nil, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
 
 	agent := &manifest.Agent{
@@ -35,8 +34,10 @@ func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 		},
 	}
 
-	stream := &mockInteractiveStream{
-		ctx: context.Background(),
+	attachCtx, stopAttach := context.WithCancel(context.Background())
+	defer stopAttach()
+	stream := &blockingAfterStartStream{mockInteractiveStream: &mockInteractiveStream{
+		ctx: attachCtx,
 		recv: []*runtimev1.RunSessionInteractiveClientMsg{
 			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
 				Start: &runtimev1.RunSessionInteractiveStart{
@@ -45,7 +46,7 @@ func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 				},
 			}},
 		},
-	}
+	}}
 
 	srv := &runtimeServer{
 		db: db,
@@ -54,45 +55,44 @@ func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 		},
 	}
 
-	if err := srv.RunSessionInteractive(stream); err != nil {
-		t.Fatalf("RunSessionInteractive: %v", err)
-	}
+	done := make(chan error, 1)
+	go func() { done <- srv.RunSessionInteractive(stream) }()
 
-	var started, awaiting, completed bool
-	for _, msg := range stream.sent {
-		switch {
-		case msg.GetSessionStarted() != nil:
-			started = true
-			if got := msg.GetSessionStarted().GetModelProvider(); got != provider.IDAnthropic {
-				t.Fatalf("model_provider = %q, want %q", got, provider.IDAnthropic)
-			}
-		case msg.GetAwaitingInput() != nil:
-			awaiting = true
-			ai := msg.GetAwaitingInput()
-			stats := ai.GetStats()
-			if stats == nil {
-				t.Fatal("awaiting_input.stats is nil")
-			}
-			if stats.GetTurn() != 1 {
-				t.Fatalf("turn = %d, want 1", stats.GetTurn())
-			}
-			tu := stats.GetTurnUsage()
-			if tu == nil || tu.GetInputTokens() != 10 || tu.GetOutputTokens() != 5 {
-				t.Fatalf("turn_usage = %+v, want 10 in / 5 out", tu)
-			}
-			su := stats.GetSessionUsage()
-			if su == nil || su.GetInputTokens() != 10 {
-				t.Fatalf("session_usage = %+v", su)
-			}
-		case msg.GetCompleted() != nil:
-			completed = true
-			if msg.GetCompleted().GetStats() == nil {
-				t.Fatal("completed.stats is nil")
+	var started, awaiting bool
+	waitForInteractiveMessages(t, done, func() []*runtimev1.RunSessionInteractiveServerMsg { return stream.sent }, func(msgs []*runtimev1.RunSessionInteractiveServerMsg) bool {
+		started, awaiting = false, false
+		for _, msg := range msgs {
+			switch {
+			case msg.GetSessionStarted() != nil:
+				started = true
+				if got := msg.GetSessionStarted().GetModelProvider(); got != provider.IDAnthropic {
+					t.Fatalf("model_provider = %q, want %q", got, provider.IDAnthropic)
+				}
+			case msg.GetAwaitingInput() != nil:
+				awaiting = true
+				ai := msg.GetAwaitingInput()
+				stats := ai.GetStats()
+				if stats == nil {
+					t.Fatal("awaiting_input.stats is nil")
+				}
+				if stats.GetTurn() != 1 {
+					t.Fatalf("turn = %d, want 1", stats.GetTurn())
+				}
+				tu := stats.GetTurnUsage()
+				if tu == nil || tu.GetInputTokens() != 10 || tu.GetOutputTokens() != 5 {
+					t.Fatalf("turn_usage = %+v, want 10 in / 5 out", tu)
+				}
+				su := stats.GetSessionUsage()
+				if su == nil || su.GetInputTokens() != 10 {
+					t.Fatalf("session_usage = %+v", su)
+				}
 			}
 		}
-	}
-	if !started || !awaiting || !completed {
-		t.Fatalf("started=%v awaiting=%v completed=%v", started, awaiting, completed)
+		return started && awaiting
+	})
+	stopAttach()
+	if err := <-done; err != nil {
+		t.Fatalf("RunSessionInteractive: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)

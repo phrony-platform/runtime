@@ -30,15 +30,9 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 		return nil, err
 	}
 
-	sessionID := newRunSessionID()
-
-	if _, err := q.InsertSession(ctx, store.InsertSessionParams{
-		ID:             sessionID,
-		AgentVersionID: agentVersionID,
-		Input:          inputJSON,
-		Status:         model.SessionStatusRunning,
-	}); err != nil {
-		return nil, status.Errorf(codes.Internal, "persist session: %v", err)
+	sessionID, err := s.insertRunSession(ctx, q, agentVersionID, inputJSON)
+	if err != nil {
+		return nil, err
 	}
 
 	s.startRunSessionBackground(sessionID, agentVersionID, inputJSON)
@@ -48,6 +42,19 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 		AgentVersionId: agentVersionID,
 		Status:         model.SessionStatusRunning,
 	}, nil
+}
+
+func (s *runtimeServer) insertRunSession(ctx context.Context, q *store.Queries, agentVersionID string, inputJSON json.RawMessage) (string, error) {
+	sessionID := newRunSessionID()
+	if _, err := q.InsertSession(ctx, store.InsertSessionParams{
+		ID:             sessionID,
+		AgentVersionID: agentVersionID,
+		Input:          inputJSON,
+		Status:         model.SessionStatusRunning,
+	}); err != nil {
+		return "", status.Errorf(codes.Internal, "persist session: %v", err)
+	}
+	return sessionID, nil
 }
 
 func resolveAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.AgentRef) (string, error) {

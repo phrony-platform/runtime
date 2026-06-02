@@ -53,10 +53,12 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		return err
 	}
 
-	return s.runSessionInteractiveNew(ctx, stream, q, ref, inputJSON)
+	return s.runSessionInteractiveStartWithAgentRef(ctx, stream, q, ref, inputJSON)
 }
 
-func (s *runtimeServer) runSessionInteractiveNew(
+// runSessionInteractiveStartWithAgentRef starts a session the same way as RunSession
+// (persist + background driver) and attaches this stream as the first subscriber.
+func (s *runtimeServer) runSessionInteractiveStartWithAgentRef(
 	ctx context.Context,
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	q *store.Queries,
@@ -68,45 +70,26 @@ func (s *runtimeServer) runSessionInteractiveNew(
 		return err
 	}
 
-	sessionID := newRunSessionID()
-	if _, err := q.InsertSession(ctx, store.InsertSessionParams{
-		ID:             sessionID,
-		AgentVersionID: agentVersionID,
-		Input:          inputJSON,
-		Status:         model.SessionStatusRunning,
-	}); err != nil {
-		return status.Errorf(codes.Internal, "persist session: %v", err)
-	}
-
-	sessionCtx, sessionCancel := context.WithCancel(ctx)
-	defer sessionCancel()
-	events := sessionEventsFromStream(stream)
-
-	ver, err := s.loadSessionVersion(sessionCtx, q, agentVersionID)
+	sessionID, err := s.insertRunSession(ctx, q, agentVersionID, inputJSON)
 	if err != nil {
-		return s.failInteractiveSession(sessionCtx, q, events, sessionID, err)
-	}
-
-	evidenceSnap, err := s.ensureSessionEvidence(sessionCtx, q, sessionID, ver.Agent)
-	if err != nil {
-		return status.Errorf(codes.Internal, "record session evidence: %v", err)
-	}
-
-	sessionStartedAt := time.Now()
-	if err := sendSessionStarted(events, sessionID, agentVersionID, ver, nil, sessionStartedAt, nil, evidenceSnapshotToProto(evidenceSnap)); err != nil {
 		return err
 	}
 
-	state := newInteractiveSessionState(s, sessionID, agentVersionID, ver, sessionStartedAt, s.toolDispatch, events, q)
-	if err := s.registerActiveSession(sessionID, activeSessionEntry{
-		cancel:       sessionCancel,
-		approvalGate: state.approvalGate,
-	}); err != nil {
-		return err
+	if _, err := s.loadSessionVersion(ctx, q, agentVersionID); err != nil {
+		return s.failInteractiveSession(ctx, q, sessionEventsFromStream(stream), sessionID, err)
 	}
-	defer s.unregisterActiveSession(sessionID)
 
-	return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, inputJSON, true)
+	session, err := q.GetSession(ctx, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return status.Errorf(codes.NotFound, "session %s not found", sessionID)
+	}
+	if err != nil {
+		return status.Errorf(codes.Internal, "load session: %v", err)
+	}
+
+	s.startRunSessionBackground(sessionID, agentVersionID, inputJSON)
+
+	return s.runSessionInteractiveAttachDriver(ctx, stream, q, sessionID, session)
 }
 
 func (s *runtimeServer) runSessionInteractiveAttach(

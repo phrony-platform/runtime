@@ -66,15 +66,14 @@ func TestInteractiveSessionState_sessionWallClockLimitError(t *testing.T) {
 func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testing.T) {
 	max := 14
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"one"}`), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
+	expectGetRunningSessionForAttach(mock, "version-uuid", []byte(`{"message":"one"}`))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusCompleted, sqlmock.AnyArg(), nil, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
 
 	agent := &manifest.Agent{
@@ -85,8 +84,10 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 		},
 	}
 
-	stream := &mockInteractiveStream{
-		ctx: context.Background(),
+	attachCtx, stopAttach := context.WithCancel(context.Background())
+	defer stopAttach()
+	stream := &blockingAfterStartStream{mockInteractiveStream: &mockInteractiveStream{
+		ctx: attachCtx,
 		recv: []*runtimev1.RunSessionInteractiveClientMsg{
 			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
 				Start: &runtimev1.RunSessionInteractiveStart{
@@ -95,7 +96,7 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 				},
 			}},
 		},
-	}
+	}}
 
 	srv := &runtimeServer{
 		db: db,
@@ -103,22 +104,26 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
-	_ = srv.RunSessionInteractive(stream)
+	done := make(chan error, 1)
+	go func() { done <- srv.RunSessionInteractive(stream) }()
 
-	var blockedAwaiting bool
-	for _, msg := range stream.sent {
-		if ai := msg.GetAwaitingInput(); ai != nil && ai.GetInputBlockedReason() != "" {
-			blockedAwaiting = true
-			if !strings.Contains(ai.GetInputBlockedReason(), "max_tokens_per_run") {
-				t.Fatalf("blocked reason = %q", ai.GetInputBlockedReason())
+	waitForInteractiveMessages(t, done, func() []*runtimev1.RunSessionInteractiveServerMsg { return stream.sent }, func(msgs []*runtimev1.RunSessionInteractiveServerMsg) bool {
+		for _, msg := range msgs {
+			if ai := msg.GetAwaitingInput(); ai != nil && ai.GetInputBlockedReason() != "" {
+				if !strings.Contains(ai.GetInputBlockedReason(), "max_tokens_per_run") {
+					t.Fatalf("blocked reason = %q", ai.GetInputBlockedReason())
+				}
+				return true
+			}
+			if msg.GetFailed() != nil {
+				t.Fatalf("unexpected failed: %s", msg.GetFailed().GetMessage())
 			}
 		}
-		if msg.GetFailed() != nil {
-			t.Fatalf("unexpected failed: %s", msg.GetFailed().GetMessage())
-		}
-	}
-	if !blockedAwaiting {
-		t.Fatal("expected awaiting_input with input_blocked_reason after first turn")
+		return false
+	})
+	stopAttach()
+	if err := <-done; err != nil {
+		t.Fatalf("RunSessionInteractive: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -128,15 +133,14 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.T) {
 	max := 1
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"one"}`), model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
+	expectGetRunningSessionForAttach(mock, "version-uuid", []byte(`{"message":"one"}`))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusCompleted, sqlmock.AnyArg(), nil, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
 
 	agent := &manifest.Agent{
@@ -147,8 +151,10 @@ func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.
 		},
 	}
 
-	stream := &mockInteractiveStream{
-		ctx: context.Background(),
+	attachCtx, stopAttach := context.WithCancel(context.Background())
+	defer stopAttach()
+	stream := &blockingAfterStartStream{mockInteractiveStream: &mockInteractiveStream{
+		ctx: attachCtx,
 		recv: []*runtimev1.RunSessionInteractiveClientMsg{
 			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
 				Start: &runtimev1.RunSessionInteractiveStart{
@@ -160,7 +166,7 @@ func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.
 				UserMessage: &runtimev1.RunSessionInteractiveUserMessage{Text: "two"},
 			}},
 		},
-	}
+	}}
 
 	srv := &runtimeServer{
 		db: db,
@@ -168,22 +174,26 @@ func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
-	_ = srv.RunSessionInteractive(stream)
+	done := make(chan error, 1)
+	go func() { done <- srv.RunSessionInteractive(stream) }()
 
-	var blocked bool
-	for _, msg := range stream.sent {
-		if ai := msg.GetAwaitingInput(); ai != nil && ai.GetInputBlockedReason() != "" {
-			blocked = true
-			if !strings.Contains(ai.GetInputBlockedReason(), "max_loop_iterations") {
-				t.Fatalf("blocked reason = %q", ai.GetInputBlockedReason())
+	waitForInteractiveMessages(t, done, func() []*runtimev1.RunSessionInteractiveServerMsg { return stream.sent }, func(msgs []*runtimev1.RunSessionInteractiveServerMsg) bool {
+		for _, msg := range msgs {
+			if ai := msg.GetAwaitingInput(); ai != nil && ai.GetInputBlockedReason() != "" {
+				if !strings.Contains(ai.GetInputBlockedReason(), "max_loop_iterations") {
+					t.Fatalf("blocked reason = %q", ai.GetInputBlockedReason())
+				}
+				return true
+			}
+			if msg.GetFailed() != nil {
+				t.Fatalf("unexpected failed: %s", msg.GetFailed().GetMessage())
 			}
 		}
-		if msg.GetFailed() != nil {
-			t.Fatalf("unexpected failed: %s", msg.GetFailed().GetMessage())
-		}
-	}
-	if !blocked {
-		t.Fatal("expected input blocked after max_loop_iterations")
+		return false
+	})
+	stopAttach()
+	if err := <-done; err != nil {
+		t.Fatalf("RunSessionInteractive: %v", err)
 	}
 }
 

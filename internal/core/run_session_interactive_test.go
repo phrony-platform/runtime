@@ -23,6 +23,17 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// expectGetRunningSessionForAttach satisfies GetSession when RunSessionInteractive
+// starts a session with agent_ref and immediately attaches to the background driver.
+func expectGetRunningSessionForAttach(mock sqlmock.Sqlmock, agentVersionID string, input []byte) {
+	now := time.Now()
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("run_attach", agentVersionID, input, model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+}
+
 func TestRuntime_RunSessionInteractive_firstMessageMustBeStart(t *testing.T) {
 	stream := &mockInteractiveStream{
 		ctx:  context.Background(),
@@ -322,6 +333,35 @@ func (s *blockingAfterStartStream) Recv() (*runtimev1.RunSessionInteractiveClien
 	}
 	<-s.ctx.Done()
 	return nil, io.EOF
+}
+
+func waitForInteractiveMessages(
+	t *testing.T,
+	done <-chan error,
+	sent func() []*runtimev1.RunSessionInteractiveServerMsg,
+	pred func([]*runtimev1.RunSessionInteractiveServerMsg) bool,
+) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		if pred(sent()) {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for interactive messages, sent=%+v", sent())
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("RunSessionInteractive: %v", err)
+			}
+			if pred(sent()) {
+				return
+			}
+			t.Fatalf("interactive stream ended early, sent=%+v", sent())
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
 }
 
 func TestRuntime_RunSessionInteractive_attachCompleted(t *testing.T) {
