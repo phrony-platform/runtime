@@ -7,15 +7,16 @@ import (
 	"time"
 )
 
-const defaultDispatchQueueWait = 15 * time.Second
+const (
+	envDispatchQueueWait     = "RUNTIME_DISPATCH_QUEUE_WAIT"
+	defaultDispatchQueueWait = 10 * time.Second
+)
 
-// dispatchQueueContext bounds how long a tool call may wait in the worker queue when the
-// parent context has no deadline (for example detached phrony run). When the wait ends
-// with no handler, the registry returns ErrNoHandler so policy can escalate or fail fast.
+// dispatchQueueContext bounds how long a tool call may wait in the worker queue.
+// Always applied (even when the session has a long wall-clock deadline) so detached runs
+// do not park in awaiting_tool until the session limit. When the wait ends with no
+// handler registered, the registry returns ErrNoHandler for policy escalation.
 func dispatchQueueContext(parent context.Context) (context.Context, context.CancelFunc) {
-	if _, ok := parent.Deadline(); ok {
-		return context.WithCancel(parent)
-	}
 	wait := dispatchQueueWaitFromEnv()
 	if wait <= 0 {
 		return context.WithCancel(parent)
@@ -23,8 +24,11 @@ func dispatchQueueContext(parent context.Context) (context.Context, context.Canc
 	return context.WithTimeout(parent, wait)
 }
 
+// dispatchQueueWaitFromEnv reads RUNTIME_DISPATCH_QUEUE_WAIT.
+// Empty or invalid values use defaultDispatchQueueWait (10s).
+// A positive integer is seconds; otherwise a Go duration (for example 10s, 500ms).
 func dispatchQueueWaitFromEnv() time.Duration {
-	raw := os.Getenv("RUNTIME_DISPATCH_QUEUE_WAIT")
+	raw := os.Getenv(envDispatchQueueWait)
 	if raw == "" {
 		return defaultDispatchQueueWait
 	}

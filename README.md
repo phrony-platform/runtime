@@ -36,19 +36,32 @@ make dev-up
 
 Compose starts Postgres, waits until it is healthy, builds `phrony-runtime`, runs migrations on startup, and listens on **gRPC port 7777** (`127.0.0.1:7777` from your machine). Stop the stack with `docker compose down` or `make dev-down`.
 
-### 2. Environment (operator CLI on the host)
+### 2. Environment variables
 
-Copy `.env.example` to `.env` so the `phrony` CLI can reach the containerized runtime. Load it when running CLI commands outside `make`:
+Copy `.env.example` to `.env` for host-side tools. Load it when running binaries outside `make`:
 
 ```bash
 set -a && source .env && set +a
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `RUNTIME_DATABASE_URL` | Postgres URL when running `phrony-runtime` on the host |
-| `RUNTIME_GRPC_ADDR` | gRPC listen address on the host (default `127.0.0.1:7777`) |
-| `PHRONY_RUNTIME_ADDR` | Runtime endpoint for the `phrony` CLI (default `127.0.0.1:7777`) |
+`make` targets (`serve`, `cli`, `migrate`, …) load `.env` or `.env.example` automatically.
+
+| Variable | Used by | Description |
+|----------|---------|-------------|
+| `RUNTIME_DATABASE_URL` | `phrony-runtime` on the host | Postgres connection string (`localhost:5432` with compose Postgres) |
+| `RUNTIME_GRPC_ADDR` | `phrony-runtime` on the host | gRPC listen address (default `127.0.0.1:7777`; use `0.0.0.0:7777` inside Docker) |
+| `RUNTIME_SECRETS_ENCRYPTION_KEY` | `phrony-runtime` | AES-256 master key for encrypting publish-time secrets (32 bytes, base64 or hex). Required when deploying agents with a `secrets` section. Generate with `openssl rand -base64 32` |
+| `RUNTIME_TOOL_ALLOWLIST` | `phrony-runtime` | Path to a YAML tool allowlist for dispatch-time integrity checks (optional) |
+| `RUNTIME_DISPATCH_QUEUE_WAIT` | `phrony-runtime` | Max time a tool call may wait in the worker queue when no handler is free (default `10s`). Go duration (`5s`, `500ms`) or positive integer seconds (`30`). Invalid values fall back to `10s`. Applied even when the session wall-clock budget is longer, so detached runs do not park in `awaiting_tool` until the session limit |
+| `RUNTIME_ENABLE_STUB_PROVIDER` | `phrony-runtime` | Dev-only: enable the scripted stub model provider (`true`, `1`, or `yes`) |
+| `PHRONY_RUNTIME_ADDR` | `phrony` on the host | Runtime gRPC endpoint (default `127.0.0.1:7777` when using compose) |
+| `PHRONY_ACTOR` | `phrony` on the host | Audit identity for publish, deploy, and rollback (defaults to OS username) |
+| `PHRONY_NO_TUI` | `phrony` | Disable the interactive session TUI (plain stdout) |
+| `NO_COLOR` | `phrony diff` | Disable colorized diff output (also disabled when stdout is not a TTY) |
+
+The compose `runtime` service sets its own `RUNTIME_DATABASE_URL` (hostname `postgres`), `RUNTIME_GRPC_ADDR=0.0.0.0:7777`, and a dev `RUNTIME_SECRETS_ENCRYPTION_KEY` in `docker-compose.yml`.
+
+Provider API keys referenced in manifest `secrets.*.fromEnv` (for example `ANTHROPIC_API_KEY`) are read on the machine running `phrony publish`, not on the runtime daemon.
 
 ### 3. Install binaries
 
