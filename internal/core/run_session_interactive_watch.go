@@ -97,6 +97,8 @@ func (st *interactiveSessionState) notifyWallClockLimit(
 }
 
 func (s *runtimeServer) handleInteractiveTurnError(
+	ctx context.Context,
+	q *store.Queries,
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	state *interactiveSessionState,
 	lastStopReason string,
@@ -114,6 +116,9 @@ func (s *runtimeServer) handleInteractiveTurnError(
 		return true, nil
 	}
 	if executor.IsEscalationError(turnErr) {
+		if handled, err := s.tryLimitEscalationHITL(ctx, q, stream, state, turnErr, lastStopReason, lastTurnUsage); handled || err != nil {
+			return handled, err
+		}
 		state.blockInput(turnErr)
 		if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
 			return false, err

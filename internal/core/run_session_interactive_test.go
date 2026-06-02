@@ -493,7 +493,7 @@ func TestRuntime_RunSessionInteractive_attachAwaitingInputContinues(t *testing.T
 
 func TestRuntime_RunSessionInteractive_attachAlreadyActive(t *testing.T) {
 	srv := &runtimeServer{activeSessions: &sync.Map{}}
-	_ = srv.registerActiveSession("sess-1", func() {})
+	_ = srv.registerActiveSession("sess-1", activeSessionEntry{cancel: func() {}})
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -511,7 +511,7 @@ func TestRuntime_RunSessionInteractive_attachAlreadyActive(t *testing.T) {
 		WithArgs("sess-1").
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusAwaitingInput, nil, nil, []byte(`[]`), now, now))
+		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
 
 	err := srv.RunSessionInteractive(stream)
 	assertGRPCCode(t, err, codes.FailedPrecondition)
@@ -697,7 +697,7 @@ func TestRuntime_RunSessionInteractive_attachRunningRejectedWhenActive(t *testin
 	}
 
 	srv := &runtimeServer{db: db}
-	if err := srv.registerActiveSession("sess-1", func() {}); err != nil {
+	if err := srv.registerActiveSession("sess-1", activeSessionEntry{cancel: func() {}}); err != nil {
 		t.Fatalf("registerActiveSession: %v", err)
 	}
 	err := srv.RunSessionInteractive(stream)

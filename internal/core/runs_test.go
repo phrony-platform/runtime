@@ -38,7 +38,7 @@ func TestRuntime_CancelSession_invokesActiveCancel(t *testing.T) {
 
 	srv := &runtimeServer{db: db, activeSessions: &sync.Map{}}
 	cancelled := false
-	if err := srv.registerActiveSession("run_live", func() { cancelled = true }); err != nil {
+	if err := srv.registerActiveSession("run_live", activeSessionEntry{cancel: func() { cancelled = true }}); err != nil {
 		t.Fatalf("registerActiveSession: %v", err)
 	}
 

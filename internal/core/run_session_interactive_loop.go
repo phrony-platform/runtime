@@ -128,7 +128,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}
 
 			if out.err != nil {
-				if handled, err := s.handleInteractiveTurnError(stream, state, lastStopReason, lastTurnUsage, out.err); err != nil {
+				if handled, err := s.handleInteractiveTurnError(ctx, q, stream, state, lastStopReason, lastTurnUsage, out.err); err != nil {
 					return err
 				} else if handled {
 					if wc := state.sessionWallClockLimitError(); wc != nil {
@@ -197,13 +197,14 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			if !waitForUser {
 				return nil
 			}
-			if state.clientRecvEOF {
-				if len(lastOutput) == 0 {
-					return nil
-				}
-				return s.completeInteractiveSession(ctx, q, stream, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
+			if done, err := s.finishInteractiveIfClientClosed(ctx, q, stream, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
+				return err
 			}
 			continue
+		}
+
+		if done, err := s.finishInteractiveIfClientClosed(ctx, q, stream, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
+			return err
 		}
 
 		select {
@@ -230,13 +231,11 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}
 			if r.err != nil {
 				if errors.Is(r.err, io.EOF) {
-					if !waitForUser {
-						return nil
+					state.clientRecvEOF = true
+					if done, err := s.finishInteractiveIfClientClosed(ctx, q, stream, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
+						return err
 					}
-					if len(lastOutput) == 0 {
-						return nil
-					}
-					return s.completeInteractiveSession(ctx, q, stream, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
+					continue
 				}
 				return r.err
 			}
@@ -285,6 +284,28 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			pendingInput = encoded
 		}
 	}
+}
+
+// finishInteractiveIfClientClosed completes or ends the session when the client
+// closed its send side and there is no pending turn input.
+func (s *runtimeServer) finishInteractiveIfClientClosed(
+	ctx context.Context,
+	q *store.Queries,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	sessionID string,
+	state *interactiveSessionState,
+	waitForUser bool,
+	lastStopReason string,
+	lastOutput json.RawMessage,
+	lastTurnUsage provider.TokenUsage,
+) (done bool, err error) {
+	if !waitForUser || !state.clientRecvEOF {
+		return false, nil
+	}
+	if len(lastOutput) == 0 {
+		return true, nil
+	}
+	return true, s.completeInteractiveSession(ctx, q, stream, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
 }
 
 func encodeInteractiveUserMessageText(text string) (json.RawMessage, error) {

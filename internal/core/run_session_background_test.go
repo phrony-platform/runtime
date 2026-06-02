@@ -36,11 +36,6 @@ func TestRuntime_RunSessionBackground_reachesAwaitingInput(t *testing.T) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}
-	if err := srv.registerActiveSession("sess-bg", func() {}); err != nil {
-		t.Fatalf("registerActiveSession: %v", err)
-	}
-	t.Cleanup(func() { srv.unregisterActiveSession("sess-bg") })
-
 	srv.runSessionBackground(context.Background(), "sess-bg", "version-uuid", []byte(`{"message":"hi"}`))
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -87,7 +82,7 @@ func TestRuntime_RunSessionBackground_registersActiveSession(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			sessionCtx, sessionCancel := context.WithCancel(context.Background())
-			if err := srv.registerActiveSession(sessionID, sessionCancel); err != nil {
+			if err := srv.registerActiveSession(sessionID, activeSessionEntry{cancel: sessionCancel}); err != nil {
 				sessionCancel()
 				close(done)
 				return
@@ -171,7 +166,7 @@ func TestRuntime_expireWallClockSession_marksParkedSessionFailed(t *testing.T) {
 func TestRuntime_expireWallClockSession_skipsActiveSession(t *testing.T) {
 	db, _ := testSQLxDB(t)
 	srv := &runtimeServer{db: db, activeSessions: &sync.Map{}}
-	if err := srv.registerActiveSession("sess-bg", func() {}); err != nil {
+	if err := srv.registerActiveSession("sess-bg", activeSessionEntry{cancel: func() {}}); err != nil {
 		t.Fatalf("registerActiveSession: %v", err)
 	}
 	// No SQL expectations: an attached session is left to the live stream.

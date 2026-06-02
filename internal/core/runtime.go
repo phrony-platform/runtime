@@ -28,6 +28,7 @@ type runtimeServer struct {
 	startRunSessionBackgroundFn func(sessionID, agentVersionID string, inputJSON json.RawMessage)
 	// activeSessions tracks session IDs with an open interactive stream.
 	activeSessions *sync.Map
+	approvalCoordinator *approvalCoordinator
 	// toolRegistry routes Work-stream workers; toolDispatch is the executor-facing facade.
 	toolRegistry *tooldispatch.WorkerRegistry
 	toolDispatch tooldispatch.Dispatcher

@@ -55,7 +55,7 @@ func (s *runtimeServer) startRunSessionBackground(sessionID, agentVersionID stri
 		return
 	}
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
-	if err := s.registerActiveSession(sessionID, sessionCancel); err != nil {
+	if err := s.registerActiveSession(sessionID, activeSessionEntry{cancel: sessionCancel}); err != nil {
 		sessionCancel()
 		return
 	}
@@ -93,6 +93,7 @@ func (s *runtimeServer) runSessionBackground(
 		s.scheduleWallClockExpiry(sessionID, time.Duration(maxSec)*time.Second, onLimit)
 	}
 
+	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, stream, q, agentVersionID)
 	state := &interactiveSessionState{
 		sessionID:        sessionID,
 		agentVersionID:   agentVersionID,
@@ -100,7 +101,11 @@ func (s *runtimeServer) runSessionBackground(
 		sessionStartedAt: time.Now(),
 		toolDispatch:     s.toolDispatch,
 		policies:         policy.NewEvaluator(ver.Agent),
+		approvalGate:     gate,
 	}
+	gate.hitl = state
+	s.attachActiveSessionGate(sessionID, gate)
+
 	loopErr := s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, inputJSON, false)
 	if loopErr != nil {
 		session, loadErr := q.GetSession(ctx, sessionID)

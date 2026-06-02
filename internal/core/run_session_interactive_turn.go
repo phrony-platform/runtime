@@ -38,6 +38,7 @@ type interactiveSessionState struct {
 }
 
 func newInteractiveSessionState(
+	s *runtimeServer,
 	sessionID, agentVersionID string,
 	ver *executor.Version,
 	startedAt time.Time,
@@ -45,7 +46,7 @@ func newInteractiveSessionState(
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	q *store.Queries,
 ) *interactiveSessionState {
-	gate := newSessionApprovalGate(stream, q, agentVersionID)
+	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, stream, q, agentVersionID)
 	st := &interactiveSessionState{
 		sessionID:        sessionID,
 		agentVersionID:   agentVersionID,

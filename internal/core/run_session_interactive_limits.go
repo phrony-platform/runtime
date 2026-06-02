@@ -42,6 +42,9 @@ func (st *interactiveSessionState) sessionLimitErrorAfterTurn() error {
 	if err := st.sessionTokenLimitError(); err != nil {
 		return err
 	}
+	if err := st.sessionLoopIterationLimitError(); err != nil {
+		return err
+	}
 	if err := st.sessionWallClockLimitError(); err != nil {
 		return err
 	}

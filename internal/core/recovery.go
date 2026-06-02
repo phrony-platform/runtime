@@ -51,6 +51,14 @@ func (s *runtimeServer) reconcileRecoveredSession(ctx context.Context, q *store.
 
 	switch session.Status {
 	case model.SessionStatusAwaitingApproval:
+		pending, err := q.GetPendingApprovalBySession(ctx, session.ID)
+		if err != nil {
+			slog.Warn("recovery: pending approval", "session_id", session.ID, "error", err)
+			return
+		}
+		coord := s.approvalCoord()
+		coord.registerParked(session.ID, pending.ID)
+		coord.armApprovalTimeoutFromRow(pending)
 		return
 	case model.SessionStatusPending:
 		input := session.Input
@@ -303,11 +311,6 @@ func (s *runtimeServer) continueRecoveredTurn(
 	}
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
 	defer sessionCancel()
-	if err := s.registerActiveSession(session.ID, sessionCancel); err != nil {
-		return err
-	}
-	defer s.unregisterActiveSession(session.ID)
-
 	stream := &noopInteractiveStream{ctx: sessionCtx}
 	state := &interactiveSessionState{
 		sessionID:        session.ID,
@@ -319,8 +322,14 @@ func (s *runtimeServer) continueRecoveredTurn(
 		toolDispatch:     s.toolDispatch,
 		policies:         policy.NewEvaluator(ver.Agent),
 	}
-	state.approvalGate = newSessionApprovalGate(stream, q, session.AgentVersionID)
+	state.approvalGate = newSessionApprovalGate(s.approvalCoord(), session.ID, stream, q, session.AgentVersionID)
 	state.approvalGate.hitl = state
+	if err := s.registerActiveSession(session.ID, activeSessionEntry{
+		cancel: sessionCancel, approvalGate: state.approvalGate,
+	}); err != nil {
+		return err
+	}
+	defer s.unregisterActiveSession(session.ID)
 
 	ch := make(chan executor.Event, 32)
 	runErrCh := make(chan error, 1)
