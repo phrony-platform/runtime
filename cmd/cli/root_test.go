@@ -4,7 +4,29 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/phrony-platform/runtime/internal/version"
 )
+
+func TestRootCommand_versionFlag(t *testing.T) {
+	want := "phrony version " + version.Version + "\n"
+	for _, args := range [][]string{{"-v"}, {"--version"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out bytes.Buffer
+			root := NewRootCommand()
+			root.SetOut(&out)
+			root.SetErr(&bytes.Buffer{})
+			root.SetArgs(args)
+
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if got := out.String(); got != want {
+				t.Fatalf("output = %q, want %q", got, want)
+			}
+		})
+	}
+}
 
 func TestValidateCommand_requiresManifestArg(t *testing.T) {
 	root := NewRootCommand()

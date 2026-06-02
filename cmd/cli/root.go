@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	"github.com/phrony-platform/runtime/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +28,7 @@ func NewRootCommand() *cobra.Command {
 		Use:           "phrony",
 		Short:         "Phrony runtime operator CLI",
 		Long:          "Operator commands for phrony-runtime over gRPC (not the manifest-focused Node CLI).",
+		Version:       version.Version,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
