@@ -133,6 +133,16 @@ func renderToolApprovalBlock(width int, ar *runtimev1.RunSessionInteractiveAppro
 	if route := strings.TrimSpace(ar.GetRoute()); route != "" {
 		fields = append(fields, [2]string{"route", route})
 	}
+	required := ar.GetApprovalsRequired()
+	if required <= 0 {
+		required = 1
+	}
+	if required > 1 || ar.GetApprovalsReceived() > 0 {
+		fields = append(fields, [2]string{"approvals", fmt.Sprintf("%d/%d", ar.GetApprovalsReceived(), required)})
+	}
+	if ar.GetComprehensionRequired() {
+		fields = append(fields, [2]string{"comprehension", "required"})
+	}
 	fields = append(fields, [2]string{"input", formatToolDisplayJSON(ar.GetArgs())})
 	return renderToolPanel(width, "APPROVAL REQUIRED", tuiToolApprovalLabelStyle, tuiToolApprovalBlockStyle, fields)
 }

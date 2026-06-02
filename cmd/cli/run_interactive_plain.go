@@ -14,7 +14,11 @@ import (
 func printConversationHistory(stdout io.Writer, msgs []*runtimev1.InteractiveConversationMessage) error {
 	var turn int32
 	for _, msg := range msgs {
-		switch msg.GetRole() {
+		role := msg.GetRole()
+		if skipInteractiveHistoryRole(role) {
+			continue
+		}
+		switch role {
 		case "user":
 			if _, err := fmt.Fprintf(stdout, "\nYOU\n%s\n", msg.GetContent()); err != nil {
 				return err

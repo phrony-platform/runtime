@@ -61,6 +61,15 @@ var (
 	tuiBlockedTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("196"))
+	tuiApprovalBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("220")).
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("58")).
+				Padding(0, 1)
+	tuiApprovalTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("220"))
 )
 
 // bodyContentWidth is the viewport width inside the chat box (border + inner padding).
@@ -173,6 +182,8 @@ func (m *runTUI) statusIndicator() string {
 		label, color = "Streaming", "39"
 	case "input":
 		label, color = "Ready", "42"
+	case "approval":
+		label, color = "Awaiting approval", "220"
 	case "blocked":
 		label, color = "Limit reached", "196"
 	case "ending":
@@ -233,6 +244,27 @@ func (m *runTUI) inputPanelView() string {
 	return style.Width(m.width - 2).Render(inner)
 }
 
+func (m *runTUI) approvalPanelView() string {
+	title := tuiApprovalTitleStyle.Render("Tool approval required")
+	var bodyLines []string
+	if ar := m.pendingApproval; ar != nil {
+		bodyLines = append(bodyLines, formatInteractiveApprovalLine(ar))
+		required := ar.GetApprovalsRequired()
+		if required <= 0 {
+			required = 1
+		}
+		if required > 1 || ar.GetApprovalsReceived() > 0 {
+			bodyLines = append(bodyLines, fmt.Sprintf("Approvals: %d/%d", ar.GetApprovalsReceived(), required))
+		}
+		if ar.GetComprehensionRequired() {
+			bodyLines = append(bodyLines, "Comprehension required — A/D acknowledges and decides")
+		}
+	}
+	body := wrapTUIText(m.width-8, strings.Join(bodyLines, "\n"))
+	inner := lipgloss.JoinVertical(lipgloss.Left, title, body)
+	return tuiApprovalBoxStyle.Width(m.width - 2).Render(inner)
+}
+
 func (m *runTUI) blockedPanelView() string {
 	title := tuiBlockedTitleStyle.Render("Session limit reached")
 	body := wrapTUIText(m.width-8, m.inputBlockedReason)
@@ -245,6 +277,11 @@ func (m *runTUI) footerView() string {
 		return tuiErrorStyle.Render(m.streamErr.Error())
 	}
 	switch {
+	case m.awaitingApprovalDecision():
+		help := tuiHelpStyle.Render(
+			"A approve  ·  D deny  ·  PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C quit",
+		)
+		return m.approvalPanelView() + "\n" + help
 	case m.inputBlocked():
 		help := tuiHelpStyle.Render(
 			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C quit",

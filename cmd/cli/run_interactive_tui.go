@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/clierr"
+	"github.com/phrony-platform/runtime/internal/debuglog"
 )
 
 type streamServerMsg struct {
@@ -56,9 +57,11 @@ type runTUI struct {
 	status             string
 	awaitingInput      bool
 	inputBlockedReason string
+	pendingApproval    *runtimev1.RunSessionInteractiveApprovalRequired
 	inputEverEnabled   bool
 	readOnly           bool
 	sendClosed         bool
+	streamRecvInFlight bool
 	streamErr          error
 	quitting           bool
 
@@ -136,6 +139,7 @@ func tuiScrollWhileInput(msg tea.KeyMsg) bool {
 }
 
 func (m *runTUI) scrollViewport(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -144,19 +148,13 @@ func (m *runTUI) scrollViewport(msg tea.Msg) tea.Cmd {
 		case "shift+down", "shift+j":
 			m.viewport.LineDown(1)
 		default:
-			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
-			if cmd != nil {
-				return cmd
-			}
 		}
 	default:
-		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
-		return cmd
 	}
 	m.followTail = m.viewport.AtBottom()
-	return nil
+	return cmd
 }
 
 func (m *runTUI) jumpToLatest() {
@@ -169,7 +167,7 @@ func (m *runTUI) clockTickCmd() tea.Cmd {
 }
 
 func (m *runTUI) Init() tea.Cmd {
-	return tea.Batch(m.sendStart(), m.recvStream(), textinput.Blink, m.clockTickCmd())
+	return tea.Batch(m.sendStart(), m.scheduleStreamRecv(), textinput.Blink, m.clockTickCmd())
 }
 
 func (m *runTUI) sendStart() tea.Cmd {
@@ -183,7 +181,13 @@ func (m *runTUI) sendStart() tea.Cmd {
 	}
 }
 
-func (m *runTUI) recvStream() tea.Cmd {
+// scheduleStreamRecv starts at most one blocking Recv on the interactive stream.
+// Concurrent Recv calls reorder server messages (e.g. text_delta chunks).
+func (m *runTUI) scheduleStreamRecv() tea.Cmd {
+	if m.streamRecvInFlight || m.quitting || m.readOnly {
+		return nil
+	}
+	m.streamRecvInFlight = true
 	return func() tea.Msg {
 		msg, err := m.stream.Recv()
 		return streamServerMsg{msg: msg, err: err}
@@ -214,6 +218,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case streamServerMsg:
+		m.streamRecvInFlight = false
 		if msg.err != nil {
 			if msg.err == io.EOF {
 				if m.readOnly {
@@ -242,7 +247,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.readOnly {
 			return m, nil
 		}
-		return m, m.recvStream()
+		return m, m.scheduleStreamRecv()
 
 	case tuiClockTick:
 		if m.quitting || m.readOnly || m.wallClockFrozen() || m.status == "done" || m.status == "failed" || m.status == "error" {
@@ -264,6 +269,52 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.jumpToLatest()
 			return m, nil
 		}
+		if m.awaitingApprovalDecision() {
+			switch msg.String() {
+			case "a":
+				// #region agent log
+				debuglog.Write("H1", "run_interactive_tui.go:Update", "approval key a pressed", map[string]any{
+					"approvalId": m.pendingApproval.GetApprovalId(),
+					"key":        msg.String(),
+				})
+				// #endregion
+				if err := m.sendToolApproval(true); err != nil {
+					m.streamErr = err
+					m.status = "error"
+					m.quitting = true
+					return m, tea.Quit
+				}
+				return m, nil
+			case "d":
+				if err := m.sendToolApproval(false); err != nil {
+					m.streamErr = err
+					m.status = "error"
+					m.quitting = true
+					return m, tea.Quit
+				}
+				return m, nil
+			case "ctrl+d":
+				if err := m.closeSend(); err != nil {
+					m.streamErr = err
+					m.quitting = true
+					return m, tea.Quit
+				}
+				m.clearAwaitingApproval()
+				m.status = "ending"
+				m.statusHint = ""
+				m.layout()
+				return m, nil
+			}
+			if tuiScrollWhileInput(msg) {
+				return m, m.scrollViewport(msg)
+			}
+			// #region agent log
+			debuglog.Write("H1", "run_interactive_tui.go:Update", "approval key ignored", map[string]any{
+				"key": msg.String(),
+			})
+			// #endregion
+			return m, nil
+		}
 		if m.awaitingInput || m.inputBlocked() {
 			switch msg.String() {
 			case "ctrl+d":
@@ -278,7 +329,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "ending"
 				m.statusHint = ""
 				m.layout()
-				return m, m.recvStream()
+				return m, nil
 			}
 			if tuiScrollWhileInput(msg) {
 				return m, m.scrollViewport(msg)
@@ -431,7 +482,7 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		}
 		m.transcript.WriteString("\n")
 		m.transcript.WriteString(renderToolApprovalBlock(m.messageContentWidth(), ar))
-		m.applyAwaitingInputState(formatInteractiveApprovalLine(ar) + " — approve via API (CLI approval not yet supported)")
+		m.applyAwaitingApprovalState(ar)
 		m.followTail = true
 		m.layout()
 	case msg.GetFailed() != nil:
@@ -523,10 +574,84 @@ func (m *runTUI) inputBlocked() bool {
 	return m.inputBlockedReason != ""
 }
 
+func (m *runTUI) awaitingApprovalDecision() bool {
+	return m.pendingApproval != nil
+}
+
+func (m *runTUI) clearAwaitingApproval() {
+	m.pendingApproval = nil
+}
+
+func (m *runTUI) applyAwaitingApprovalState(ar *runtimev1.RunSessionInteractiveApprovalRequired) {
+	m.pendingApproval = ar
+	m.awaitingInput = false
+	m.inputBlockedReason = ""
+	m.input.Blur()
+	m.input.SetValue("")
+	m.status = "approval"
+	m.statusHint = formatInteractiveApprovalLine(ar)
+}
+
+func (m *runTUI) sendToolApproval(approved bool) error {
+	if m.pendingApproval == nil {
+		return nil
+	}
+	ar := m.pendingApproval
+	// #region agent log
+	debuglog.Write("H2", "run_interactive_tui.go:sendToolApproval", "sending tool_approval", map[string]any{
+		"approvalId": ar.GetApprovalId(),
+		"approved":   approved,
+	})
+	// #endregion
+	if err := m.stream.Send(&runtimev1.RunSessionInteractiveClientMsg{
+		Body: &runtimev1.RunSessionInteractiveClientMsg_ToolApproval{
+			ToolApproval: &runtimev1.RunSessionInteractiveToolApproval{
+				ApprovalId: ar.GetApprovalId(),
+				Approved:   approved,
+			},
+		},
+	}); err != nil {
+		return clierr.WrapRPC("run session", err)
+	}
+	// #region agent log
+	debuglog.Write("H2", "run_interactive_tui.go:sendToolApproval", "tool_approval sent ok", map[string]any{
+		"approvalId": ar.GetApprovalId(),
+		"approved":   approved,
+	})
+	// #endregion
+
+	if !approved {
+		m.clearAwaitingApproval()
+		m.status = "streaming"
+		m.statusHint = "approval denied"
+		m.layout()
+		return nil
+	}
+
+	required := ar.GetApprovalsRequired()
+	if required <= 0 {
+		required = 1
+	}
+	received := ar.GetApprovalsReceived() + 1
+	if received >= required {
+		m.clearAwaitingApproval()
+		m.status = "streaming"
+		m.statusHint = ""
+	} else {
+		ar.ApprovalsReceived = received
+		m.statusHint = fmt.Sprintf("%d/%d approvals received — waiting for more approvers", received, required)
+	}
+	m.layout()
+	return nil
+}
+
 func (m *runTUI) appendConversationHistory(msgs []*runtimev1.InteractiveConversationMessage) error {
 	var turn int32
 	for _, msg := range msgs {
 		role := msg.GetRole()
+		if skipInteractiveHistoryRole(role) {
+			continue
+		}
 		content := msg.GetContent()
 		switch role {
 		case "user":

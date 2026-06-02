@@ -499,6 +499,67 @@ const attachTestManifestJSON = `{
 	}
 }`
 
+func startTestRuntimeAddrForApprovalsList(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	now := time.Now()
+	mock.ExpectQuery(`FROM approvals a`).
+		WithArgs("pending", "", "", "", "").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "session_id", "call_id", "status", "route", "reason", "decided_by", "comment",
+			"created_at", "decided_at",
+			"tool", "version", "args", "authority_ref", "policy_name",
+			"approvals_required", "approvals_received", "comprehension_required",
+			"on_reject", "on_modify", "expires_at", "policy_runtime",
+		}).AddRow(
+			"appr-1", "sess-1", "call-1", "pending", "ops", "severity", "", "",
+			now, nil,
+			"payments.charge", "1.0.0", []byte(`{"amount":100}`), "", "payment-policy",
+			1, 0, false,
+			"", "", nil, nil,
+		))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForApprovalsShow(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	now := time.Now()
+	mock.ExpectQuery(`FROM approvals`).WithArgs("appr-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "session_id", "call_id", "status", "route", "reason", "decided_by", "comment",
+			"created_at", "decided_at",
+			"tool", "version", "args", "authority_ref", "policy_name",
+			"approvals_required", "approvals_received", "comprehension_required",
+			"on_reject", "on_modify", "expires_at", "policy_runtime",
+		}).AddRow(
+			"appr-1", "sess-1", "call-1", "pending", "ops", "severity", "", "",
+			now, nil,
+			"payments.charge", "1.0.0", []byte(`{"amount":100}`), "", "payment-policy",
+			1, 0, true,
+			"return_to_agent", "revalidate", nil, nil,
+		))
+	mock.ExpectQuery(`FROM approval_votes`).WithArgs("appr-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"decided_by", "decision", "comment", "comprehension_acknowledged", "created_at",
+		}))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
 func startTestRuntimeAddrForSessionsListFiltered(t *testing.T) string {
 	t.Helper()
 

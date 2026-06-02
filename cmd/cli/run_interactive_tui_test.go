@@ -47,6 +47,198 @@ func TestRunTUI_wallClockBlockedFreezesDisplay(t *testing.T) {
 	}
 }
 
+func TestRunTUI_handleServerMsg_approvalRequired(t *testing.T) {
+	stream := &mockInteractiveClientStream{}
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	ar := &runtimev1.RunSessionInteractiveApprovalRequired{
+		ApprovalId: "appr-1",
+		CallId:     "call-abc",
+		Tool:       "payments.process-payment",
+		Version:    "1.0.0",
+		Reason:     "amount exceeds threshold",
+		Args:       []byte(`{"amount":1500}`),
+	}
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_ApprovalRequired{
+			ApprovalRequired: ar,
+		},
+	}); err != nil {
+		t.Fatalf("approval_required: %v", err)
+	}
+	if !m.awaitingApprovalDecision() {
+		t.Fatal("expected awaiting approval decision")
+	}
+	if m.status != "approval" {
+		t.Fatalf("status = %q, want approval", m.status)
+	}
+	conv := m.conversationText()
+	for _, want := range []string{"APPROVAL REQUIRED", "appr-1", "payments.process-payment", "1500"} {
+		if !strings.Contains(conv, want) {
+			t.Fatalf("conversation = %q, want %q", conv, want)
+		}
+	}
+	footer := m.footerView()
+	if !strings.Contains(footer, "Tool approval required") {
+		t.Fatalf("footer = %q, want approval panel", footer)
+	}
+	if !strings.Contains(footer, "A approve") {
+		t.Fatalf("footer = %q, want approve help", footer)
+	}
+	if strings.Contains(footer, "Message") {
+		t.Fatalf("footer = %q, should not show message input", footer)
+	}
+}
+
+func TestRunTUI_sendToolApproval_approveAndDeny(t *testing.T) {
+	stream := &mockInteractiveClientStream{}
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 80
+	m.height = 24
+	m.applyAwaitingApprovalState(&runtimev1.RunSessionInteractiveApprovalRequired{
+		ApprovalId: "appr-1",
+		Tool:       "danger.op",
+	})
+
+	if err := m.sendToolApproval(true); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if len(stream.sent) != 1 {
+		t.Fatalf("sent = %d messages, want 1", len(stream.sent))
+	}
+	ta := stream.sent[0].GetToolApproval()
+	if ta == nil || !ta.GetApproved() || ta.GetApprovalId() != "appr-1" {
+		t.Fatalf("sent = %+v, want approved tool_approval", stream.sent[0])
+	}
+	if m.awaitingApprovalDecision() {
+		t.Fatal("expected approval cleared after full quorum")
+	}
+	if m.status != "streaming" {
+		t.Fatalf("status = %q, want streaming", m.status)
+	}
+
+	m.applyAwaitingApprovalState(&runtimev1.RunSessionInteractiveApprovalRequired{
+		ApprovalId: "appr-2",
+		Tool:       "danger.op",
+	})
+	if err := m.sendToolApproval(false); err != nil {
+		t.Fatalf("deny: %v", err)
+	}
+	if len(stream.sent) != 2 {
+		t.Fatalf("sent = %d messages, want 2", len(stream.sent))
+	}
+	ta = stream.sent[1].GetToolApproval()
+	if ta == nil || ta.GetApproved() {
+		t.Fatalf("sent = %+v, want denied tool_approval", stream.sent[1])
+	}
+	if m.awaitingApprovalDecision() {
+		t.Fatal("expected approval cleared after deny")
+	}
+}
+
+func TestRunTUI_sendToolApproval_partialQuorum(t *testing.T) {
+	stream := &mockInteractiveClientStream{}
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m.applyAwaitingApprovalState(&runtimev1.RunSessionInteractiveApprovalRequired{
+		ApprovalId:         "appr-1",
+		Tool:               "danger.op",
+		ApprovalsRequired:  2,
+		ApprovalsReceived: 0,
+	})
+
+	if err := m.sendToolApproval(true); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if !m.awaitingApprovalDecision() {
+		t.Fatal("expected still awaiting approval after partial quorum")
+	}
+	if m.pendingApproval.GetApprovalsReceived() != 1 {
+		t.Fatalf("approvals_received = %d, want 1", m.pendingApproval.GetApprovalsReceived())
+	}
+	if !strings.Contains(m.statusHint, "1/2") {
+		t.Fatalf("statusHint = %q, want partial quorum hint", m.statusHint)
+	}
+}
+
+func TestRunTUI_scheduleStreamRecv_singleInFlight(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	if cmd := m.scheduleStreamRecv(); cmd == nil {
+		t.Fatal("expected first scheduleStreamRecv to return a cmd")
+	}
+	if !m.streamRecvInFlight {
+		t.Fatal("expected streamRecvInFlight after schedule")
+	}
+	if cmd := m.scheduleStreamRecv(); cmd != nil {
+		t.Fatal("expected duplicate scheduleStreamRecv to return nil")
+	}
+}
+
+func TestRunTUI_textDeltaOrder_viaUpdatePump(t *testing.T) {
+	want := "You're welcome! If you need any more assistance, feel free to ask."
+	deltas := []string{"You're ", "welcome", "! If you need any more assistance, feel free to ask."}
+	var recv []*runtimev1.RunSessionInteractiveServerMsg
+	recv = append(recv, &runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{SessionId: "sess-1"},
+		},
+	})
+	for _, d := range deltas {
+		recv = append(recv, &runtimev1.RunSessionInteractiveServerMsg{
+			Body: &runtimev1.RunSessionInteractiveServerMsg_TextDelta{
+				TextDelta: &runtimev1.RunSessionInteractiveTextDelta{Delta: d},
+			},
+		})
+	}
+	recv = append(recv, &runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
+			AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{StopReason: "end_turn"},
+		},
+	})
+	stream := &mockInteractiveClientStream{recv: recv}
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 100
+	m.height = 24
+	m.layout()
+
+	model, _ := m.Update(streamServerMsg{msg: recv[0]})
+	m = model.(*runTUI)
+	for i := 1; i <= len(deltas); i++ {
+		model, _ = m.Update(streamServerMsg{msg: recv[i]})
+		m = model.(*runTUI)
+	}
+	model, _ = m.Update(streamServerMsg{msg: recv[len(recv)-1]})
+	m = model.(*runTUI)
+
+	conv := m.conversationText()
+	if !strings.Contains(conv, want) {
+		t.Fatalf("conversation = %q, want ordered assistant text %q", conv, want)
+	}
+}
+
+func TestRunTUI_Update_approvalKeys(t *testing.T) {
+	stream := &mockInteractiveClientStream{}
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 80
+	m.height = 24
+	m.applyAwaitingApprovalState(&runtimev1.RunSessionInteractiveApprovalRequired{
+		ApprovalId: "appr-1",
+		Tool:       "danger.op",
+	})
+
+	m.streamRecvInFlight = true // recv already blocked after approval_required
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = model.(*runTUI)
+	if cmd != nil {
+		t.Fatal("expected no second recv after approve while stream recv is in flight")
+	}
+	if len(stream.sent) != 1 || !stream.sent[0].GetToolApproval().GetApproved() {
+		t.Fatalf("sent = %+v, want approve", stream.sent)
+	}
+}
+
 func TestRunTUI_handleServerMsg_toolCallAndResult(t *testing.T) {
 	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
 	m.width = 80
@@ -484,6 +676,40 @@ func TestRunTUI_Update_windowSizeAndEmptyEnter(t *testing.T) {
 	m = model.(*runTUI)
 	if !strings.Contains(m.statusBarView(), "Type a message") {
 		t.Fatalf("statusBar = %q, want empty message hint", m.statusBarView())
+	}
+}
+
+func TestRunTUI_mouseWheelScroll_disablesFollowTail(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m.width = 40
+	m.height = 12
+	for i := 0; i < 40; i++ {
+		m.transcript.WriteString(fmt.Sprintf("line %d\n", i))
+	}
+	m.layout()
+	if !m.followTail || !m.viewport.AtBottom() {
+		t.Fatal("expected initial viewport at bottom with followTail")
+	}
+
+	wheelUp := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelUp,
+		Type:   tea.MouseWheelUp,
+	}
+	model, _ := m.Update(wheelUp)
+	m = model.(*runTUI)
+	if m.followTail {
+		t.Fatal("expected followTail false after mouse wheel scroll up")
+	}
+	if m.viewport.AtBottom() {
+		t.Fatal("expected viewport not at bottom after wheel up")
+	}
+
+	offset := m.viewport.YOffset
+	model, _ = m.Update(tuiClockTick{})
+	m = model.(*runTUI)
+	if m.viewport.YOffset != offset {
+		t.Fatalf("YOffset = %d, want %d after clock tick while not following tail", m.viewport.YOffset, offset)
 	}
 }
 
