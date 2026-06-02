@@ -189,19 +189,85 @@ func mergeApprovalPolicies(scopeKey string, sources []PolicySpec) PolicySpec {
 	if len(sources) > 1 {
 		name = "merged-approval-" + sanitizePolicyName(scopeKey)
 	}
-	authorityRef := ""
+	merged := PolicySpec{
+		Name:              name,
+		Scope:             scopeFromKey(scopeKey),
+		Action:            "require_approval",
+		ApprovalsRequired: 1,
+	}
 	for _, p := range sources {
-		if ar := strings.TrimSpace(p.AuthorityRef); ar != "" {
-			authorityRef = ar
-			break
+		if ar := strings.TrimSpace(p.AuthorityRef); ar != "" && merged.AuthorityRef == "" {
+			merged.AuthorityRef = ar
+		}
+		if r := strings.TrimSpace(p.Reason); r != "" && merged.Reason == "" {
+			merged.Reason = r
+		}
+		if om := strings.TrimSpace(p.OnModify); om == "revalidate" {
+			merged.OnModify = om
+		} else if merged.OnModify == "" && om != "" {
+			merged.OnModify = om
+		}
+		if or := strings.TrimSpace(p.OnReject); or == "fail" {
+			merged.OnReject = or
+		} else if merged.OnReject == "" && or != "" {
+			merged.OnReject = or
+		}
+		if p.ComprehensionRequired {
+			merged.ComprehensionRequired = true
+		}
+		required := p.ApprovalsRequired
+		if required <= 0 {
+			required = 1
+		}
+		if required > merged.ApprovalsRequired {
+			merged.ApprovalsRequired = required
+		}
+		if p.Timeout != nil {
+			merged.Timeout = mergeStrictestTimeout(merged.Timeout, p.Timeout)
+		}
+		if len(p.Runtime) > 0 && len(merged.Runtime) == 0 {
+			merged.Runtime = copyAnyMap(p.Runtime)
 		}
 	}
-	return PolicySpec{
-		Name:         name,
-		Scope:        scopeFromKey(scopeKey),
-		Action:       "require_approval",
-		AuthorityRef: authorityRef,
+	return merged
+}
+
+func mergeStrictestTimeout(current, next *PolicyTimeout) *PolicyTimeout {
+	if next == nil {
+		return current
 	}
+	if current == nil {
+		return &PolicyTimeout{
+			AfterMinutes: next.AfterMinutes,
+			Default:      strings.TrimSpace(next.Default),
+		}
+	}
+	out := *current
+	if next.AfterMinutes > 0 && (out.AfterMinutes == 0 || next.AfterMinutes < out.AfterMinutes) {
+		out.AfterMinutes = next.AfterMinutes
+	}
+	if d := strings.TrimSpace(next.Default); d != "" {
+		out.Default = preferTimeoutDefault(out.Default, d)
+	}
+	return &out
+}
+
+func preferTimeoutDefault(current, next string) string {
+	current = strings.ToLower(strings.TrimSpace(current))
+	next = strings.ToLower(strings.TrimSpace(next))
+	if current == "" {
+		return next
+	}
+	if next == "deny" {
+		return next
+	}
+	if current == "deny" {
+		return current
+	}
+	if next == "escalate" {
+		return next
+	}
+	return current
 }
 
 func intersectAllowLists(lists [][]string) []string {

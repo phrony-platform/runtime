@@ -89,6 +89,40 @@ func TestEvaluateToolCall_requireApprovalConditionTree(t *testing.T) {
 	}
 }
 
+func TestApprovalRequestFor_portablePolicyFields(t *testing.T) {
+	agent := compiledAgent(manifest.AgentSpec{
+		Policies: []manifest.PolicySpec{{
+			Name:                  "payment-approval",
+			Scope:                 "tool:payments.charge",
+			Action:                "require_approval",
+			AuthorityRef:          "claims.payment-authority",
+			ApprovalsRequired:     2,
+			Reason:                "over limit",
+			OnReject:              "fail",
+			OnModify:              "revalidate",
+			ComprehensionRequired: true,
+			Timeout: &manifest.PolicyTimeout{
+				AfterMinutes: 30,
+				Default:      "deny",
+			},
+		}},
+	})
+	e := NewEvaluator(agent)
+	req := e.ApprovalRequestFor("appr-1", "call-1", "sess", ToolCallContext{ToolRef: "payments.charge"})
+	if req.PolicyName != "payment-approval" {
+		t.Fatalf("policy_name = %q", req.PolicyName)
+	}
+	if req.AuthorityRef != "claims.payment-authority" || req.ApprovalsRequired != 2 {
+		t.Fatalf("authority/approvals = %q / %d", req.AuthorityRef, req.ApprovalsRequired)
+	}
+	if req.OnReject != "fail" || req.OnModify != "revalidate" || !req.ComprehensionRequired {
+		t.Fatalf("on_reject/on_modify/comprehension = %q / %q / %v", req.OnReject, req.OnModify, req.ComprehensionRequired)
+	}
+	if req.TimeoutAfterMinutes != 30 || req.TimeoutDefault != "deny" {
+		t.Fatalf("timeout = %d / %q", req.TimeoutAfterMinutes, req.TimeoutDefault)
+	}
+}
+
 func TestRouteDispatchFailure_indeterminateNonIdempotent(t *testing.T) {
 	e := NewEvaluator(compiledAgent(manifest.AgentSpec{}))
 	tc := ToolCallContext{
@@ -160,6 +194,19 @@ func TestRouteDispatchFailure_wrappedNoHandler(t *testing.T) {
 	route := e.RouteDispatchFailure(err, ToolCallContext{ToolRef: "t"})
 	if route != RouteFail {
 		t.Fatalf("route = %v, want fail without policy", route)
+	}
+}
+
+func TestLimitEscalationApproval_policy(t *testing.T) {
+	agent := compiledAgent(manifest.AgentSpec{
+		Policies: []manifest.PolicySpec{
+			dispatchEscalatePolicy(TriggerLimitEscalate, "limit-ops"),
+		},
+	})
+	e := NewEvaluator(agent)
+	req, ok := e.LimitEscalationApproval("appr-1", "sess-1", errors.New("max loop iterations"))
+	if !ok || req.Route != "limit-ops" {
+		t.Fatalf("LimitEscalationApproval() = (%+v, %v)", req, ok)
 	}
 }
 

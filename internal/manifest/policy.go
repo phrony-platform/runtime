@@ -41,13 +41,22 @@ type PolicyDocSpec struct {
 	Decision   *PolicyDecision `yaml:"decision,omitempty" json:"decision,omitempty"`
 }
 
+// PolicyTimeout is the portable approval timeout policy.
+type PolicyTimeout struct {
+	AfterMinutes int    `yaml:"after_minutes" json:"after_minutes"`
+	Default      string `yaml:"default" json:"default"` // deny | allow | escalate
+}
+
 // PolicyDecision is the portable policy effect.
 type PolicyDecision struct {
 	Type                  string         `yaml:"type" json:"type"`
 	AuthorityRef          string         `yaml:"authority_ref,omitempty" json:"authority_ref,omitempty"`
 	ApprovalsRequired     int            `yaml:"approvals_required,omitempty" json:"approvals_required,omitempty"`
 	Reason                string         `yaml:"reason,omitempty" json:"reason,omitempty"`
+	OnReject              string         `yaml:"on_reject,omitempty" json:"on_reject,omitempty"`
 	OnModify              string         `yaml:"on_modify,omitempty" json:"on_modify,omitempty"`
+	ComprehensionRequired bool           `yaml:"comprehension_required,omitempty" json:"comprehension_required,omitempty"`
+	Timeout               *PolicyTimeout `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 	Runtime               map[string]any `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 }
 
@@ -89,7 +98,20 @@ func (p *Policy) resolvedPolicySpec() (PolicySpec, bool) {
 
 	base.AuthorityRef = strings.TrimSpace(decision.AuthorityRef)
 	base.Reason = strings.TrimSpace(decision.Reason)
+	base.OnReject = strings.TrimSpace(decision.OnReject)
 	base.OnModify = strings.TrimSpace(decision.OnModify)
+	base.ComprehensionRequired = decision.ComprehensionRequired
+	if decision.Timeout != nil {
+		base.Timeout = &PolicyTimeout{
+			AfterMinutes: decision.Timeout.AfterMinutes,
+			Default:      strings.TrimSpace(decision.Timeout.Default),
+		}
+	}
+	if ar := decision.ApprovalsRequired; ar > 0 {
+		base.ApprovalsRequired = ar
+	} else if isRequireApprovalDecision(decisionType) {
+		base.ApprovalsRequired = 1
+	}
 	if len(decision.Runtime) > 0 {
 		base.Runtime = copyAnyMap(decision.Runtime)
 	}

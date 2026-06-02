@@ -187,24 +187,42 @@ func isEscalateAction(action string) bool {
 // ApprovalRequestFor builds the interactive approval payload for a tool call.
 func (e *Evaluator) ApprovalRequestFor(approvalID, callID, sessionID string, tc ToolCallContext) ApprovalRequest {
 	out := e.Evaluate(tc)
-	reason := "tool call requires human approval"
-	route := ""
+	req := ApprovalRequest{
+		ApprovalID:        approvalID,
+		CallID:            callID,
+		SessionID:         sessionID,
+		Tool:              tc.ToolRef,
+		Version:           tc.Version,
+		Args:              tc.Args,
+		Reason:            "tool call requires human approval",
+		ApprovalsRequired: 1,
+	}
 	if out.Approval != nil {
-		if r := strings.TrimSpace(out.Approval.Reason); r != "" {
-			reason = r
-		}
-		route = strings.TrimSpace(out.Approval.Route)
+		req = enrichApprovalRequest(req, out.Approval)
 	}
-	return ApprovalRequest{
-		ApprovalID: approvalID,
-		CallID:     callID,
-		SessionID:  sessionID,
-		Tool:       tc.ToolRef,
-		Version:    tc.Version,
-		Args:       tc.Args,
-		Route:      route,
-		Reason:     reason,
+	return req
+}
+
+func enrichApprovalRequest(req ApprovalRequest, match *ApprovalMatch) ApprovalRequest {
+	if match == nil {
+		return req
 	}
+	if r := strings.TrimSpace(match.Reason); r != "" {
+		req.Reason = r
+	}
+	req.Route = strings.TrimSpace(match.Route)
+	req.PolicyName = match.PolicyName
+	req.AuthorityRef = match.AuthorityRef
+	req.OnReject = match.OnReject
+	req.OnModify = match.OnModify
+	req.ApprovalsRequired = match.ApprovalsRequired
+	req.ComprehensionRequired = match.ComprehensionRequired
+	req.TimeoutAfterMinutes = match.TimeoutAfterMinutes
+	req.TimeoutDefault = match.TimeoutDefault
+	if len(match.Runtime) > 0 {
+		req.Runtime = match.Runtime
+	}
+	return req
 }
 
 // OnModifyFor returns the on_modify behavior for the matched approval policy, if any.
@@ -225,6 +243,31 @@ func (e *Evaluator) HITLForLimitEscalation() (route string, ok bool) {
 		return routeFromPolicy(*p), true
 	}
 	return "", false
+}
+
+// LimitEscalationApproval builds an operator approval when a run limit triggers on_limit: escalate.
+func (e *Evaluator) LimitEscalationApproval(approvalID, sessionID string, limErr error) (ApprovalRequest, bool) {
+	if e == nil {
+		return ApprovalRequest{}, false
+	}
+	p := e.matchingDispatchPolicy(TriggerLimitEscalate, ToolCallContext{})
+	if p == nil {
+		return ApprovalRequest{}, false
+	}
+	reason := "run limit reached"
+	if limErr != nil {
+		reason = limErr.Error()
+	}
+	if r := strings.TrimSpace(p.Reason); r != "" {
+		reason = r
+	}
+	req := ApprovalRequest{
+		ApprovalID:        approvalID,
+		SessionID:         sessionID,
+		Reason:            reason,
+		ApprovalsRequired: 1,
+	}
+	return enrichApprovalRequest(req, approvalFromPolicy(*p)), true
 }
 
 // RouteDispatchFailure maps dispatch errors to fail, tool error, or HITL escalation.
@@ -308,16 +351,23 @@ func (e *Evaluator) DispatchFailureApproval(approvalID, callID, sessionID string
 			route = routeFromPolicy(*p)
 		}
 	}
-	return ApprovalRequest{
-		ApprovalID: approvalID,
-		CallID:     callID,
-		SessionID:  sessionID,
-		Tool:       tc.ToolRef,
-		Version:    tc.Version,
-		Args:       tc.Args,
-		Route:      route,
-		Reason:     reason,
+	req := ApprovalRequest{
+		ApprovalID:        approvalID,
+		CallID:            callID,
+		SessionID:         sessionID,
+		Tool:              tc.ToolRef,
+		Version:           tc.Version,
+		Args:              tc.Args,
+		Route:             route,
+		Reason:            reason,
+		ApprovalsRequired: 1,
 	}
+	if trigger != "" {
+		if p := e.matchingDispatchPolicy(trigger, tc); p != nil {
+			req = enrichApprovalRequest(req, approvalFromPolicy(*p))
+		}
+	}
+	return req
 }
 
 func dispatchTriggerForError(err error) string {

@@ -98,15 +98,19 @@ func CanRedispatchAfterIndeterminate(sideEffectClass string) bool {
 
 // PolicySpec declares one policy rule in the agent manifest (whitepaper shape).
 type PolicySpec struct {
-	Name         string         `yaml:"name" json:"name"`
-	Scope        string         `yaml:"scope,omitempty" json:"scope,omitempty"`
-	Action       string         `yaml:"action,omitempty" json:"action,omitempty"`
-	Allow        []string       `yaml:"allow,omitempty" json:"allow,omitempty"`
-	Conditions   map[string]any `yaml:"conditions,omitempty" json:"conditions,omitempty"`
-	AuthorityRef string         `yaml:"authority_ref,omitempty" json:"authority_ref,omitempty"`
-	Reason       string         `yaml:"reason,omitempty" json:"reason,omitempty"`
-	OnModify     string         `yaml:"on_modify,omitempty" json:"on_modify,omitempty"`
-	Runtime      map[string]any `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Name                  string         `yaml:"name" json:"name"`
+	Scope                 string         `yaml:"scope,omitempty" json:"scope,omitempty"`
+	Action                string         `yaml:"action,omitempty" json:"action,omitempty"`
+	Allow                 []string       `yaml:"allow,omitempty" json:"allow,omitempty"`
+	Conditions            map[string]any `yaml:"conditions,omitempty" json:"conditions,omitempty"`
+	AuthorityRef          string         `yaml:"authority_ref,omitempty" json:"authority_ref,omitempty"`
+	ApprovalsRequired     int            `yaml:"approvals_required,omitempty" json:"approvals_required,omitempty"`
+	Reason                string         `yaml:"reason,omitempty" json:"reason,omitempty"`
+	OnReject              string         `yaml:"on_reject,omitempty" json:"on_reject,omitempty"`
+	OnModify              string         `yaml:"on_modify,omitempty" json:"on_modify,omitempty"`
+	ComprehensionRequired bool           `yaml:"comprehension_required,omitempty" json:"comprehension_required,omitempty"`
+	Timeout               *PolicyTimeout `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	Runtime               map[string]any `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 }
 
 // BindingSchema returns the tool argument schema when set on the binding.
