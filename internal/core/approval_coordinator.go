@@ -12,7 +12,6 @@ import (
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/model"
-	"github.com/phrony-platform/runtime/internal/debuglog"
 	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/store"
 )
@@ -325,43 +324,13 @@ func (c *approvalCoordinator) finalizeDecision(
 		ApprovalsReceived: received,
 		Terminal:          true,
 	}
-	waiting := false
-	if gate := c.gateForSession(row.SessionID); gate != nil {
-		waiting = gate.isWaiting()
-	}
-	// #region agent log
-	debuglog.Write("H3", "approval_coordinator.go:finalizeDecision", "decision finalized", map[string]any{
-		"sessionId":  row.SessionID,
-		"approvalId": row.ID,
-		"approved":   approved,
-		"gateWaiting": waiting,
-	})
-	// #endregion
 	if gate := c.gateForSession(row.SessionID); gate != nil && gate.isWaiting() {
 		if err := gate.deliverDecision(approved, args, nil); err != nil {
-			// #region agent log
-			debuglog.Write("H3", "approval_coordinator.go:finalizeDecision", "deliverDecision failed", map[string]any{
-				"sessionId": row.SessionID,
-				"error":     err.Error(),
-			})
-			// #endregion
 			return result, err
 		}
-		// #region agent log
-		debuglog.Write("H3", "approval_coordinator.go:finalizeDecision", "deliverDecision ok", map[string]any{
-			"sessionId": row.SessionID,
-		})
-		// #endregion
 		return result, nil
 	}
 	if c.server != nil {
-		// #region agent log
-		debuglog.Write("H5", "approval_coordinator.go:finalizeDecision", "spawning resumeAfterApproval", map[string]any{
-			"sessionId":  row.SessionID,
-			"approvalId": row.ID,
-			"approved":   approved,
-		})
-		// #endregion
 		resumeRow := row
 		go func() {
 			if err := c.server.resumeAfterApproval(context.Background(), resumeRow, approved, args, comment); err != nil {
@@ -395,15 +364,5 @@ func (c *approvalCoordinator) DecideFromStream(ctx context.Context, gate *sessio
 		DecidedBy:                 "interactive",
 		ComprehensionAcknowledged: true,
 	})
-	// #region agent log
-	errMsg := ""
-	if err != nil {
-		errMsg = err.Error()
-	}
-	debuglog.Write("H4", "approval_coordinator.go:DecideFromStream", "decide finished", map[string]any{
-		"approvalId": approvalID,
-		"error":      errMsg,
-	})
-	// #endregion
 	return err
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
-	"github.com/phrony-platform/runtime/internal/debuglog"
 	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/store"
 )
@@ -67,12 +66,6 @@ func (g *sessionApprovalGate) WaitApproval(ctx context.Context, req policy.Appro
 	g.mu.Lock()
 	g.waitingApproval = true
 	g.mu.Unlock()
-	// #region agent log
-	debuglog.Write("H3", "run_session_interactive_approval.go:WaitApproval", "waitingApproval=true before open", map[string]any{
-		"sessionId":  g.sessionID,
-		"approvalId": req.ApprovalID,
-	})
-	// #endregion
 
 	var openErr error
 	if g.coord != nil {
@@ -90,13 +83,6 @@ func (g *sessionApprovalGate) WaitApproval(ctx context.Context, req policy.Appro
 		}
 		return policy.ApprovalResult{}, openErr
 	}
-
-	// #region agent log
-	debuglog.Write("H3", "run_session_interactive_approval.go:WaitApproval", "open approval done, blocking", map[string]any{
-		"sessionId":  g.sessionID,
-		"approvalId": req.ApprovalID,
-	})
-	// #endregion
 
 	defer func() {
 		g.mu.Lock()
@@ -144,15 +130,6 @@ func (g *sessionApprovalGate) sendApprovalRequired(req policy.ApprovalRequest) e
 }
 
 func (g *sessionApprovalGate) deliverApproval(msg *runtimev1.RunSessionInteractiveToolApproval) error {
-	// #region agent log
-	debuglog.Write("H4", "run_session_interactive_approval.go:deliverApproval", "tool_approval received", map[string]any{
-		"sessionId":      g.sessionID,
-		"approvalId":     msg.GetApprovalId(),
-		"approved":       msg.GetApproved(),
-		"waiting":        g.isWaiting(),
-		"hasPending":     g.pendingApproval() != nil,
-	})
-	// #endregion
 	if g.coord == nil {
 		return g.deliverApprovalLegacy(msg)
 	}

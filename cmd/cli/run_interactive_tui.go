@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/clierr"
-	"github.com/phrony-platform/runtime/internal/debuglog"
 )
 
 type streamServerMsg struct {
@@ -272,12 +271,6 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.awaitingApprovalDecision() {
 			switch msg.String() {
 			case "a":
-				// #region agent log
-				debuglog.Write("H1", "run_interactive_tui.go:Update", "approval key a pressed", map[string]any{
-					"approvalId": m.pendingApproval.GetApprovalId(),
-					"key":        msg.String(),
-				})
-				// #endregion
 				if err := m.sendToolApproval(true); err != nil {
 					m.streamErr = err
 					m.status = "error"
@@ -308,11 +301,6 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if tuiScrollWhileInput(msg) {
 				return m, m.scrollViewport(msg)
 			}
-			// #region agent log
-			debuglog.Write("H1", "run_interactive_tui.go:Update", "approval key ignored", map[string]any{
-				"key": msg.String(),
-			})
-			// #endregion
 			return m, nil
 		}
 		if m.awaitingInput || m.inputBlocked() {
@@ -597,12 +585,6 @@ func (m *runTUI) sendToolApproval(approved bool) error {
 		return nil
 	}
 	ar := m.pendingApproval
-	// #region agent log
-	debuglog.Write("H2", "run_interactive_tui.go:sendToolApproval", "sending tool_approval", map[string]any{
-		"approvalId": ar.GetApprovalId(),
-		"approved":   approved,
-	})
-	// #endregion
 	if err := m.stream.Send(&runtimev1.RunSessionInteractiveClientMsg{
 		Body: &runtimev1.RunSessionInteractiveClientMsg_ToolApproval{
 			ToolApproval: &runtimev1.RunSessionInteractiveToolApproval{
@@ -613,12 +595,6 @@ func (m *runTUI) sendToolApproval(approved bool) error {
 	}); err != nil {
 		return clierr.WrapRPC("run session", err)
 	}
-	// #region agent log
-	debuglog.Write("H2", "run_interactive_tui.go:sendToolApproval", "tool_approval sent ok", map[string]any{
-		"approvalId": ar.GetApprovalId(),
-		"approved":   approved,
-	})
-	// #endregion
 
 	if !approved {
 		m.clearAwaitingApproval()

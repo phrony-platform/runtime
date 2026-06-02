@@ -9,7 +9,6 @@ import (
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
-	"github.com/phrony-platform/runtime/internal/debuglog"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/provider"
@@ -24,21 +23,7 @@ func (s *runtimeServer) resumeAfterApproval(
 	comment string,
 ) error {
 	gate := s.activeSessionGate(row.SessionID)
-	waiting := gate != nil && gate.isWaiting()
-	// #region agent log
-	debuglog.Write("H5", "resume_after_approval.go:resumeAfterApproval", "enter", map[string]any{
-		"sessionId":   row.SessionID,
-		"approvalId":  row.ID,
-		"approved":    approved,
-		"gateWaiting": waiting,
-	})
-	// #endregion
 	if gate != nil && gate.isWaiting() {
-		// #region agent log
-		debuglog.Write("H5", "resume_after_approval.go:resumeAfterApproval", "early return gate waiting", map[string]any{
-			"sessionId": row.SessionID,
-		})
-		// #endregion
 		return nil
 	}
 
