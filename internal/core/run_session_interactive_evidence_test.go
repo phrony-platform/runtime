@@ -37,7 +37,7 @@ func TestSendSessionStarted_includesDescriptiveMetadata(t *testing.T) {
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	ver := executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted())
 	snap := evidence.BuildSnapshot(agent)
-	if err := sendSessionStarted(stream, "sess-1", "version-uuid", ver, nil, time.Now(), nil, evidenceSnapshotToProto(snap)); err != nil {
+	if err := sendSessionStarted(sessionEventsFromStream(stream), "sess-1", "version-uuid", ver, nil, time.Now(), nil, evidenceSnapshotToProto(snap)); err != nil {
 		t.Fatalf("sendSessionStarted: %v", err)
 	}
 	if len(stream.sent) != 1 {

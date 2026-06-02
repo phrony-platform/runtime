@@ -43,10 +43,10 @@ func newInteractiveSessionState(
 	ver *executor.Version,
 	startedAt time.Time,
 	dispatch tooldispatch.Dispatcher,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	q *store.Queries,
 ) *interactiveSessionState {
-	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, stream, q, agentVersionID)
+	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, events, q, agentVersionID)
 	st := &interactiveSessionState{
 		sessionID:        sessionID,
 		agentVersionID:   agentVersionID,
@@ -74,7 +74,7 @@ func (st *interactiveSessionState) maxTokensPerRun() int {
 func (st *interactiveSessionState) runTurn(
 	ctx context.Context,
 	q *store.Queries,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	input json.RawMessage,
 ) (stopReason, assistantText string, turnUsage provider.TokenUsage, err error) {
 	runCtx, cancel := st.runContext(ctx)
@@ -103,7 +103,7 @@ func (st *interactiveSessionState) runTurn(
 		switch ev.Type {
 		case executor.EventTextDelta:
 			builder.WriteString(ev.TextDelta)
-			if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+			if err := events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 				Body: &runtimev1.RunSessionInteractiveServerMsg_TextDelta{
 					TextDelta: &runtimev1.RunSessionInteractiveTextDelta{Delta: ev.TextDelta},
 				},
@@ -117,7 +117,7 @@ func (st *interactiveSessionState) runTurn(
 					Status: model.SessionStatusAwaitingTool,
 				})
 			}
-			if err := sendToolCall(stream, ev.ToolCall); err != nil {
+			if err := sendToolCall(events, ev.ToolCall); err != nil {
 				return "", "", provider.TokenUsage{}, err
 			}
 		case executor.EventToolResult:
@@ -127,7 +127,7 @@ func (st *interactiveSessionState) runTurn(
 					Status: model.SessionStatusRunning,
 				})
 			}
-			if err := sendToolResult(stream, ev.ToolResult); err != nil {
+			if err := sendToolResult(events, ev.ToolResult); err != nil {
 				return "", "", provider.TokenUsage{}, err
 			}
 		case executor.EventApprovalRequired:
@@ -164,7 +164,7 @@ func (st *interactiveSessionState) runTurn(
 func (s *runtimeServer) failInteractiveSession(
 	ctx context.Context,
 	q *store.Queries,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	sessionID string,
 	runErr error,
 ) error {
@@ -177,7 +177,7 @@ func (s *runtimeServer) failInteractiveSession(
 	}); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
-	_ = stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+	_ = events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
 			Failed: &runtimev1.RunSessionInteractiveFailed{Message: msg},
 		},
@@ -188,7 +188,7 @@ func (s *runtimeServer) failInteractiveSession(
 func (s *runtimeServer) completeInteractiveSession(
 	ctx context.Context,
 	q *store.Queries,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	sessionID, stopReason string,
 	output json.RawMessage,
 	turn int,
@@ -202,7 +202,7 @@ func (s *runtimeServer) completeInteractiveSession(
 	}); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
-	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
 			Completed: &runtimev1.RunSessionInteractiveCompleted{
 				StopReason:           stopReason,

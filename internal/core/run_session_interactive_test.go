@@ -250,7 +250,7 @@ func TestRuntime_failInteractiveSession(t *testing.T) {
 
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	srv := &runtimeServer{db: db}
-	err := srv.failInteractiveSession(context.Background(), store.New(db), stream, "sess-1", fmt.Errorf("load failed"))
+	err := srv.failInteractiveSession(context.Background(), store.New(db), sessionEventsFromStream(stream), "sess-1", fmt.Errorf("load failed"))
 	if err != nil {
 		t.Fatalf("failInteractiveSession: %v", err)
 	}

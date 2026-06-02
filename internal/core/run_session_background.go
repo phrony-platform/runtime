@@ -77,9 +77,10 @@ func (s *runtimeServer) runSessionBackground(
 	}
 
 	stream := &noopInteractiveStream{ctx: ctx}
+	events := newSessionEventHub()
 	ver, err := s.loadSessionVersion(ctx, q, agentVersionID)
 	if err != nil {
-		_ = s.failInteractiveSession(ctx, q, stream, sessionID, err)
+		_ = s.failInteractiveSession(ctx, q, events, sessionID, err)
 		return
 	}
 	if _, err := s.ensureSessionEvidence(ctx, q, sessionID, ver.Agent); err != nil {
@@ -93,7 +94,7 @@ func (s *runtimeServer) runSessionBackground(
 		s.scheduleWallClockExpiry(sessionID, time.Duration(maxSec)*time.Second, onLimit)
 	}
 
-	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, stream, q, agentVersionID)
+	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, events, q, agentVersionID)
 	state := &interactiveSessionState{
 		sessionID:        sessionID,
 		agentVersionID:   agentVersionID,
@@ -106,11 +107,11 @@ func (s *runtimeServer) runSessionBackground(
 	gate.hitl = state
 	s.attachActiveSessionGate(sessionID, gate)
 
-	loopErr := s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, inputJSON, false)
+	loopErr := s.runSessionInteractiveLoop(ctx, stream, events, q, sessionID, state, inputJSON, false)
 	if loopErr != nil {
 		session, loadErr := q.GetSession(ctx, sessionID)
 		if loadErr == nil && !sessionStatusTerminal(session.Status) {
-			_ = s.failInteractiveSession(ctx, q, stream, sessionID, loopErr)
+			_ = s.failInteractiveSession(ctx, q, events, sessionID, loopErr)
 		}
 	}
 }

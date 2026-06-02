@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/provider"
@@ -17,7 +16,7 @@ import (
 func (s *runtimeServer) publishWallClockBlockedAndPersist(
 	ctx context.Context,
 	q *store.Queries,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	sessionID string,
 	state *interactiveSessionState,
 	lastStopReason string,
@@ -29,7 +28,7 @@ func (s *runtimeServer) publishWallClockBlockedAndPersist(
 		return nil
 	}
 	state.blockInput(limitErr)
-	if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+	if err := state.publishInputBlocked(events, lastStopReason, lastTurnUsage); err != nil {
 		return err
 	}
 	return s.persistWallClockTerminal(ctx, q, sessionID, state, limitErrorMessage(limitErr), lastOutput)

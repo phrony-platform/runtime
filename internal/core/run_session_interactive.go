@@ -80,10 +80,11 @@ func (s *runtimeServer) runSessionInteractiveNew(
 
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
 	defer sessionCancel()
+	events := sessionEventsFromStream(stream)
 
 	ver, err := s.loadSessionVersion(sessionCtx, q, agentVersionID)
 	if err != nil {
-		return s.failInteractiveSession(sessionCtx, q, stream, sessionID, err)
+		return s.failInteractiveSession(sessionCtx, q, events, sessionID, err)
 	}
 
 	evidenceSnap, err := s.ensureSessionEvidence(sessionCtx, q, sessionID, ver.Agent)
@@ -92,11 +93,11 @@ func (s *runtimeServer) runSessionInteractiveNew(
 	}
 
 	sessionStartedAt := time.Now()
-	if err := sendSessionStarted(stream, sessionID, agentVersionID, ver, nil, sessionStartedAt, nil, evidenceSnapshotToProto(evidenceSnap)); err != nil {
+	if err := sendSessionStarted(events, sessionID, agentVersionID, ver, nil, sessionStartedAt, nil, evidenceSnapshotToProto(evidenceSnap)); err != nil {
 		return err
 	}
 
-	state := newInteractiveSessionState(s, sessionID, agentVersionID, ver, sessionStartedAt, s.toolDispatch, stream, q)
+	state := newInteractiveSessionState(s, sessionID, agentVersionID, ver, sessionStartedAt, s.toolDispatch, events, q)
 	if err := s.registerActiveSession(sessionID, activeSessionEntry{
 		cancel:       sessionCancel,
 		approvalGate: state.approvalGate,
@@ -105,7 +106,7 @@ func (s *runtimeServer) runSessionInteractiveNew(
 	}
 	defer s.unregisterActiveSession(sessionID)
 
-	return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, inputJSON, true)
+	return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, inputJSON, true)
 }
 
 func (s *runtimeServer) runSessionInteractiveAttach(
@@ -131,6 +132,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
 	defer sessionCancel()
+	events := sessionEventsFromStream(stream)
 
 	ver, err := s.loadSessionVersion(sessionCtx, q, session.AgentVersionID)
 	if err != nil {
@@ -155,7 +157,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	if session.Status == model.SessionStatusAwaitingInput {
 		var sessionUsage provider.TokenUsage
 		attachAwaitingLastTurn, sessionUsage = usageFromSessionOutputJSON(session.Output)
-		attachAwaitingState = newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, stream, q)
+		attachAwaitingState = newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, events, q)
 		attachAwaitingState.history = history
 		attachAwaitingState.turnCount = len(history) / 2
 		attachAwaitingState.sessionUsage = sessionUsage
@@ -167,13 +169,13 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	if err != nil {
 		return status.Errorf(codes.Internal, "record session evidence: %v", err)
 	}
-	if err := sendSessionStarted(stream, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, endedAt, evidenceSnapshotToProto(evidenceSnap)); err != nil {
+	if err := sendSessionStarted(events, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, endedAt, evidenceSnapshotToProto(evidenceSnap)); err != nil {
 		return err
 	}
 
 	switch session.Status {
 	case model.SessionStatusAwaitingTool:
-		state := newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, stream, q)
+		state := newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, events, q)
 		state.history = history
 		state.turnCount = len(history) / 2
 		if invocations, err := q.ListUnfinishedInvocationsBySession(sessionCtx, sessionID); err == nil && len(invocations) > 0 {
@@ -188,7 +190,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 				if pending, perr := q.GetPendingApprovalBySession(sessionCtx, sessionID); perr == nil {
 					req, reqErr := approvalRequestFromStore(sessionCtx, q, pending, sessionID)
 					if reqErr == nil {
-						_ = stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+						_ = events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 							Body: &runtimev1.RunSessionInteractiveServerMsg_ApprovalRequired{
 								ApprovalRequired: approvalRequiredToProto(req),
 							},
@@ -196,13 +198,13 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 						state.approvalGate.setPendingReplay(req)
 					}
 				}
-				if err := sendAwaitingInput(stream, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
+				if err := sendAwaitingInput(events, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
 					return err
 				}
 				return s.withActiveSession(sessionID, activeSessionEntry{
 					cancel: sessionCancel, approvalGate: state.approvalGate,
 				}, func() error {
-					return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, nil, true)
+					return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, nil, true)
 				})
 			}
 			history, err = decodeHistory(session.History)
@@ -212,23 +214,23 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 			history = enrichHistoryFromSessionOutput(history, session.Output)
 			state.history = history
 		}
-		if err := sendAwaitingInput(stream, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_tool"); err != nil {
+		if err := sendAwaitingInput(events, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_tool"); err != nil {
 			return err
 		}
 		return s.withActiveSession(sessionID, activeSessionEntry{
 			cancel: sessionCancel, approvalGate: state.approvalGate,
 		}, func() error {
-			return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, nil, true)
+			return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, nil, true)
 		})
 
 	case model.SessionStatusAwaitingApproval:
-		state := newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, stream, q)
+		state := newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, events, q)
 		state.history = history
 		state.turnCount = len(history) / 2
 		if pending, err := q.GetPendingApprovalBySession(sessionCtx, sessionID); err == nil {
 			req, reqErr := approvalRequestFromStore(sessionCtx, q, pending, sessionID)
 			if reqErr == nil {
-				_ = stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+				_ = events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 					Body: &runtimev1.RunSessionInteractiveServerMsg_ApprovalRequired{
 						ApprovalRequired: approvalRequiredToProto(req),
 					},
@@ -236,13 +238,13 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 				state.approvalGate.setPendingReplay(req)
 			}
 		}
-		if err := sendAwaitingInput(stream, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
+		if err := sendAwaitingInput(events, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
 			return err
 		}
 		return s.withActiveSession(sessionID, activeSessionEntry{
 			cancel: sessionCancel, approvalGate: state.approvalGate,
 		}, func() error {
-			return s.runSessionInteractiveLoop(sessionCtx, stream, q, sessionID, state, nil, true)
+			return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, nil, true)
 		})
 
 	case model.SessionStatusAwaitingInput:
@@ -259,7 +261,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		return s.withActiveSession(sessionID, activeSessionEntry{
 			cancel: sessionCancel, approvalGate: attachAwaitingState.approvalGate,
 		}, func() error {
-			return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, q, sessionID, session, attachAwaitingState, attachAwaitingLastTurn, blockedReason, false)
+			return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, events, q, sessionID, session, attachAwaitingState, attachAwaitingLastTurn, blockedReason, false)
 		})
 
 	case model.SessionStatusCompleted:
@@ -267,7 +269,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		if len(output) == 0 {
 			output = json.RawMessage("null")
 		}
-		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+		if err := events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
 				Completed: &runtimev1.RunSessionInteractiveCompleted{
 					StopReason:           stopReasonFromSessionOutput(output),
@@ -291,17 +293,17 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		// limits remain resumable so an operator can continue the conversation.
 		if executor.IsLimitErrorMessage(errMsg) && !isWallClockLimitMessage(errMsg) {
 			lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
-			state := newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, stream, q)
+			state := newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, events, q)
 			state.history = history
 			state.turnCount = len(history) / 2
 			state.sessionUsage = sessionUsage
 			return s.withActiveSession(sessionID, activeSessionEntry{
 				cancel: sessionCancel, approvalGate: state.approvalGate,
 			}, func() error {
-				return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, q, sessionID, session, state, lastTurnUsage, errMsg, true)
+				return s.runSessionInteractiveAttachBlocked(sessionCtx, stream, events, q, sessionID, session, state, lastTurnUsage, errMsg, true)
 			})
 		}
-		if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+		if err := events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 			Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
 				Failed: &runtimev1.RunSessionInteractiveFailed{Message: errMsg},
 			},
@@ -350,7 +352,8 @@ func (s *runtimeServer) attachWallClockTerminal(
 			return status.Errorf(codes.Internal, "update session: %v", err)
 		}
 	}
-	if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+	events := sessionEventsFromStream(stream)
+	if err := events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
 			Failed: &runtimev1.RunSessionInteractiveFailed{Message: message},
 		},
@@ -365,6 +368,7 @@ func (s *runtimeServer) attachWallClockTerminal(
 func (s *runtimeServer) runSessionInteractiveAttachBlocked(
 	ctx context.Context,
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	q *store.Queries,
 	sessionID string,
 	session store.Session,
@@ -385,10 +389,10 @@ func (s *runtimeServer) runSessionInteractiveAttachBlocked(
 		}
 	}
 	stopReason := stopReasonFromSessionOutput(session.Output)
-	if err := sendAwaitingInput(stream, stopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
+	if err := sendAwaitingInput(events, stopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
 		return err
 	}
-	return s.runSessionInteractiveLoop(ctx, stream, q, sessionID, state, nil, true)
+	return s.runSessionInteractiveLoop(ctx, stream, events, q, sessionID, state, nil, true)
 }
 
 // sessionEndedAtForAttach returns updated_at for terminal attach replays so clients freeze wall-clock display.

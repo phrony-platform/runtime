@@ -20,6 +20,7 @@ import (
 func (s *runtimeServer) runSessionInteractiveLoop(
 	ctx context.Context,
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	q *store.Queries,
 	sessionID string,
 	state *interactiveSessionState,
@@ -41,12 +42,12 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 		if len(pendingInput) > 0 {
 			if err := state.sessionLimitErrorBeforeTurn(); err != nil {
 				if isWallClockLimitError(err) {
-					if err := s.publishWallClockBlockedAndPersist(ctx, q, stream, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
+					if err := s.publishWallClockBlockedAndPersist(ctx, q, events, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
 						return err
 					}
 				} else {
 					state.blockInput(err)
-					if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+					if err := state.publishInputBlocked(events, lastStopReason, lastTurnUsage); err != nil {
 						return err
 					}
 				}
@@ -61,7 +62,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}
 
 			turnStart := time.Now()
-			turnCancel, turnDone := runInteractiveTurnAsync(loopCtx, q, state, stream, pendingInput)
+			turnCancel, turnDone := runInteractiveTurnAsync(loopCtx, q, state, events, pendingInput)
 
 			var out interactiveTurnOutcome
 			wallExpired := false
@@ -113,7 +114,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 
 			if wallExpired {
 				if err := state.sessionWallClockLimitError(); err != nil {
-					if err := s.publishWallClockBlockedAndPersist(ctx, q, stream, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
+					if err := s.publishWallClockBlockedAndPersist(ctx, q, events, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
 						return err
 					}
 					pendingInput = nil
@@ -128,7 +129,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}
 
 			if out.err != nil {
-				if handled, err := s.handleInteractiveTurnError(ctx, q, stream, state, lastStopReason, lastTurnUsage, out.err); err != nil {
+				if handled, err := s.handleInteractiveTurnError(ctx, q, events, state, lastStopReason, lastTurnUsage, out.err); err != nil {
 					return err
 				} else if handled {
 					if wc := state.sessionWallClockLimitError(); wc != nil {
@@ -145,12 +146,12 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 					}
 					continue
 				}
-				return s.failInteractiveSession(ctx, q, stream, sessionID, out.err)
+				return s.failInteractiveSession(ctx, q, events, sessionID, out.err)
 			}
 
 			userText, err := userTextFromSessionInput(pendingInput)
 			if err != nil {
-				return s.failInteractiveSession(ctx, q, stream, sessionID, err)
+				return s.failInteractiveSession(ctx, q, events, sessionID, err)
 			}
 			turnDuration := time.Since(turnStart)
 			state.history = appendTurnHistory(state.history, userText, out.assistantText, out.stopReason, out.turnUsage, turnDuration)
@@ -185,7 +186,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			lastOutput = outputJSON
 			lastTurnUsage = out.turnUsage
 
-			if err := sendAwaitingInput(stream, out.stopReason, state.turnCount, out.turnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
+			if err := sendAwaitingInput(events, out.stopReason, state.turnCount, out.turnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
 				return err
 			}
 			pendingInput = nil
@@ -197,13 +198,13 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			if !waitForUser {
 				return nil
 			}
-			if done, err := s.finishInteractiveIfClientClosed(ctx, q, stream, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
+			if done, err := s.finishInteractiveIfClientClosed(ctx, q, events, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
 				return err
 			}
 			continue
 		}
 
-		if done, err := s.finishInteractiveIfClientClosed(ctx, q, stream, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
+		if done, err := s.finishInteractiveIfClientClosed(ctx, q, events, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
 			return err
 		}
 
@@ -221,7 +222,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			return loopCtx.Err()
 		case <-wallC:
 			wallC = nil
-			if err := s.publishWallClockBlockedAndPersist(ctx, q, stream, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
+			if err := s.publishWallClockBlockedAndPersist(ctx, q, events, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
 				return err
 			}
 		case r, ok := <-recvCh:
@@ -232,7 +233,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			if r.err != nil {
 				if errors.Is(r.err, io.EOF) {
 					state.clientRecvEOF = true
-					if done, err := s.finishInteractiveIfClientClosed(ctx, q, stream, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
+					if done, err := s.finishInteractiveIfClientClosed(ctx, q, events, sessionID, state, waitForUser, lastStopReason, lastOutput, lastTurnUsage); done || err != nil {
 						return err
 					}
 					continue
@@ -253,19 +254,19 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				return status.Error(codes.InvalidArgument, "expected user_message after awaiting_input")
 			}
 			if state.inputBlockedReason != "" {
-				if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+				if err := state.publishInputBlocked(events, lastStopReason, lastTurnUsage); err != nil {
 					return err
 				}
 				continue
 			}
 			if err := state.sessionLimitErrorBeforeTurn(); err != nil {
 				if isWallClockLimitError(err) {
-					if err := s.publishWallClockBlockedAndPersist(ctx, q, stream, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
+					if err := s.publishWallClockBlockedAndPersist(ctx, q, events, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
 						return err
 					}
 				} else {
 					state.blockInput(err)
-					if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+					if err := state.publishInputBlocked(events, lastStopReason, lastTurnUsage); err != nil {
 						return err
 					}
 				}
@@ -291,7 +292,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 func (s *runtimeServer) finishInteractiveIfClientClosed(
 	ctx context.Context,
 	q *store.Queries,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	sessionID string,
 	state *interactiveSessionState,
 	waitForUser bool,
@@ -305,7 +306,7 @@ func (s *runtimeServer) finishInteractiveIfClientClosed(
 	if len(lastOutput) == 0 {
 		return true, nil
 	}
-	return true, s.completeInteractiveSession(ctx, q, stream, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
+	return true, s.completeInteractiveSession(ctx, q, events, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
 }
 
 func encodeInteractiveUserMessageText(text string) (json.RawMessage, error) {
@@ -354,13 +355,13 @@ func handleInteractiveRecvDuringTurn(
 }
 
 func sendAwaitingInput(
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	stopReason string,
 	turn int,
 	turnUsage, sessionUsage provider.TokenUsage,
 	inputBlockedReason string,
 ) error {
-	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_AwaitingInput{
 			AwaitingInput: &runtimev1.RunSessionInteractiveAwaitingInput{
 				StopReason:         stopReason,
@@ -372,7 +373,7 @@ func sendAwaitingInput(
 }
 
 func sendSessionStarted(
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	sessionID, agentVersionID string,
 	ver *executor.Version,
 	history []provider.Message,
@@ -403,7 +404,7 @@ func sendSessionStarted(
 	if sessionEndedAt != nil && !sessionEndedAt.IsZero() {
 		sessionEndedAtUnixMs = sessionEndedAt.UnixMilli()
 	}
-	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
 			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
 				SessionId:              sessionID,

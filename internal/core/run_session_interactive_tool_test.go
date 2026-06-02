@@ -98,7 +98,7 @@ func TestInteractiveSessionState_runTurn_requireApprovalViaToolApproval(t *testi
 	stub := e2eToolUseThenEndTurn(call)
 
 	stream := &mockInteractiveStream{ctx: context.Background()}
-	gate := newSessionApprovalGate(nil, "sess-e2e", stream, nil, "av-e2e")
+	gate := newSessionApprovalGate(nil, "sess-e2e", sessionEventsFromStream(stream), nil, "av-e2e")
 	st := &interactiveSessionState{
 		sessionID:      "sess-e2e",
 		agentVersionID: "av-e2e",

@@ -22,7 +22,7 @@ type hitlWaitBudget interface {
 type sessionApprovalGate struct {
 	coord          *approvalCoordinator
 	sessionID      string
-	stream         runtimev1.Runtime_RunSessionInteractiveServer
+	events         sessionEventSink
 	q              *store.Queries
 	agentVersionID string
 	hitl           hitlWaitBudget
@@ -42,14 +42,14 @@ type approvalDecision struct {
 func newSessionApprovalGate(
 	coord *approvalCoordinator,
 	sessionID string,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	q *store.Queries,
 	agentVersionID string,
 ) *sessionApprovalGate {
 	return &sessionApprovalGate{
 		coord:          coord,
 		sessionID:      sessionID,
-		stream:         stream,
+		events:         events,
 		q:              q,
 		agentVersionID: agentVersionID,
 		decisionCh:     make(chan approvalDecision, 1),
@@ -119,10 +119,10 @@ func (g *sessionApprovalGate) isWaiting() bool {
 }
 
 func (g *sessionApprovalGate) sendApprovalRequired(req policy.ApprovalRequest) error {
-	if g.stream == nil {
+	if g.events == nil {
 		return nil
 	}
-	return g.stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+	return g.events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_ApprovalRequired{
 			ApprovalRequired: approvalRequiredToProto(req),
 		},

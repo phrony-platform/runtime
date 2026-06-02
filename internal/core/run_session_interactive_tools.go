@@ -5,8 +5,8 @@ import (
 	"github.com/phrony-platform/runtime/internal/executor"
 )
 
-func sendToolCall(stream runtimev1.Runtime_RunSessionInteractiveServer, ev executor.ToolCallEvent) error {
-	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+func sendToolCall(events sessionEventSink, ev executor.ToolCallEvent) error {
+	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_ToolCall{
 			ToolCall: &runtimev1.RunSessionInteractiveToolCall{
 				CallId:  ev.CallID,
@@ -18,8 +18,8 @@ func sendToolCall(stream runtimev1.Runtime_RunSessionInteractiveServer, ev execu
 	})
 }
 
-func sendToolResult(stream runtimev1.Runtime_RunSessionInteractiveServer, ev executor.ToolResultEvent) error {
-	return stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+func sendToolResult(events sessionEventSink, ev executor.ToolResultEvent) error {
+	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_ToolResult{
 			ToolResult: &runtimev1.RunSessionInteractiveToolResult{
 				CallId:       ev.CallID,

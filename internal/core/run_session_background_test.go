@@ -215,7 +215,8 @@ func TestRuntime_runSessionInteractiveLoop_waitForUserFalseStopsAfterAwaitingInp
 		version:          executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()),
 		sessionStartedAt: now,
 	}
-	if err := srv.runSessionInteractiveLoop(context.Background(), stream, store.New(db), "sess-1", state, []byte(`{"message":"hi"}`), false); err != nil {
+	events := sessionEventsFromStream(stream)
+	if err := srv.runSessionInteractiveLoop(context.Background(), stream, events, store.New(db), "sess-1", state, []byte(`{"message":"hi"}`), false); err != nil {
 		t.Fatalf("runSessionInteractiveLoop: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -248,7 +249,8 @@ func TestRuntime_runSessionInteractiveLoop_waitForUserFalseDoesNotAutoCompleteOn
 		version:          executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()),
 		sessionStartedAt: now,
 	}
-	if err := srv.runSessionInteractiveLoop(context.Background(), stream, store.New(db), "sess-1", state, []byte(`{"message":"hi"}`), false); err != nil {
+	events := sessionEventsFromStream(stream)
+	if err := srv.runSessionInteractiveLoop(context.Background(), stream, events, store.New(db), "sess-1", state, []byte(`{"message":"hi"}`), false); err != nil {
 		t.Fatalf("runSessionInteractiveLoop: %v", err)
 	}
 	for _, msg := range stream.sent {

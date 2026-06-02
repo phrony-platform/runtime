@@ -78,7 +78,7 @@ func (s *runtimeServer) resumeAfterApproval(
 			}
 			inv.Args = args
 		}
-		if gate != nil && gate.stream != nil {
+		if gate != nil && gate.events != nil {
 			if err := s.recoverOutstandingToolInvocations(ctx, q, ver, session, history, []store.ToolInvocation{inv}, false); err != nil {
 				return err
 			}
@@ -115,7 +115,7 @@ func (s *runtimeServer) resumeAfterApproval(
 		return err
 	}
 	session.History = historyJSON
-	if gate != nil && gate.stream != nil {
+	if gate != nil && gate.events != nil {
 		return s.completeApprovalTurnOnStream(ctx, q, gate, session, ver, history)
 	}
 	return s.continueRecoveredTurn(ctx, q, session, ver, history)
@@ -129,9 +129,9 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 	ver *executor.Version,
 	history []provider.Message,
 ) error {
-	stream := gate.stream
-	if stream == nil {
-		return errors.New("interactive stream is required")
+	events := gate.events
+	if events == nil {
+		return errors.New("session event sink is required")
 	}
 
 	var st *interactiveSessionState
@@ -181,7 +181,7 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 		switch ev.Type {
 		case executor.EventTextDelta:
 			assistantText += ev.TextDelta
-			if err := stream.Send(&runtimev1.RunSessionInteractiveServerMsg{
+			if err := events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 				Body: &runtimev1.RunSessionInteractiveServerMsg_TextDelta{
 					TextDelta: &runtimev1.RunSessionInteractiveTextDelta{Delta: ev.TextDelta},
 				},
@@ -189,16 +189,16 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 				return err
 			}
 		case executor.EventToolCall:
-			if err := sendToolCall(stream, ev.ToolCall); err != nil {
+			if err := sendToolCall(events, ev.ToolCall); err != nil {
 				return err
 			}
 		case executor.EventToolResult:
-			if err := sendToolResult(stream, ev.ToolResult); err != nil {
+			if err := sendToolResult(events, ev.ToolResult); err != nil {
 				return err
 			}
 		case executor.EventCompleted:
 			if err := <-runErrCh; err != nil {
-				return s.failInteractiveSession(ctx, q, stream, st.sessionID, err)
+				return s.failInteractiveSession(ctx, q, events, st.sessionID, err)
 			}
 			turnUsage = ev.Usage
 			stopReason := ev.StopReason
@@ -226,16 +226,16 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 			gate.mu.Lock()
 			gate.pendingReq = nil
 			gate.mu.Unlock()
-			return sendAwaitingInput(stream, stopReason, st.turnCount, turnUsage, st.sessionUsage, st.inputBlockedReason)
+			return sendAwaitingInput(events, stopReason, st.turnCount, turnUsage, st.sessionUsage, st.inputBlockedReason)
 		case executor.EventFailed, executor.EventEscalation:
 			if ev.Err != nil {
-				return s.failInteractiveSession(ctx, q, stream, st.sessionID, ev.Err)
+				return s.failInteractiveSession(ctx, q, events, st.sessionID, ev.Err)
 			}
-			return s.failInteractiveSession(ctx, q, stream, st.sessionID, errors.New("model completion failed"))
+			return s.failInteractiveSession(ctx, q, events, st.sessionID, errors.New("model completion failed"))
 		}
 	}
 	if err := <-runErrCh; err != nil {
-		return s.failInteractiveSession(ctx, q, stream, st.sessionID, err)
+		return s.failInteractiveSession(ctx, q, events, st.sessionID, err)
 	}
 	return nil
 }
@@ -264,9 +264,9 @@ func (s *runtimeServer) resumeAfterLimitApproval(
 		}); err != nil {
 			return err
 		}
-		if gate != nil && gate.stream != nil {
+		if gate != nil && gate.events != nil {
 			if h, ok := gate.hitl.(*interactiveSessionState); ok && h != nil {
-				return sendAwaitingInput(gate.stream, "", h.turnCount, provider.TokenUsage{}, h.sessionUsage, h.inputBlockedReason)
+				return sendAwaitingInput(gate.events, "", h.turnCount, provider.TokenUsage{}, h.sessionUsage, h.inputBlockedReason)
 			}
 		}
 		return nil
@@ -282,9 +282,9 @@ func (s *runtimeServer) resumeAfterLimitApproval(
 	}); err != nil {
 		return err
 	}
-	if gate != nil && gate.stream != nil {
+	if gate != nil && gate.events != nil {
 		if h, ok := gate.hitl.(*interactiveSessionState); ok && h != nil {
-			return sendAwaitingInput(gate.stream, "", h.turnCount, provider.TokenUsage{}, h.sessionUsage, "")
+			return sendAwaitingInput(gate.events, "", h.turnCount, provider.TokenUsage{}, h.sessionUsage, "")
 		}
 	}
 	return nil

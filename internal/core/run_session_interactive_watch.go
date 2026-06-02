@@ -70,18 +70,18 @@ func (st *interactiveSessionState) blockInput(limitErr error) {
 }
 
 func (st *interactiveSessionState) publishInputBlocked(
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	stopReason string,
 	turnUsage provider.TokenUsage,
 ) error {
 	if st.inputBlockedReason == "" {
 		return nil
 	}
-	return sendAwaitingInput(stream, stopReason, st.turnCount, turnUsage, st.sessionUsage, st.inputBlockedReason)
+	return sendAwaitingInput(events, stopReason, st.turnCount, turnUsage, st.sessionUsage, st.inputBlockedReason)
 }
 
 func (st *interactiveSessionState) notifyWallClockLimit(
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	stopReason string,
 	turnUsage provider.TokenUsage,
 ) error {
@@ -93,13 +93,13 @@ func (st *interactiveSessionState) notifyWallClockLimit(
 		return nil
 	}
 	st.blockInput(limitErr)
-	return sendAwaitingInput(stream, stopReason, st.turnCount, turnUsage, st.sessionUsage, st.inputBlockedReason)
+	return sendAwaitingInput(events, stopReason, st.turnCount, turnUsage, st.sessionUsage, st.inputBlockedReason)
 }
 
 func (s *runtimeServer) handleInteractiveTurnError(
 	ctx context.Context,
 	q *store.Queries,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	state *interactiveSessionState,
 	lastStopReason string,
 	lastTurnUsage provider.TokenUsage,
@@ -110,17 +110,17 @@ func (s *runtimeServer) handleInteractiveTurnError(
 	}
 	if executor.IsLimitError(turnErr) {
 		state.blockInput(turnErr)
-		if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+		if err := state.publishInputBlocked(events, lastStopReason, lastTurnUsage); err != nil {
 			return false, err
 		}
 		return true, nil
 	}
 	if executor.IsEscalationError(turnErr) {
-		if handled, err := s.tryLimitEscalationHITL(ctx, q, stream, state, turnErr, lastStopReason, lastTurnUsage); handled || err != nil {
+		if handled, err := s.tryLimitEscalationHITL(ctx, q, events, state, turnErr, lastStopReason, lastTurnUsage); handled || err != nil {
 			return handled, err
 		}
 		state.blockInput(turnErr)
-		if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+		if err := state.publishInputBlocked(events, lastStopReason, lastTurnUsage); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -128,7 +128,7 @@ func (s *runtimeServer) handleInteractiveTurnError(
 	if errors.Is(turnErr, context.Canceled) {
 		if wc := state.sessionWallClockLimitError(); wc != nil {
 			state.blockInput(wc)
-			if err := state.publishInputBlocked(stream, lastStopReason, lastTurnUsage); err != nil {
+			if err := state.publishInputBlocked(events, lastStopReason, lastTurnUsage); err != nil {
 				return false, err
 			}
 			return true, nil
@@ -141,13 +141,13 @@ func runInteractiveTurnAsync(
 	loopCtx context.Context,
 	q *store.Queries,
 	state *interactiveSessionState,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	pendingInput []byte,
 ) (cancel context.CancelFunc, done <-chan interactiveTurnOutcome) {
 	turnCtx, cancel := context.WithCancel(loopCtx)
 	out := make(chan interactiveTurnOutcome, 1)
 	go func() {
-		stopReason, assistantText, turnUsage, err := state.runTurn(turnCtx, q, stream, pendingInput)
+		stopReason, assistantText, turnUsage, err := state.runTurn(turnCtx, q, events, pendingInput)
 		out <- interactiveTurnOutcome{
 			stopReason:    stopReason,
 			assistantText: assistantText,

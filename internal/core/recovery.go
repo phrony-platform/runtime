@@ -311,7 +311,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 	}
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
 	defer sessionCancel()
-	stream := &noopInteractiveStream{ctx: sessionCtx}
+	events := newSessionEventHub()
 	state := &interactiveSessionState{
 		sessionID:        session.ID,
 		agentVersionID:   session.AgentVersionID,
@@ -322,7 +322,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 		toolDispatch:     s.toolDispatch,
 		policies:         policy.NewEvaluator(ver.Agent),
 	}
-	state.approvalGate = newSessionApprovalGate(s.approvalCoord(), session.ID, stream, q, session.AgentVersionID)
+	state.approvalGate = newSessionApprovalGate(s.approvalCoord(), session.ID, events, q, session.AgentVersionID)
 	state.approvalGate.hitl = state
 	if err := s.registerActiveSession(session.ID, activeSessionEntry{
 		cancel: sessionCancel, approvalGate: state.approvalGate,

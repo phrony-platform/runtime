@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 
-	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/provider"
@@ -13,7 +12,7 @@ import (
 func (s *runtimeServer) tryLimitEscalationHITL(
 	ctx context.Context,
 	q *store.Queries,
-	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	events sessionEventSink,
 	state *interactiveSessionState,
 	turnErr error,
 	lastStopReason string,
@@ -43,5 +42,5 @@ func (s *runtimeServer) tryLimitEscalationHITL(
 		return false, err
 	}
 	state.inputBlockedReason = ""
-	return true, sendAwaitingInput(stream, lastStopReason, state.turnCount, lastTurnUsage, state.sessionUsage, "awaiting_approval")
+	return true, sendAwaitingInput(events, lastStopReason, state.turnCount, lastTurnUsage, state.sessionUsage, "awaiting_approval")
 }
