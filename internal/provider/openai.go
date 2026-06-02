@@ -167,14 +167,16 @@ func hasOnlyToolResults(blocks []ContentBlock) bool {
 }
 
 func applyOpenAIParameters(params *openai.ChatCompletionNewParams, p *manifest.ModelParameters) {
-	if p == nil {
-		params.MaxTokens = openai.Int(defaultOpenAIMaxTokens)
-		return
+	// Chat Completions: max_completion_tokens is the supported cap for generated tokens
+	// (including reasoning tokens). max_tokens is deprecated and rejected by o-series and
+	// GPT-5 family models.
+	limit := int64(defaultOpenAIMaxTokens)
+	if p != nil && p.MaxOutputTokens != nil && *p.MaxOutputTokens > 0 {
+		limit = int64(*p.MaxOutputTokens)
 	}
-	if p.MaxOutputTokens != nil && *p.MaxOutputTokens > 0 {
-		params.MaxTokens = openai.Int(int64(*p.MaxOutputTokens))
-	} else {
-		params.MaxTokens = openai.Int(defaultOpenAIMaxTokens)
+	params.MaxCompletionTokens = openai.Int(limit)
+	if p == nil {
+		return
 	}
 	if p.Temperature != nil {
 		params.Temperature = openai.Float(*p.Temperature)

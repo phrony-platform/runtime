@@ -61,8 +61,11 @@ func TestOpenAIParams_mapsMessages(t *testing.T) {
 	if params.Model != "gpt-4o" {
 		t.Fatalf("model = %q", params.Model)
 	}
-	if params.MaxTokens.Value != 256 {
-		t.Fatalf("max_tokens = %d, want 256", params.MaxTokens.Value)
+	if params.MaxCompletionTokens.Value != 256 {
+		t.Fatalf("max_completion_tokens = %d, want 256", params.MaxCompletionTokens.Value)
+	}
+	if params.MaxTokens.Valid() {
+		t.Fatalf("max_tokens should not be set, got %d", params.MaxTokens.Value)
 	}
 	if len(params.Messages) != 2 {
 		t.Fatalf("messages len = %d, want 2", len(params.Messages))
