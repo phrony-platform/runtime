@@ -89,3 +89,81 @@ func TestRuntime_CancelSession_missingID(t *testing.T) {
 	_, err := srv.CancelSession(context.Background(), &runtimev1.CancelSessionRequest{})
 	assertGRPCCode(t, err, codes.InvalidArgument)
 }
+
+func TestRuntime_CompleteSession_success(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("run_abc").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("run_abc"))
+	mock.ExpectQuery(`INSERT INTO session_events`).
+		WithArgs("run_abc", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("run_abc").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	srv := &runtimeServer{db: db}
+	_, err := srv.CompleteSession(context.Background(), &runtimev1.CompleteSessionRequest{
+		SessionId: "run_abc",
+	})
+	if err != nil {
+		t.Fatalf("CompleteSession: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestRuntime_CompleteSession_invokesActiveCancel(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("run_live").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("run_live"))
+	mock.ExpectQuery(`INSERT INTO session_events`).
+		WithArgs("run_live", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("run_live").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	srv := &runtimeServer{db: db, activeSessions: &sync.Map{}}
+	stopped := false
+	if err := srv.registerActiveSession("run_live", activeSessionEntry{cancel: func() { stopped = true }}); err != nil {
+		t.Fatalf("registerActiveSession: %v", err)
+	}
+
+	_, err := srv.CompleteSession(context.Background(), &runtimev1.CompleteSessionRequest{
+		SessionId: "run_live",
+	})
+	if err != nil {
+		t.Fatalf("CompleteSession: %v", err)
+	}
+	if !stopped {
+		t.Fatal("expected active session cancel func to run")
+	}
+	if _, loaded := srv.activeSessions.Load("run_live"); loaded {
+		t.Fatal("expected session removed from activeSessions")
+	}
+}
+
+func TestRuntime_CompleteSession_notFound(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("run_done").
+		WillReturnError(sql.ErrNoRows)
+
+	srv := &runtimeServer{db: db}
+	_, err := srv.CompleteSession(context.Background(), &runtimev1.CompleteSessionRequest{
+		SessionId: "run_done",
+	})
+	assertGRPCCode(t, err, codes.NotFound)
+	if !strings.Contains(statusMessage(t, err), "not found") {
+		t.Fatalf("error = %v, want not found", err)
+	}
+}
+
+func TestRuntime_CompleteSession_missingID(t *testing.T) {
+	srv := &runtimeServer{db: testServeDB(t)}
+	_, err := srv.CompleteSession(context.Background(), &runtimev1.CompleteSessionRequest{})
+	assertGRPCCode(t, err, codes.InvalidArgument)
+}

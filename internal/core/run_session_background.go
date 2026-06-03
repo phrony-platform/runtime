@@ -108,12 +108,13 @@ func isBenignDriverLoopExit(ctx context.Context, q *store.Queries, sessionID str
 		if err == nil && wasCancelled {
 			return true
 		}
-		session, err := q.GetSession(ctx, sessionID)
+		session, err := q.GetSession(sessionLookupCtx(ctx), sessionID)
 		if err != nil {
 			return false
 		}
 		switch session.Status {
 		case model.SessionStatusAwaitingInput,
+			model.SessionStatusCompleted,
 			model.SessionStatusAwaitingApproval,
 			model.SessionStatusAwaitingTool:
 			return true

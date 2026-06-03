@@ -254,20 +254,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		})
 
 	case model.SessionStatusCompleted:
-		output := session.Output
-		if len(output) == 0 {
-			output = json.RawMessage("null")
-		}
-		if err := events.Send(&runtimev1.RunSessionInteractiveServerMsg{
-			Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
-				Completed: &runtimev1.RunSessionInteractiveCompleted{
-					StopReason:           stopReasonFromSessionOutput(output),
-					Output:               output,
-					Stats:                interactiveStatsFromSessionOutput(history, output),
-					SessionEndedAtUnixMs: session.UpdatedAt.UnixMilli(),
-				},
-			},
-		}); err != nil {
+		if err := sendInteractiveCompletedFromSession(events, session, history); err != nil {
 			return err
 		}
 		return rejectInteractiveUserMessage(stream)

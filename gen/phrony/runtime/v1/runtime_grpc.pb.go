@@ -30,6 +30,7 @@ const (
 	Runtime_GetAgentVersion_FullMethodName       = "/phrony.runtime.v1.Runtime/GetAgentVersion"
 	Runtime_RetireAgentVersion_FullMethodName    = "/phrony.runtime.v1.Runtime/RetireAgentVersion"
 	Runtime_CancelSession_FullMethodName         = "/phrony.runtime.v1.Runtime/CancelSession"
+	Runtime_CompleteSession_FullMethodName       = "/phrony.runtime.v1.Runtime/CompleteSession"
 	Runtime_ListAgents_FullMethodName            = "/phrony.runtime.v1.Runtime/ListAgents"
 	Runtime_ListAgentVersions_FullMethodName     = "/phrony.runtime.v1.Runtime/ListAgentVersions"
 	Runtime_ListSessions_FullMethodName          = "/phrony.runtime.v1.Runtime/ListSessions"
@@ -60,6 +61,9 @@ type RuntimeClient interface {
 	GetAgentVersion(ctx context.Context, in *GetAgentVersionRequest, opts ...grpc.CallOption) (*GetAgentVersionResponse, error)
 	RetireAgentVersion(ctx context.Context, in *RetireAgentVersionRequest, opts ...grpc.CallOption) (*RetireAgentVersionResponse, error)
 	CancelSession(ctx context.Context, in *CancelSessionRequest, opts ...grpc.CallOption) (*CancelSessionResponse, error)
+	// CompleteSession finalizes an in-progress session as completed, stopping any
+	// active driver and keeping the last persisted output.
+	CompleteSession(ctx context.Context, in *CompleteSessionRequest, opts ...grpc.CallOption) (*CompleteSessionResponse, error)
 	ListAgents(ctx context.Context, in *ListAgentsRequest, opts ...grpc.CallOption) (*ListAgentsResponse, error)
 	ListAgentVersions(ctx context.Context, in *ListAgentVersionsRequest, opts ...grpc.CallOption) (*ListAgentVersionsResponse, error)
 	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
@@ -193,6 +197,16 @@ func (c *runtimeClient) CancelSession(ctx context.Context, in *CancelSessionRequ
 	return out, nil
 }
 
+func (c *runtimeClient) CompleteSession(ctx context.Context, in *CompleteSessionRequest, opts ...grpc.CallOption) (*CompleteSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteSessionResponse)
+	err := c.cc.Invoke(ctx, Runtime_CompleteSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) ListAgents(ctx context.Context, in *ListAgentsRequest, opts ...grpc.CallOption) (*ListAgentsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListAgentsResponse)
@@ -305,6 +319,9 @@ type RuntimeServer interface {
 	GetAgentVersion(context.Context, *GetAgentVersionRequest) (*GetAgentVersionResponse, error)
 	RetireAgentVersion(context.Context, *RetireAgentVersionRequest) (*RetireAgentVersionResponse, error)
 	CancelSession(context.Context, *CancelSessionRequest) (*CancelSessionResponse, error)
+	// CompleteSession finalizes an in-progress session as completed, stopping any
+	// active driver and keeping the last persisted output.
+	CompleteSession(context.Context, *CompleteSessionRequest) (*CompleteSessionResponse, error)
 	ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error)
 	ListAgentVersions(context.Context, *ListAgentVersionsRequest) (*ListAgentVersionsResponse, error)
 	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
@@ -357,6 +374,9 @@ func (UnimplementedRuntimeServer) RetireAgentVersion(context.Context, *RetireAge
 }
 func (UnimplementedRuntimeServer) CancelSession(context.Context, *CancelSessionRequest) (*CancelSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelSession not implemented")
+}
+func (UnimplementedRuntimeServer) CompleteSession(context.Context, *CompleteSessionRequest) (*CompleteSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteSession not implemented")
 }
 func (UnimplementedRuntimeServer) ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAgents not implemented")
@@ -593,6 +613,24 @@ func _Runtime_CancelSession_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_CompleteSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CompleteSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CompleteSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CompleteSession(ctx, req.(*CompleteSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Runtime_ListAgents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListAgentsRequest)
 	if err := dec(in); err != nil {
@@ -790,6 +828,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelSession",
 			Handler:    _Runtime_CancelSession_Handler,
+		},
+		{
+			MethodName: "CompleteSession",
+			Handler:    _Runtime_CompleteSession_Handler,
 		},
 		{
 			MethodName: "ListAgents",

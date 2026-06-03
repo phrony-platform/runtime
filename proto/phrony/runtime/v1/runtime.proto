@@ -19,6 +19,9 @@ service Runtime {
   rpc GetAgentVersion(GetAgentVersionRequest) returns (GetAgentVersionResponse);
   rpc RetireAgentVersion(RetireAgentVersionRequest) returns (RetireAgentVersionResponse);
   rpc CancelSession(CancelSessionRequest) returns (CancelSessionResponse);
+  // CompleteSession finalizes an in-progress session as completed, stopping any
+  // active driver and keeping the last persisted output.
+  rpc CompleteSession(CompleteSessionRequest) returns (CompleteSessionResponse);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   rpc ListAgentVersions(ListAgentVersionsRequest) returns (ListAgentVersionsResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
@@ -326,6 +329,12 @@ message CancelSessionRequest {
 }
 
 message CancelSessionResponse {}
+
+message CompleteSessionRequest {
+  string session_id = 1;
+}
+
+message CompleteSessionResponse {}
 
 message ListAgentsRequest {
   // When set, only agents in this namespace are returned.

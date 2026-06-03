@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -115,6 +116,12 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}
 			turnCancel()
 
+			if errors.Is(loopCtx.Err(), context.Canceled) {
+				if done, err := s.completedExternally(ctx, q, events, sessionID, state); done || err != nil {
+					return err
+				}
+			}
+
 			if wallExpired {
 				if err := state.sessionWallClockLimitError(); err != nil {
 					if err := s.publishWallClockBlockedAndPersist(ctx, q, events, sessionID, state, lastStopReason, lastTurnUsage, lastOutput); err != nil {
@@ -220,7 +227,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 					return cerr
 				}
 				if wasCancelled {
-					session, serr := q.GetSession(ctx, sessionID)
+					session, serr := q.GetSession(sessionLookupCtx(ctx), sessionID)
 					if serr != nil {
 						return serr
 					}
@@ -228,6 +235,9 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 						return err
 					}
 					return nil
+				}
+				if done, err := s.completedExternally(ctx, q, events, sessionID, state); done || err != nil {
+					return err
 				}
 			}
 			return loopCtx.Err()
@@ -381,6 +391,52 @@ func sendAwaitingInput(
 			},
 		},
 	})
+}
+
+// sendInteractiveCompletedFromSession emits the terminal Completed event built
+// from a session's persisted output. Used both when attaching to an
+// already-completed session and when a session is completed out-of-band.
+func sendInteractiveCompletedFromSession(events sessionEventSink, session store.Session, history []provider.Message) error {
+	output := session.Output
+	if len(output) == 0 {
+		output = json.RawMessage("null")
+	}
+	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
+			Completed: &runtimev1.RunSessionInteractiveCompleted{
+				StopReason:           stopReasonFromSessionOutput(session.Output),
+				Output:               output,
+				Stats:                interactiveStatsFromSessionOutput(history, output),
+				SessionEndedAtUnixMs: session.UpdatedAt.UnixMilli(),
+			},
+		},
+	})
+}
+
+// completedExternally emits the Completed terminal event when the session was
+// marked completed out-of-band (CompleteSession RPC) while a driver/attach loop
+// was running. Returns done=true when the event was sent.
+func (s *runtimeServer) completedExternally(
+	ctx context.Context,
+	q *store.Queries,
+	events sessionEventSink,
+	sessionID string,
+	state *interactiveSessionState,
+) (done bool, err error) {
+	session, gerr := q.GetSession(sessionLookupCtx(ctx), sessionID)
+	if errors.Is(gerr, sql.ErrNoRows) {
+		return false, status.Errorf(codes.NotFound, "session %s not found", sessionID)
+	}
+	if gerr != nil {
+		return false, status.Errorf(codes.Internal, "load session: %v", gerr)
+	}
+	if session.Status != model.SessionStatusCompleted {
+		return false, nil
+	}
+	if err := sendInteractiveCompletedFromSession(events, session, state.history); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func sendSessionStarted(

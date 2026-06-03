@@ -146,6 +146,24 @@ func (q *Queries) CancelSession(ctx context.Context, sessionID string) (string, 
 	return id, err
 }
 
+const completeSession = `
+UPDATE sessions
+SET status = 'completed', updated_at = NOW()
+WHERE id = $1
+  AND status NOT IN ('completed', 'failed', 'cancelled')
+RETURNING id
+`
+
+func (q *Queries) CompleteSession(ctx context.Context, sessionID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, completeSession, sessionID)
+	var id string
+	err := row.Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	return id, err
+}
+
 const listSessionsByAgentVersionID = `
 SELECT id, agent_version_id, status, created_at, updated_at
 FROM sessions

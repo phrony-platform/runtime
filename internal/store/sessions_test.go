@@ -258,6 +258,45 @@ func TestQueries_CancelSession_notFound(t *testing.T) {
 	}
 }
 
+func TestQueries_CompleteSession(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
+
+	q := New(sqlDB)
+	id, err := q.CompleteSession(context.Background(), "sess-1")
+	if err != nil {
+		t.Fatalf("CompleteSession: %v", err)
+	}
+	if id != "sess-1" {
+		t.Fatalf("id = %q, want sess-1", id)
+	}
+}
+
+func TestQueries_CompleteSession_notFound(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("sess-done").
+		WillReturnError(sql.ErrNoRows)
+
+	q := New(sqlDB)
+	_, err = q.CompleteSession(context.Background(), "sess-done")
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("err = %v, want sql.ErrNoRows", err)
+	}
+}
+
 func TestQueries_ListSessionsByAgentVersionID_allAgents(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
