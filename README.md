@@ -1,7 +1,6 @@
 <p align="center" style="padding-top: 2rem; padding-bottom: 2rem;">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-light.png">
-    <source media="(prefers-color-scheme: light)" srcset="assets/logo-dark.png">
+    <source srcset="assets/phrony-runtime-logo.png">
     <img alt="Phrony" src="assets/logo-dark.png" width="400">
   </picture>
 </p>
