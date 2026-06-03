@@ -13,7 +13,7 @@ import (
 func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sessions",
-		Short: "List, inspect, attach to, and cancel agent sessions",
+		Short: "List, inspect, attach to, complete, and cancel agent sessions",
 	}
 
 	ls := &cobra.Command{
@@ -48,6 +48,15 @@ func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 		},
 	}
 
+	complete := &cobra.Command{
+		Use:   "complete SESSION_ID",
+		Short: "Complete an in-progress session, keeping its last output",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSessionsComplete(cmd, runtimeAddr, args[0])
+		},
+	}
+
 	attach := &cobra.Command{
 		Use:   "attach SESSION_ID",
 		Short: "Attach to an existing session",
@@ -63,7 +72,7 @@ func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 	}
 	attach.Flags().Bool("no-tui", false, "disable interactive terminal UI (use plain stream output)")
 
-	cmd.AddCommand(ls, inspect, cancel, attach)
+	cmd.AddCommand(ls, inspect, cancel, complete, attach)
 	return cmd
 }
 
@@ -133,6 +142,18 @@ func runSessionsCancel(cmd *cobra.Command, runtimeAddr *string, sessionID string
 			return clierr.WrapRPC("cancel session", err)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "cancelled %s\n", sessionID)
+		return nil
+	})
+}
+
+func runSessionsComplete(cmd *cobra.Command, runtimeAddr *string, sessionID string) error {
+	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
+		if _, err := rt.CompleteSession(cmd.Context(), &runtimev1.CompleteSessionRequest{
+			SessionId: sessionID,
+		}); err != nil {
+			return clierr.WrapRPC("complete session", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "completed %s\n", sessionID)
 		return nil
 	})
 }
