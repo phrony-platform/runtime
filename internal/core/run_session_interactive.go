@@ -151,6 +151,9 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	if err := sendSessionStarted(events, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, endedAt, evidenceSnapshotToProto(evidenceSnap)); err != nil {
 		return err
 	}
+	if err := replaySessionEventLog(sessionCtx, q, events, sessionID, pendingApprovalIDForReplay(sessionCtx, q, sessionID)); err != nil {
+		return err
+	}
 
 	switch session.Status {
 	case model.SessionStatusAwaitingTool:

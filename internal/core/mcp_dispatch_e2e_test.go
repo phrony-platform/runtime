@@ -135,8 +135,10 @@ func TestMCPToolDispatchE2E_policyDenyAndAllow(t *testing.T) {
 		if stopReason != provider.StopReasonEndTurn {
 			t.Fatalf("stop_reason = %q", stopReason)
 		}
-		if countStreamToolCalls(stream.sent) != 0 {
-			t.Fatal("policy deny must not dispatch the MCP tool")
+		// The attempt is surfaced as a tool_call before the deny result, but the
+		// MCP tool itself is never dispatched.
+		if countStreamToolCalls(stream.sent) != 1 {
+			t.Fatalf("tool_call events = %d, want 1", countStreamToolCalls(stream.sent))
 		}
 		if countStreamToolResults(stream.sent) != 1 {
 			t.Fatalf("tool_result events = %d, want 1 deny result", countStreamToolResults(stream.sent))

@@ -28,6 +28,9 @@ type ToolResultEvent struct {
 	CallID       string
 	Payload      json.RawMessage
 	ErrorMessage string
+	// Denied marks a result produced by a policy deny (not a worker dispatch),
+	// so the audit log can record it as policy_denied.
+	Denied bool
 }
 
 func (v *Version) dispatchToolCalls(
@@ -63,7 +66,9 @@ func (v *Version) dispatchToolCalls(
 				switch dec, denyMsg := eval.EvaluateToolCall(tc); dec {
 				case policy.DecisionDeny:
 					results[i] = provider.ToolResultBlock(call.ID, denyMsg, true)
-					emitToolResult(ch, tdCall.CallID, nil, denyMsg)
+					// Surface the attempt before the denial so the timeline shows both.
+					emitToolCall(ch, tdCall)
+					emitToolDenied(ch, tdCall.CallID, denyMsg)
 					return nil
 				case policy.DecisionRequireApproval:
 					if err := v.waitForToolApproval(gctx, params, tracker, &tdCall, tc, ch); err != nil {
@@ -286,6 +291,20 @@ func emitToolResult(ch chan<- Event, callID string, payload json.RawMessage, err
 			CallID:       callID,
 			Payload:      payload,
 			ErrorMessage: errMsg,
+		},
+	}
+}
+
+func emitToolDenied(ch chan<- Event, callID, denyMsg string) {
+	if ch == nil {
+		return
+	}
+	ch <- Event{
+		Type: EventToolResult,
+		ToolResult: ToolResultEvent{
+			CallID:       callID,
+			ErrorMessage: denyMsg,
+			Denied:       true,
 		},
 	}
 }

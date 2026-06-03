@@ -198,6 +198,12 @@ func runInteractiveSessionPlain(
 				return nil
 			}
 			return fmt.Errorf("session failed: %s", failed.GetMessage())
+		case msg.GetCancelled() != nil:
+			if err := completionOut.Flush(); err != nil {
+				return err
+			}
+			_, _ = io.WriteString(stderr, "\n── session cancelled ──\n")
+			return nil
 		default:
 			return fmt.Errorf("run session: unexpected server message")
 		}

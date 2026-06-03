@@ -308,6 +308,39 @@ func TestRunInteractiveSession_attachCompletedReadOnly(t *testing.T) {
 	}
 }
 
+func TestRunInteractiveSession_attachCancelledReadOnly(t *testing.T) {
+	t.Setenv("PHRONY_NO_TUI", "1")
+	stream := &mockInteractiveClientStream{
+		recv: []*runtimev1.RunSessionInteractiveServerMsg{
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+				SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{SessionId: "sess-1"},
+			}},
+			{Body: &runtimev1.RunSessionInteractiveServerMsg_Cancelled{
+				Cancelled: &runtimev1.RunSessionInteractiveCancelled{},
+			}},
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runInteractiveSession(
+		context.Background(),
+		stream,
+		&runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf("runInteractiveSession: %v", err)
+	}
+	if len(stream.sent) != 1 || stream.sent[0].GetStart().GetSessionId() != "sess-1" {
+		t.Fatalf("sent = %+v, want only start with session_id", stream.sent)
+	}
+	if !strings.Contains(stderr.String(), "session cancelled") {
+		t.Fatalf("stderr = %q, want session cancelled banner", stderr.String())
+	}
+}
+
 func TestRunInteractiveSession_failed(t *testing.T) {
 	stream := &mockInteractiveClientStream{
 		recv: []*runtimev1.RunSessionInteractiveServerMsg{

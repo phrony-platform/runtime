@@ -85,6 +85,12 @@ func (st *interactiveSessionState) runTurn(
 	runCtx, cancel := st.runContext(ctx)
 	defer cancel()
 
+	recorder := newSessionEventRecorder(q)
+	turnStart := time.Now()
+	if userText, terr := userTextFromSessionInput(input); terr == nil && userText != "" {
+		recorder.Record(ctx, st.sessionID, model.SessionEventUserMessage, userMessagePayload(userText))
+	}
+
 	ch := make(chan executor.Event, 32)
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -104,6 +110,22 @@ func (st *interactiveSessionState) runTurn(
 	}()
 
 	var builder strings.Builder
+	// flushedLen tracks how much of the cumulative assistant text has already been
+	// persisted as assistant_message segments, so tool-call boundaries split text
+	// in order without disturbing the live cumulative builder.
+	flushedLen := 0
+	flushAssistantSegment := func(stopReason string, usage provider.TokenUsage, durationMs int64) {
+		full := builder.String()
+		if flushedLen > len(full) {
+			flushedLen = len(full)
+		}
+		segment := full[flushedLen:]
+		flushedLen = len(full)
+		if strings.TrimSpace(segment) == "" {
+			return
+		}
+		recorder.Record(ctx, st.sessionID, model.SessionEventAssistantMessage, assistantMessagePayload(segment, stopReason, usage, durationMs))
+	}
 	for ev := range ch {
 		switch ev.Type {
 		case executor.EventTextDelta:
@@ -125,9 +147,11 @@ func (st *interactiveSessionState) runTurn(
 					Status: model.SessionStatusAwaitingTool,
 				})
 			}
+			flushAssistantSegment("", provider.TokenUsage{}, 0)
 			if err := sendToolCall(events, ev.ToolCall); err != nil {
 				return "", "", provider.TokenUsage{}, err
 			}
+			recorder.RecordServerMsg(ctx, st.sessionID, model.SessionEventToolCall, toolCallServerMsg(ev.ToolCall))
 		case executor.EventToolResult:
 			if q != nil {
 				_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{
@@ -138,6 +162,11 @@ func (st *interactiveSessionState) runTurn(
 			if err := sendToolResult(events, ev.ToolResult); err != nil {
 				return "", "", provider.TokenUsage{}, err
 			}
+			resultType := model.SessionEventToolResult
+			if ev.ToolResult.Denied {
+				resultType = model.SessionEventPolicyDenied
+			}
+			recorder.RecordServerMsg(ctx, st.sessionID, resultType, toolResultServerMsg(ev.ToolResult))
 		case executor.EventApprovalRequired:
 			if q != nil {
 				_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{
@@ -145,10 +174,12 @@ func (st *interactiveSessionState) runTurn(
 					Status: model.SessionStatusAwaitingApproval,
 				})
 			}
+			recorder.RecordServerMsg(ctx, st.sessionID, model.SessionEventApprovalRequired, approvalRequiredServerMsg(ev.Approval))
 		case executor.EventCompleted:
 			if err := <-runErrCh; err != nil {
 				return "", "", provider.TokenUsage{}, err
 			}
+			flushAssistantSegment(ev.StopReason, ev.Usage, time.Since(turnStart).Milliseconds())
 			if st.liveTextSink != nil {
 				st.liveTextSink("")
 			}
@@ -188,6 +219,7 @@ func (s *runtimeServer) failInteractiveSession(
 	}); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
+	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionFailed, marshalSessionEventJSON(map[string]string{"message": msg}))
 	_ = events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
 			Failed: &runtimev1.RunSessionInteractiveFailed{Message: msg},
@@ -213,6 +245,7 @@ func (s *runtimeServer) completeInteractiveSession(
 	}); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
+	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionCompleted, marshalSessionEventJSON(map[string]string{"stop_reason": stopReason}))
 	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
 			Completed: &runtimev1.RunSessionInteractiveCompleted{

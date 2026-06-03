@@ -274,6 +274,7 @@ func (c *approvalCoordinator) finalizeDecision(
 		}); err != nil {
 			return approvalDecideResult{}, err
 		}
+		recordApprovalDecided(ctx, q, row, false, decidedBy, comment)
 		if row.CallID != "" {
 			_ = q.UpdateToolInvocationStatus(ctx, row.CallID, model.ToolInvocationFailed)
 		}
@@ -309,6 +310,7 @@ func (c *approvalCoordinator) finalizeDecision(
 	}); err != nil {
 		return approvalDecideResult{}, err
 	}
+	recordApprovalDecided(ctx, q, row, approved, decidedBy, comment)
 	if row.CallID != "" {
 		invStatus := model.ToolInvocationFailed
 		if approved {

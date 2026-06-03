@@ -122,11 +122,7 @@ func (g *sessionApprovalGate) sendApprovalRequired(req policy.ApprovalRequest) e
 	if g.events == nil {
 		return nil
 	}
-	return g.events.Send(&runtimev1.RunSessionInteractiveServerMsg{
-		Body: &runtimev1.RunSessionInteractiveServerMsg_ApprovalRequired{
-			ApprovalRequired: approvalRequiredToProto(req),
-		},
-	})
+	return g.events.Send(approvalRequiredServerMsg(req))
 }
 
 func (g *sessionApprovalGate) deliverApproval(msg *runtimev1.RunSessionInteractiveToolApproval) error {

@@ -76,6 +76,9 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 	if err := sendLiveAssistantReplay(events, history, entry.liveAssistantText()); err != nil {
 		return err
 	}
+	if err := replaySessionEventLog(ctx, q, events, sessionID, pendingApprovalIDForReplay(ctx, q, sessionID)); err != nil {
+		return err
+	}
 	if err := s.replayAttachSessionState(ctx, q, events, sessionID, session, ver, history); err != nil {
 		return err
 	}

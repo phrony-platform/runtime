@@ -367,8 +367,10 @@ func TestToolDispatchE2E_policyDeny(t *testing.T) {
 	if stopReason != provider.StopReasonEndTurn {
 		t.Fatalf("stop_reason = %q", stopReason)
 	}
-	if countStreamToolCalls(stream.sent) != 0 {
-		t.Fatal("policy deny should not dispatch tool_call to worker")
+	// A policy deny surfaces the attempt (tool_call) followed by the denial
+	// (tool_result) so the timeline shows both, without dispatching to a worker.
+	if countStreamToolCalls(stream.sent) != 1 {
+		t.Fatalf("tool_call events = %d, want 1", countStreamToolCalls(stream.sent))
 	}
 	if countStreamToolResults(stream.sent) != 1 {
 		t.Fatalf("tool_result events = %d, want 1", countStreamToolResults(stream.sent))

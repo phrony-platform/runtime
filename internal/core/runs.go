@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
@@ -28,6 +29,8 @@ func (s *runtimeServer) CancelSession(ctx context.Context, req *runtimev1.Cancel
 	} else if err != nil {
 		return nil, status.Errorf(codes.Internal, "cancel session: %v", err)
 	}
+
+	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionCancelled, json.RawMessage("{}"))
 
 	s.cancelActiveSession(sessionID)
 	if s.toolRegistry != nil {
