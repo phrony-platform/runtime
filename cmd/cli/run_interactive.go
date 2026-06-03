@@ -20,15 +20,26 @@ type interactiveStream interface {
 	CloseSend() error
 }
 
+// sessionControls carries out-of-band session actions wired from the runtime
+// client. Each field is nil when the corresponding action is not available
+// (e.g. tests or the plain stream renderer), and controls itself may be nil.
+type sessionControls struct {
+	// cancel aborts a running session via the unary CancelSession RPC.
+	cancel func(ctx context.Context, sessionID string) error
+	// complete finalizes a running session via the unary CompleteSession RPC.
+	complete func(ctx context.Context, sessionID string) error
+}
+
 func runInteractiveSession(
 	ctx context.Context,
 	stream interactiveStream,
 	start *runtimev1.RunSessionInteractiveStart,
 	stdin io.Reader,
 	stdout, stderr io.Writer,
+	controls *sessionControls,
 ) error {
 	if interactiveUseTUI(stdin, stdout) {
-		return runInteractiveSessionTUI(ctx, stream, start)
+		return runInteractiveSessionTUI(ctx, stream, start, controls)
 	}
 	return runInteractiveSessionPlain(ctx, stream, start, stdin, stdout, stderr)
 }

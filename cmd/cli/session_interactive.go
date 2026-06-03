@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
@@ -34,6 +35,25 @@ func runInteractiveSessionCLI(
 			return clierr.WrapRPC("run session", err)
 		}
 
+		controls := &sessionControls{
+			cancel: func(ctx context.Context, sessionID string) error {
+				if _, err := rt.CancelSession(ctx, &runtimev1.CancelSessionRequest{
+					SessionId: sessionID,
+				}); err != nil {
+					return clierr.WrapRPC("cancel session", err)
+				}
+				return nil
+			},
+			complete: func(ctx context.Context, sessionID string) error {
+				if _, err := rt.CompleteSession(ctx, &runtimev1.CompleteSessionRequest{
+					SessionId: sessionID,
+				}); err != nil {
+					return clierr.WrapRPC("complete session", err)
+				}
+				return nil
+			},
+		}
+
 		return runInteractiveSession(
 			cmd.Context(),
 			stream,
@@ -41,6 +61,7 @@ func runInteractiveSessionCLI(
 			cmd.InOrStdin(),
 			cmd.OutOrStdout(),
 			cmd.ErrOrStderr(),
+			controls,
 		)
 	})
 }

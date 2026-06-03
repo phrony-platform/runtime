@@ -25,13 +25,26 @@ type streamServerMsg struct {
 // tuiClockTick refreshes the wall-clock line in the status bar.
 type tuiClockTick struct{}
 
+// tuiCancelResult carries the outcome of an out-of-band CancelSession RPC.
+type tuiCancelResult struct {
+	err error
+}
+
+// tuiCompleteResult carries the outcome of an out-of-band CompleteSession RPC.
+type tuiCompleteResult struct {
+	err error
+}
+
 type runTUI struct {
-	ctx    context.Context
-	stream interactiveStream
-	start  *runtimev1.RunSessionInteractiveStart
+	ctx      context.Context
+	stream   interactiveStream
+	start    *runtimev1.RunSessionInteractiveStart
+	cancel   func(ctx context.Context, sessionID string) error
+	complete func(ctx context.Context, sessionID string) error
 
 	viewport viewport.Model
 	input    textinput.Model
+	menu     tuiMenu
 
 	width  int
 	height int
@@ -74,8 +87,13 @@ func runInteractiveSessionTUI(
 	ctx context.Context,
 	stream interactiveStream,
 	start *runtimev1.RunSessionInteractiveStart,
+	controls *sessionControls,
 ) error {
 	m := newRunTUI(ctx, stream, start)
+	if controls != nil {
+		m.cancel = controls.cancel
+		m.complete = controls.complete
+	}
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
@@ -204,6 +222,104 @@ func (m *runTUI) closeSend() error {
 	return nil
 }
 
+// beginEndingAction moves the model into the transient "ending" state shared by
+// the complete and cancel flows: input is disabled and a hint is shown while the
+// out-of-band RPC runs and the terminal server message is awaited.
+func (m *runTUI) beginEndingAction(hint string) {
+	m.clearAwaitingApproval()
+	m.awaitingInput = false
+	m.inputBlockedReason = ""
+	m.input.Blur()
+	m.status = "ending"
+	m.statusHint = hint
+	m.layout()
+}
+
+// completeSessionAction finalizes the session. It prefers the out-of-band
+// CompleteSession RPC (which reliably completes actively-driven sessions); when
+// no completer is wired it falls back to closing the client send side.
+func (m *runTUI) completeSessionAction() (tea.Model, tea.Cmd) {
+	if m.complete == nil || strings.TrimSpace(m.sessionID) == "" {
+		if err := m.closeSend(); err != nil {
+			m.streamErr = err
+			m.quitting = true
+			return m, tea.Quit
+		}
+		m.beginEndingAction("")
+		return m, nil
+	}
+	m.beginEndingAction("completing session…")
+	return m, m.completeCmd()
+}
+
+// completeCmd finalizes the run via the out-of-band CompleteSession RPC without
+// blocking the event loop. The resulting Completed server message transitions
+// the session into its read-only terminal state.
+func (m *runTUI) completeCmd() tea.Cmd {
+	complete := m.complete
+	ctx := m.ctx
+	sessionID := m.sessionID
+	return func() tea.Msg {
+		if complete == nil {
+			return tuiCompleteResult{}
+		}
+		return tuiCompleteResult{err: complete(ctx, sessionID)}
+	}
+}
+
+// cancelCmd aborts the run via the out-of-band CancelSession RPC without
+// blocking the event loop. The resulting Cancelled server message transitions
+// the session into its read-only terminal state.
+func (m *runTUI) cancelCmd() tea.Cmd {
+	cancel := m.cancel
+	ctx := m.ctx
+	sessionID := m.sessionID
+	return func() tea.Msg {
+		if cancel == nil {
+			return tuiCancelResult{}
+		}
+		return tuiCancelResult{err: cancel(ctx, sessionID)}
+	}
+}
+
+// handleMenuKey processes navigation and selection while the action menu is open.
+func (m *runTUI) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		m.menu.moveBy(-1)
+		return m, nil
+	case "down", "j":
+		m.menu.moveBy(1)
+		return m, nil
+	case "esc", "ctrl+p", "q":
+		m.closeMenu()
+		return m, nil
+	case "enter":
+		return m.activateMenuItem()
+	}
+	return m, nil
+}
+
+// activateMenuItem dispatches the highlighted action and closes the menu.
+func (m *runTUI) activateMenuItem() (tea.Model, tea.Cmd) {
+	item, ok := m.menu.current()
+	m.closeMenu()
+	if !ok {
+		return m, nil
+	}
+	switch item.id {
+	case menuActionComplete:
+		return m.completeSessionAction()
+	case menuActionCancel:
+		m.beginEndingAction("cancelling session…")
+		return m, m.cancelCmd()
+	case menuActionDetach, menuActionQuit:
+		m.quitting = true
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
 func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.quitting {
 		return m, tea.Quit
@@ -259,10 +375,31 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return m, m.scrollViewport(msg)
 
+	case tuiCancelResult:
+		if msg.err != nil {
+			m.statusHint = "cancel failed: " + msg.err.Error()
+			m.layout()
+		}
+		return m, nil
+
+	case tuiCompleteResult:
+		if msg.err != nil {
+			m.statusHint = "complete failed: " + msg.err.Error()
+			m.layout()
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			m.quitting = true
 			return m, tea.Quit
+		}
+		if m.menu.open {
+			return m.handleMenuKey(msg)
+		}
+		if msg.String() == "ctrl+p" {
+			m.openMenu()
+			return m, nil
 		}
 		if msg.String() == "ctrl+end" || msg.String() == "shift+g" {
 			m.jumpToLatest()
@@ -287,16 +424,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "ctrl+d":
-				if err := m.closeSend(); err != nil {
-					m.streamErr = err
-					m.quitting = true
-					return m, tea.Quit
-				}
-				m.clearAwaitingApproval()
-				m.status = "ending"
-				m.statusHint = ""
-				m.layout()
-				return m, nil
+				return m.completeSessionAction()
 			}
 			if tuiScrollWhileInput(msg) {
 				return m, m.scrollViewport(msg)
@@ -306,18 +434,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.awaitingInput || m.inputBlocked() {
 			switch msg.String() {
 			case "ctrl+d":
-				if err := m.closeSend(); err != nil {
-					m.streamErr = err
-					m.quitting = true
-					return m, tea.Quit
-				}
-				m.awaitingInput = false
-				m.inputBlockedReason = ""
-				m.input.Blur()
-				m.status = "ending"
-				m.statusHint = ""
-				m.layout()
-				return m, nil
+				return m.completeSessionAction()
 			}
 			if tuiScrollWhileInput(msg) {
 				return m, m.scrollViewport(msg)
@@ -431,6 +548,7 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 			m.sessionEndedAt = time.Now()
 		}
 		m.status = "done"
+		m.statusHint = ""
 		m.awaitingInput = false
 		m.input.Blur()
 		if strings.TrimSpace(m.start.GetSessionId()) != "" && !m.inputEverEnabled {
@@ -501,6 +619,7 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		}
 		if isInteractiveAttachReplay(m.start) && !m.inputEverEnabled {
 			m.status = "cancelled"
+			m.statusHint = ""
 			m.awaitingInput = false
 			m.input.Blur()
 			m.readOnly = true
@@ -511,6 +630,7 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 			return nil
 		}
 		m.status = "cancelled"
+		m.statusHint = ""
 		m.awaitingInput = false
 		m.input.Blur()
 		m.readOnly = true

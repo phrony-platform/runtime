@@ -52,6 +52,7 @@ func TestRunInteractiveSession_sessionStartedAndCompleted(t *testing.T) {
 		strings.NewReader(""),
 		&stdout,
 		&bytes.Buffer{},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
@@ -92,6 +93,7 @@ func TestRunInteractiveSession_jsonCompletionPrettified(t *testing.T) {
 		strings.NewReader(""),
 		&stdout,
 		&bytes.Buffer{},
+		nil,
 	); err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
 	}
@@ -120,7 +122,7 @@ func TestRunInteractiveSession_textDeltas(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	if err := runInteractiveSession(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, strings.NewReader(""), &stdout, &bytes.Buffer{}); err != nil {
+	if err := runInteractiveSession(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, strings.NewReader(""), &stdout, &bytes.Buffer{}, nil); err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
 	}
 	if stdout.String() != "Hi!\n" {
@@ -147,6 +149,7 @@ func TestRunInteractiveSession_awaitingInputSendsUserMessage(t *testing.T) {
 		strings.NewReader("follow-up\n"),
 		&bytes.Buffer{},
 		&bytes.Buffer{},
+		nil,
 	); err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
 	}
@@ -177,6 +180,7 @@ func TestRunInteractiveSession_awaitingInputEOFCompletes(t *testing.T) {
 		strings.NewReader(""),
 		&bytes.Buffer{},
 		&bytes.Buffer{},
+		nil,
 	); err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
 	}
@@ -224,6 +228,7 @@ func TestRunInteractiveSession_plainModeShowsTokenStats(t *testing.T) {
 		strings.NewReader(""),
 		&stdout,
 		&bytes.Buffer{},
+		nil,
 	); err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
 	}
@@ -256,6 +261,7 @@ func TestRunInteractiveSession_attachFailedReadOnly(t *testing.T) {
 		strings.NewReader(""),
 		&stdout,
 		&stderr,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
@@ -292,6 +298,7 @@ func TestRunInteractiveSession_attachCompletedReadOnly(t *testing.T) {
 		strings.NewReader(""),
 		&stdout,
 		&bytes.Buffer{},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
@@ -329,6 +336,7 @@ func TestRunInteractiveSession_attachCancelledReadOnly(t *testing.T) {
 		strings.NewReader(""),
 		&stdout,
 		&stderr,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("runInteractiveSession: %v", err)
@@ -357,6 +365,7 @@ func TestRunInteractiveSession_failed(t *testing.T) {
 		strings.NewReader(""),
 		&bytes.Buffer{},
 		&bytes.Buffer{},
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "model unavailable") {
 		t.Fatalf("err = %v, want session failed", err)

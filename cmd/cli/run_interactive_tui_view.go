@@ -281,27 +281,27 @@ func (m *runTUI) footerView() string {
 	switch {
 	case m.awaitingApprovalDecision():
 		help := tuiHelpStyle.Render(
-			"A approve  ·  D deny  ·  PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C detach",
+			"A approve  ·  D deny  ·  PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu",
 		)
 		return m.approvalPanelView() + "\n" + help
 	case m.inputBlocked():
 		help := tuiHelpStyle.Render(
-			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C detach",
+			"PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu",
 		)
 		return m.blockedPanelView() + "\n" + help
 	case m.awaitingInput:
 		help := tuiHelpStyle.Render(
-			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Enter send  ·  Ctrl+D end  ·  Ctrl+C detach",
+			"Enter send  ·  PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu",
 		)
 		return m.inputPanelView() + "\n" + help
 	case m.readOnly:
 		return tuiHelpStyle.Render(
-			"Session finished — scroll to review  ·  PgUp/PgDn  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+C quit",
+			"Session finished — scroll to review  ·  PgUp/PgDn  ·  Ctrl+End latest  ·  Ctrl+P menu",
 		)
 	case m.status == "done":
-		return tuiHelpStyle.Render("Session finished — press Ctrl+C to exit")
+		return tuiHelpStyle.Render("Session finished  ·  Ctrl+P menu  ·  Ctrl+C exit")
 	default:
-		return tuiHelpStyle.Render("PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+C detach")
+		return tuiHelpStyle.Render("PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu")
 	}
 }
 
@@ -315,10 +315,27 @@ func (m *runTUI) View() string {
 	if m.width == 0 {
 		return "Starting…\n"
 	}
-	return lipgloss.JoinVertical(lipgloss.Top,
+	base := lipgloss.JoinVertical(lipgloss.Top,
 		m.headerView(),
 		m.chatBoxView(),
 		m.statusBarView(),
 		m.footerView(),
 	)
+	if m.menu.open {
+		return overlayCenter(base, m.menu.view(m.menuModalWidth()))
+	}
+	return base
+}
+
+// menuModalWidth is the total width of the action menu modal, clamped to keep
+// the dialog readable on both narrow and wide terminals.
+func (m *runTUI) menuModalWidth() int {
+	w := m.width - 8
+	if w > 64 {
+		w = 64
+	}
+	if w < 24 {
+		w = 24
+	}
+	return w
 }

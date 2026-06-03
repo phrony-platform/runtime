@@ -49,6 +49,10 @@ func (c *recordingRuntimeClient) RetireAgentVersion(context.Context, *runtimev1.
 func (c *recordingRuntimeClient) CancelSession(context.Context, *runtimev1.CancelSessionRequest, ...grpc.CallOption) (*runtimev1.CancelSessionResponse, error) {
 	return nil, c.unexpected()
 }
+
+func (c *recordingRuntimeClient) CompleteSession(context.Context, *runtimev1.CompleteSessionRequest, ...grpc.CallOption) (*runtimev1.CompleteSessionResponse, error) {
+	return nil, c.unexpected()
+}
 func (c *recordingRuntimeClient) ListAgents(context.Context, *runtimev1.ListAgentsRequest, ...grpc.CallOption) (*runtimev1.ListAgentsResponse, error) {
 	return nil, c.unexpected()
 }
