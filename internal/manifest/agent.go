@@ -38,9 +38,9 @@ func (a *Agent) DocumentKind() string {
 
 // AgentMetadata holds identity and versioning for an Agent.
 type AgentMetadata struct {
-	Name       string              `yaml:"name" json:"name"`
-	Namespace  string              `yaml:"namespace" json:"namespace"`
-	Version    string              `yaml:"version" json:"version"`
+	Name        string              `yaml:"name" json:"name"`
+	Namespace   string              `yaml:"namespace" json:"namespace"`
+	Version     string              `yaml:"version" json:"version"`
 	Owner       string              `yaml:"owner,omitempty" json:"owner,omitempty"`
 	Governance  *GovernanceMetadata `yaml:"governance,omitempty" json:"governance,omitempty"`
 	Labels      map[string]string   `yaml:"labels,omitempty" json:"labels,omitempty"`
@@ -53,10 +53,46 @@ type AgentSpec struct {
 	Instructions    InstructionsSpec   `yaml:"instructions" json:"instructions"`
 	Model           ModelConfig        `yaml:"model" json:"model"`
 	Tools           []ToolBinding      `yaml:"tools,omitempty" json:"tools,omitempty"`
+	MCPServers      []MCPServerSpec    `yaml:"mcp_servers,omitempty" json:"mcp_servers,omitempty"`
 	DefaultPolicies []PolicyAttachment `yaml:"default_policies,omitempty" json:"default_policies,omitempty"`
 	// Policies holds compiled rules on resolved snapshots only (see AnnotationPoliciesCompiled).
 	Policies []PolicySpec `yaml:"policies,omitempty" json:"policies,omitempty"`
-	Limits *Limits `yaml:"limits,omitempty" json:"limits,omitempty"`
+	Limits   *Limits      `yaml:"limits,omitempty" json:"limits,omitempty"`
+}
+
+// MCPServerSpec declares a remote MCP server the runtime connects to natively to
+// back MCP tool bindings. Only the remote Streamable HTTP transport is supported.
+type MCPServerSpec struct {
+	Name      string         `yaml:"name" json:"name"`
+	URL       string         `yaml:"url" json:"url"`
+	Transport string         `yaml:"transport,omitempty" json:"transport,omitempty"`
+	Auth      *MCPServerAuth `yaml:"auth,omitempty" json:"auth,omitempty"`
+}
+
+// MCPServerAuth describes how the runtime authenticates to an MCP server using a
+// Phrony secret. Scheme "bearer" sends Authorization: Bearer <secret>; scheme
+// "header" sends the secret value in the named custom header.
+type MCPServerAuth struct {
+	Scheme string `yaml:"scheme" json:"scheme"`
+	Secret string `yaml:"secret" json:"secret"`
+	Header string `yaml:"header,omitempty" json:"header,omitempty"`
+}
+
+// MCP transports (remote only in v1).
+const MCPTransportStreamableHTTP = "streamable_http"
+
+// MCP auth schemes.
+const (
+	MCPAuthSchemeBearer = "bearer"
+	MCPAuthSchemeHeader = "header"
+)
+
+// ResolvedTransport returns the configured transport, defaulting to streamable_http.
+func (s MCPServerSpec) ResolvedTransport() string {
+	if t := strings.TrimSpace(s.Transport); t != "" {
+		return t
+	}
+	return MCPTransportStreamableHTTP
 }
 
 // ToolBinding declares one tool the agent may call. The runtime presents the
@@ -73,16 +109,27 @@ type ToolBinding struct {
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 	// SideEffectClass classifies mutability for dispatch and recovery policy.
 	SideEffectClass string `yaml:"side_effect_class,omitempty" json:"side_effect_class,omitempty"`
+	// MCP, when set, routes this binding to a declared spec.mcp_servers entry
+	// instead of the worker registry.
+	MCP *ToolMCPBinding `yaml:"mcp,omitempty" json:"mcp,omitempty"`
 	// Policies attaches Policy documents by logical id or bundle file ref.
 	Policies []PolicyAttachment `yaml:"policies,omitempty" json:"policies,omitempty"`
 }
 
+// ToolMCPBinding marks a ToolBinding as backed by a remote MCP server tool.
+// Server names a declared spec.mcp_servers entry; Tool is the remote MCP tool
+// name and defaults to the binding wire name when empty.
+type ToolMCPBinding struct {
+	Server string `yaml:"server" json:"server"`
+	Tool   string `yaml:"tool,omitempty" json:"tool,omitempty"`
+}
+
 // Side effect classes (whitepaper / runtime dispatch).
 const (
-	SideEffectReadOnly            = "read_only"
-	SideEffectIdempotentWrite     = "idempotent_write"
-	SideEffectNonIdempotentWrite  = "non_idempotent_write"
-	SideEffectIrreversibleAction  = "irreversible_action"
+	SideEffectReadOnly           = "read_only"
+	SideEffectIdempotentWrite    = "idempotent_write"
+	SideEffectNonIdempotentWrite = "non_idempotent_write"
+	SideEffectIrreversibleAction = "irreversible_action"
 )
 
 // CanRedispatchAfterIndeterminate reports whether recovery may re-dispatch a call
@@ -124,6 +171,34 @@ func (t ToolBinding) ToolName() string {
 		return n
 	}
 	return sanitizeToolName(t.Ref)
+}
+
+// IsMCP reports whether the binding is backed by a remote MCP server.
+func (t ToolBinding) IsMCP() bool {
+	return t.MCP != nil
+}
+
+// DispatchRef returns the logical ref used as the tool dispatch routing key
+// (ToolCall.Tool). It mirrors how the executor derives the ref from the binding
+// so MCP routing and the executor agree on the same key.
+func (t ToolBinding) DispatchRef() string {
+	ref := strings.TrimSpace(t.Ref)
+	if parsed, err := ParseLogicalRef(ref); err == nil {
+		return parsed.Raw
+	}
+	return ref
+}
+
+// MCPToolName returns the remote MCP tool name to call, defaulting to the wire
+// name when the binding does not override it. It returns "" for non-MCP bindings.
+func (t ToolBinding) MCPToolName() string {
+	if t.MCP == nil {
+		return ""
+	}
+	if n := strings.TrimSpace(t.MCP.Tool); n != "" {
+		return n
+	}
+	return t.ToolName()
 }
 
 // toolNamePattern matches names accepted by the Anthropic and OpenAI tool APIs.

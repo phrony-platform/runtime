@@ -1,0 +1,42 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: search-agent
+  namespace: demo
+  version: 1.0.0
+
+secrets:
+  anthropic:
+    fromEnv: ANTHROPIC_API_KEY
+  mcp_token:
+    fromEnv: MCP_TOKEN
+
+spec:
+  purpose: Answer questions using a remote MCP search server.
+
+  instructions:
+    text: You search the web to answer questions.
+
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-5
+
+  mcp_servers:
+    - name: search
+      url: https://mcp.example.com/mcp
+      auth:
+        scheme: bearer
+        secret: mcp_token
+
+  tools:
+    - ref: search.web
+      as: web_search
+      side_effect_class: read_only
+      input_schema:
+        ref: schemas/web-search-input
+      mcp:
+        server: search
+        tool: web_search
+      policies:
+        - ref: policies/web-search-allow

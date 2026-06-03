@@ -168,6 +168,11 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 	if s.toolDispatch == nil {
 		return errors.New("tool dispatch is not configured")
 	}
+	dispatch, err := s.sessionToolDispatch(ctx, q, ver)
+	if err != nil {
+		return err
+	}
+	defer closeSessionDispatch(dispatch)
 	resyncWindow := time.Minute
 	if s.toolRegistry != nil {
 		resyncWindow = s.toolRegistry.LeaseTTL()
@@ -188,7 +193,7 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 
 		switch inv.Status {
 		case model.ToolInvocationPending, model.ToolInvocationQueued:
-			if _, err := s.toolDispatch.Dispatch(ctx, call); err != nil {
+			if _, err := dispatch.Dispatch(ctx, call); err != nil {
 				if route := policies.RouteDispatchFailure(err, policy.ToolCallContext{
 					ToolRef: inv.Tool, Version: inv.Version, SideEffectClass: sideClass,
 				}); route == policy.RouteEscalateHITL {
@@ -196,7 +201,7 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 				}
 			}
 		case model.ToolInvocationDispatched:
-			if err := s.recoverDispatchedInvocation(ctx, q, session.ID, call, sideClass, resyncWindow, policies); err != nil {
+			if err := s.recoverDispatchedInvocation(ctx, q, session.ID, call, sideClass, resyncWindow, policies, dispatch); err != nil {
 				return err
 			}
 		}
@@ -250,6 +255,7 @@ func (s *runtimeServer) recoverDispatchedInvocation(
 	sideClass string,
 	resyncWindow time.Duration,
 	policies *policy.Evaluator,
+	dispatch tooldispatch.Dispatcher,
 ) error {
 	deadline := time.Now().Add(resyncWindow)
 	for time.Now().Before(deadline) {
@@ -265,7 +271,7 @@ func (s *runtimeServer) recoverDispatchedInvocation(
 	}
 
 	if manifest.CanRedispatchAfterIndeterminate(sideClass) {
-		_, err := s.toolDispatch.Dispatch(ctx, call)
+		_, err := dispatch.Dispatch(ctx, call)
 		return err
 	}
 
@@ -311,6 +317,11 @@ func (s *runtimeServer) continueRecoveredTurn(
 	}
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
 	defer sessionCancel()
+	dispatch, err := s.sessionToolDispatch(sessionCtx, q, ver)
+	if err != nil {
+		return err
+	}
+	defer closeSessionDispatch(dispatch)
 	events := newSessionEventHub()
 	state := &interactiveSessionState{
 		sessionID:        session.ID,
@@ -319,7 +330,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 		history:          history,
 		turnCount:        countCompletedTurns(history),
 		sessionStartedAt: session.CreatedAt,
-		toolDispatch:     s.toolDispatch,
+		toolDispatch:     dispatch,
 		policies:         policy.NewEvaluator(ver.Agent),
 	}
 	state.approvalGate = newSessionApprovalGate(s.approvalCoord(), session.ID, events, q, session.AgentVersionID)
@@ -339,7 +350,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 			Turn:              state.turnCount + 1,
 			History:           history,
 			ResumeFromHistory: true,
-			Dispatcher:        s.toolDispatch,
+			Dispatcher:        state.toolDispatch,
 			Policies:          state.policies,
 			ApprovalGate:      state.approvalGate,
 			NewApprovalID:     newApprovalID,

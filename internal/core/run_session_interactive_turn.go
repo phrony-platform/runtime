@@ -39,14 +39,18 @@ type interactiveSessionState struct {
 }
 
 func newInteractiveSessionState(
+	ctx context.Context,
 	s *runtimeServer,
 	sessionID, agentVersionID string,
 	ver *executor.Version,
 	startedAt time.Time,
-	dispatch tooldispatch.Dispatcher,
 	events sessionEventSink,
 	q *store.Queries,
-) *interactiveSessionState {
+) (*interactiveSessionState, error) {
+	dispatch, err := s.sessionToolDispatch(ctx, q, ver)
+	if err != nil {
+		return nil, err
+	}
 	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, events, q, agentVersionID)
 	st := &interactiveSessionState{
 		sessionID:        sessionID,
@@ -58,7 +62,7 @@ func newInteractiveSessionState(
 		approvalGate:     gate,
 	}
 	gate.hitl = st
-	return st
+	return st, nil
 }
 
 func (st *interactiveSessionState) maxTokensPerRun() int {

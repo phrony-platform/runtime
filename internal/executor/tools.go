@@ -75,10 +75,7 @@ func buildToolDispatchCall(
 	if err != nil {
 		return tooldispatch.ToolCall{}, err
 	}
-	toolRef := strings.TrimSpace(tb.Ref)
-	if parsed, err := manifest.ParseLogicalRef(toolRef); err == nil {
-		toolRef = parsed.Raw
-	}
+	toolRef := tb.DispatchRef()
 	version := strings.TrimSpace(tb.Version)
 	if version == "" {
 		version = "default"

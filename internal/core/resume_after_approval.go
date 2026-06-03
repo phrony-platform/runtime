@@ -140,6 +140,11 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 		st.history = history
 		st.turnCount = countCompletedTurns(history)
 	} else {
+		dispatch, err := s.sessionToolDispatch(ctx, q, ver)
+		if err != nil {
+			return err
+		}
+		defer closeSessionDispatch(dispatch)
 		st = &interactiveSessionState{
 			sessionID:        session.ID,
 			agentVersionID:   session.AgentVersionID,
@@ -147,7 +152,7 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 			history:          history,
 			turnCount:        countCompletedTurns(history),
 			sessionStartedAt: session.CreatedAt,
-			toolDispatch:     s.toolDispatch,
+			toolDispatch:     dispatch,
 			policies:         policy.NewEvaluator(ver.Agent),
 			approvalGate:     gate,
 		}

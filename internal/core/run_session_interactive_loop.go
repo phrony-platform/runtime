@@ -31,6 +31,8 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 	var lastOutput json.RawMessage
 	var lastTurnUsage provider.TokenUsage
 
+	defer closeSessionDispatch(state.toolDispatch)
+
 	loopCtx, loopCancel := context.WithCancel(ctx)
 	defer loopCancel()
 

@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -11,16 +12,18 @@ import (
 var secretNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 var (
-	validOnLimit   = map[string]struct{}{"halt": {}, "escalate": {}}
-	validOnInvalid = map[string]struct{}{"retry": {}, "repair": {}, "escalate": {}, "fail": {}}
-	validOutputFmt = map[string]struct{}{"text": {}, "json": {}}
-	validReasoning = map[string]struct{}{"low": {}, "medium": {}, "high": {}}
+	validOnLimit    = map[string]struct{}{"halt": {}, "escalate": {}}
+	validOnInvalid  = map[string]struct{}{"retry": {}, "repair": {}, "escalate": {}, "fail": {}}
+	validOutputFmt  = map[string]struct{}{"text": {}, "json": {}}
+	validReasoning  = map[string]struct{}{"low": {}, "medium": {}, "high": {}}
 	validSideEffect = map[string]struct{}{
 		SideEffectReadOnly:           {},
 		SideEffectIdempotentWrite:    {},
 		SideEffectNonIdempotentWrite: {},
 		SideEffectIrreversibleAction: {},
 	}
+	validMCPTransport  = map[string]struct{}{MCPTransportStreamableHTTP: {}}
+	validMCPAuthScheme = map[string]struct{}{MCPAuthSchemeBearer: {}, MCPAuthSchemeHeader: {}}
 )
 
 // Validate checks structural and semantic rules for a parsed Agent document.
@@ -87,7 +90,9 @@ func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition, agent *A
 			Message: "must not be set on the Agent; use kind: Policy documents referenced from default_policies or binding policies",
 		})
 	}
-	errs = append(errs, validateTools(spec.Tools, isCompiledPolicySnapshot(agent))...)
+	mcpServers, mcpErrs := validateMCPServers(spec.MCPServers, secrets)
+	errs = append(errs, mcpErrs...)
+	errs = append(errs, validateTools(spec.Tools, isCompiledPolicySnapshot(agent), mcpServers)...)
 	errs = append(errs, validateCompiledPolicies(spec.Policies, spec.Tools)...)
 	if spec.Limits != nil {
 		errs = append(errs, validateLimits(spec.Limits)...)
@@ -95,7 +100,7 @@ func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition, agent *A
 	return errs
 }
 
-func validateTools(tools []ToolBinding, compiledSnapshot bool) []FieldError {
+func validateTools(tools []ToolBinding, compiledSnapshot bool, mcpServers map[string]struct{}) []FieldError {
 	var errs []FieldError
 	seenRefs := make(map[string]struct{}, len(tools))
 	seenNames := make(map[string]struct{}, len(tools))
@@ -141,6 +146,93 @@ func validateTools(tools []ToolBinding, compiledSnapshot bool) []FieldError {
 					Message: "must be one of read_only, idempotent_write, non_idempotent_write, irreversible_action",
 				})
 			}
+		}
+
+		if t.MCP != nil {
+			errs = append(errs, validateMCPToolBinding(&t, mcpServers, base)...)
+		}
+	}
+	return errs
+}
+
+// validateMCPServers checks the spec.mcp_servers declarations and returns the set
+// of declared server names for cross-referencing MCP-backed tool bindings.
+func validateMCPServers(servers []MCPServerSpec, secrets map[string]SecretDefinition) (map[string]struct{}, []FieldError) {
+	var errs []FieldError
+	seen := make(map[string]struct{}, len(servers))
+	for i, s := range servers {
+		base := fmt.Sprintf("spec.mcp_servers[%d]", i)
+		name := strings.TrimSpace(s.Name)
+		if name == "" {
+			errs = append(errs, FieldError{Path: base + ".name", Message: "is required"})
+		} else if _, dup := seen[name]; dup {
+			errs = append(errs, FieldError{Path: base + ".name", Message: "must be unique"})
+		} else {
+			seen[name] = struct{}{}
+		}
+
+		if u := strings.TrimSpace(s.URL); u == "" {
+			errs = append(errs, FieldError{Path: base + ".url", Message: "is required"})
+		} else if parsed, err := url.Parse(u); err != nil || parsed.Host == "" || !strings.EqualFold(parsed.Scheme, "https") {
+			errs = append(errs, FieldError{Path: base + ".url", Message: "must be a valid https URL"})
+		}
+
+		if transport := strings.TrimSpace(s.Transport); transport != "" {
+			if _, ok := validMCPTransport[transport]; !ok {
+				errs = append(errs, FieldError{Path: base + ".transport", Message: "must be streamable_http"})
+			}
+		}
+
+		errs = append(errs, validateMCPAuth(s.Auth, secrets, base+".auth")...)
+	}
+	return seen, errs
+}
+
+func validateMCPAuth(auth *MCPServerAuth, secrets map[string]SecretDefinition, base string) []FieldError {
+	if auth == nil {
+		return nil
+	}
+	var errs []FieldError
+	scheme := strings.TrimSpace(auth.Scheme)
+	if scheme == "" {
+		errs = append(errs, FieldError{Path: base + ".scheme", Message: "is required"})
+	} else if _, ok := validMCPAuthScheme[scheme]; !ok {
+		errs = append(errs, FieldError{Path: base + ".scheme", Message: "must be one of bearer, header"})
+	}
+
+	if secret := strings.TrimSpace(auth.Secret); secret == "" {
+		errs = append(errs, FieldError{Path: base + ".secret", Message: "is required"})
+	} else if _, ok := secrets[secret]; !ok {
+		errs = append(errs, FieldError{Path: base + ".secret", Message: "must name a key in secrets"})
+	}
+
+	if scheme == MCPAuthSchemeHeader && strings.TrimSpace(auth.Header) == "" {
+		errs = append(errs, FieldError{Path: base + ".header", Message: "is required when scheme is header"})
+	}
+	return errs
+}
+
+func validateMCPToolBinding(t *ToolBinding, mcpServers map[string]struct{}, base string) []FieldError {
+	var errs []FieldError
+	if server := strings.TrimSpace(t.MCP.Server); server == "" {
+		errs = append(errs, FieldError{Path: base + ".mcp.server", Message: "is required"})
+	} else if _, ok := mcpServers[server]; !ok {
+		errs = append(errs, FieldError{
+			Path:    base + ".mcp.server",
+			Message: "references undeclared spec.mcp_servers entry " + server,
+		})
+	}
+	if t.InputSchema == nil {
+		errs = append(errs, FieldError{Path: base + ".input_schema", Message: "is required for MCP-backed tools"})
+	}
+	if strings.TrimSpace(t.SideEffectClass) == "" {
+		errs = append(errs, FieldError{Path: base + ".side_effect_class", Message: "is required for MCP-backed tools"})
+	}
+	if ref := strings.TrimSpace(t.Ref); ref != "" {
+		if parsed, err := ParseLogicalRef(ref); err != nil {
+			errs = append(errs, FieldError{Path: base + ".ref", Message: "must be a logical id of the form namespace.name"})
+		} else if strings.TrimSpace(parsed.Constraint) != "" {
+			errs = append(errs, FieldError{Path: base + ".ref", Message: "must not pin a version constraint for MCP-backed tools"})
 		}
 	}
 	return errs

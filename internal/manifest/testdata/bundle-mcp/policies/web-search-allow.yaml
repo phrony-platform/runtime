@@ -1,0 +1,15 @@
+apiVersion: phrony.com/v1
+kind: Policy
+
+metadata:
+  name: web-search-allow
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  scope: tool:search.web
+  decision:
+    type: allow
+  allow:
+    - weather
+    - news

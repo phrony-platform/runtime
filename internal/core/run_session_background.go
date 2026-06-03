@@ -67,13 +67,18 @@ func (s *runtimeServer) runSessionBackground(
 		s.scheduleWallClockExpiry(sessionID, time.Duration(maxSec)*time.Second, onLimit)
 	}
 
+	dispatch, err := s.sessionToolDispatch(ctx, q, ver)
+	if err != nil {
+		_ = s.failInteractiveSession(ctx, q, events, sessionID, err)
+		return
+	}
 	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, events, q, agentVersionID)
 	state := &interactiveSessionState{
 		sessionID:        sessionID,
 		agentVersionID:   agentVersionID,
 		version:          ver,
 		sessionStartedAt: time.Now(),
-		toolDispatch:     s.toolDispatch,
+		toolDispatch:     dispatch,
 		policies:         policy.NewEvaluator(ver.Agent),
 		approvalGate:     gate,
 	}

@@ -116,6 +116,11 @@ func (r *bundleResolver) resolveTools(agent *Agent) error {
 }
 
 func (r *bundleResolver) resolveToolBinding(tb *ToolBinding, fieldBase string) error {
+	if tb.IsMCP() {
+		// MCP-backed bindings declare their schema explicitly and have no
+		// tools/ catalog entry to merge; only resolve a schema ref if present.
+		return r.resolveBindingSchema(tb, fieldBase+".input_schema")
+	}
 	parsed, err := ParseLogicalRef(tb.Ref)
 	if err == nil {
 		tool, ok := r.bundle.Tool(parsed.Raw)
@@ -520,7 +525,22 @@ func cloneAgent(agent *Agent) *Agent {
 			if len(t.Policies) > 0 {
 				tool.Policies = append([]PolicyAttachment(nil), t.Policies...)
 			}
+			if t.MCP != nil {
+				mcp := *t.MCP
+				tool.MCP = &mcp
+			}
 			out.Spec.Tools[i] = tool
+		}
+	}
+	if len(agent.Spec.MCPServers) > 0 {
+		out.Spec.MCPServers = make([]MCPServerSpec, len(agent.Spec.MCPServers))
+		for i, s := range agent.Spec.MCPServers {
+			server := s
+			if s.Auth != nil {
+				auth := *s.Auth
+				server.Auth = &auth
+			}
+			out.Spec.MCPServers[i] = server
 		}
 	}
 	if agent.Metadata.Governance != nil {

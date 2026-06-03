@@ -38,6 +38,16 @@ type toolE2EHarness struct {
 	grpcCC       *grpc.ClientConn
 	workerCancel context.CancelFunc
 	workerWG     sync.WaitGroup
+	// dispatchOverride, when set, replaces the worker dispatcher in the session
+	// state so a turn can be routed through an alternate backend (e.g. MCP).
+	dispatchOverride tooldispatch.Dispatcher
+}
+
+func (h *toolE2EHarness) sessionDispatch() tooldispatch.Dispatcher {
+	if h.dispatchOverride != nil {
+		return h.dispatchOverride
+	}
+	return h.srv.toolDispatch
 }
 
 type toolE2EConfig struct {
@@ -128,7 +138,7 @@ func (h *toolE2EHarness) runTurnWithSessionStart(
 		sessionID:        "sess-e2e",
 		agentVersionID:   "av-e2e",
 		version:          executor.NewVersionWithProvider("av-e2e", agent, stub),
-		toolDispatch:     h.srv.toolDispatch,
+		toolDispatch:     h.sessionDispatch(),
 		policies:         policy.NewEvaluator(agent),
 		sessionStartedAt: sessionStartedAt,
 	}

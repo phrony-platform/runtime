@@ -52,7 +52,10 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 	endedAt := sessionEndedAtForAttach(&session)
 
 	if session.Status == model.SessionStatusAwaitingInput {
-		limitState := newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, noopSessionEventSink{}, q)
+		limitState, err := newInteractiveSessionState(ctx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, noopSessionEventSink{}, q)
+		if err != nil {
+			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
+		}
 		limitState.history = history
 		limitState.turnCount = len(history) / 2
 		_, limitState.sessionUsage = usageFromSessionOutputJSON(session.Output)
@@ -116,7 +119,10 @@ func (s *runtimeServer) replayAttachSessionState(
 
 	case model.SessionStatusAwaitingInput:
 		lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
-		state := newInteractiveSessionState(s, sessionID, session.AgentVersionID, ver, session.CreatedAt, s.toolDispatch, events, q)
+		state, err := newInteractiveSessionState(ctx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q)
+		if err != nil {
+			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
+		}
 		state.history = history
 		state.turnCount = turnCount
 		state.sessionUsage = sessionUsage
