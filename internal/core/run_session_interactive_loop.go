@@ -61,6 +61,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				continue
 			}
 
+			s.clearActiveSessionLiveAssistant(sessionID)
 			turnStart := time.Now()
 			turnCancel, turnDone := runInteractiveTurnAsync(loopCtx, q, state, events, pendingInput)
 
@@ -182,6 +183,7 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			} else if err := s.persistDetachedSessionAfterTurn(ctx, q, sessionID, state, outputJSON, historyJSON); err != nil {
 				return err
 			}
+			s.clearActiveSessionLiveAssistant(sessionID)
 			lastStopReason = out.stopReason
 			lastOutput = outputJSON
 			lastTurnUsage = out.turnUsage
@@ -216,6 +218,13 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 					return cerr
 				}
 				if wasCancelled {
+					session, serr := q.GetSession(ctx, sessionID)
+					if serr != nil {
+						return serr
+					}
+					if err := sendSessionCancelled(events, session.UpdatedAt); err != nil {
+						return err
+					}
 					return nil
 				}
 			}

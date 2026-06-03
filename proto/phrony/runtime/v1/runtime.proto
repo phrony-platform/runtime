@@ -90,6 +90,7 @@ message RunSessionInteractiveServerMsg {
     RunSessionInteractiveToolCall tool_call = 6;
     RunSessionInteractiveToolResult tool_result = 7;
     RunSessionInteractiveApprovalRequired approval_required = 8;
+    RunSessionInteractiveCancelled cancelled = 9;
   }
 }
 
@@ -180,6 +181,11 @@ message RunSessionInteractiveCompleted {
 
 message RunSessionInteractiveFailed {
   string message = 1;
+}
+
+message RunSessionInteractiveCancelled {
+  // Wall-clock time when the run was cancelled (for freezing elapsed display in clients).
+  int64 session_ended_at_unix_ms = 1;
 }
 
 message RunSessionInteractiveToolCall {

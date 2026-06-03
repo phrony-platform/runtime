@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 
@@ -23,11 +24,18 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	q *store.Queries,
 	sessionID string,
-	session store.Session,
 ) error {
 	entry, ok := s.activeSessionEntryFor(sessionID)
 	if !ok || entry.eventHub == nil || entry.inputMux == nil {
 		return status.Error(codes.Internal, "active session driver unavailable")
+	}
+
+	session, err := q.GetSession(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return status.Errorf(codes.NotFound, "session %s not found", sessionID)
+		}
+		return status.Errorf(codes.Internal, "load session: %v", err)
 	}
 
 	ver, err := s.loadSessionVersion(ctx, q, session.AgentVersionID)
@@ -40,6 +48,7 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 		return status.Errorf(codes.Internal, "decode session history: %v", err)
 	}
 	history = enrichHistoryFromSessionOutput(history, session.Output)
+	history = patchHistoryLastAssistantFromOutput(history, session.Output)
 	endedAt := sessionEndedAtForAttach(&session)
 
 	if session.Status == model.SessionStatusAwaitingInput {
@@ -59,6 +68,9 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 
 	events := sessionEventsFromStream(stream)
 	if err := sendSessionStarted(events, sessionID, session.AgentVersionID, ver, history, session.CreatedAt, endedAt, evidenceSnapshotToProto(evidenceSnap)); err != nil {
+		return err
+	}
+	if err := sendLiveAssistantReplay(events, history, entry.liveAssistantText()); err != nil {
 		return err
 	}
 	if err := s.replayAttachSessionState(ctx, q, events, sessionID, session, ver, history); err != nil {

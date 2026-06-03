@@ -79,6 +79,9 @@ func (s *runtimeServer) runSessionBackground(
 	}
 	gate.hitl = state
 	s.attachActiveSessionGate(sessionID, gate)
+	state.liveTextSink = func(cumulative string) {
+		s.setActiveSessionLiveAssistant(sessionID, cumulative)
+	}
 
 	loopErr := s.runSessionInteractiveLoop(ctx, inputMux, events, q, sessionID, state, inputJSON, true)
 	if loopErr != nil && !isBenignDriverLoopExit(ctx, q, sessionID, loopErr) {

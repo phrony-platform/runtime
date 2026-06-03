@@ -51,7 +51,7 @@ func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 	attach := &cobra.Command{
 		Use:   "attach SESSION_ID",
 		Short: "Attach to an existing session",
-		Long:  "Connect to an existing session by id. Resume when status is awaiting_input; completed and failed sessions are read-only.",
+		Long:  "Connect to an existing session by id. Resume when status is awaiting_input; completed, failed, and cancelled sessions are read-only.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			noTUI, _ := cmd.Flags().GetBool("no-tui")

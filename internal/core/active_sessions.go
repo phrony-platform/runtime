@@ -15,6 +15,9 @@ type activeSessionEntry struct {
 	eventHub     *sessionEventHub
 	inputMux     *sessionInputMux
 	approvalGate *sessionApprovalGate
+	streamMu     sync.RWMutex
+	// liveAssistant holds in-progress assistant text for the current turn (driver-owned).
+	liveAssistant string
 }
 
 func (s *runtimeServer) activeSessionEntryFor(sessionID string) (activeSessionEntry, bool) {

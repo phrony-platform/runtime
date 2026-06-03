@@ -249,7 +249,7 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.scheduleStreamRecv()
 
 	case tuiClockTick:
-		if m.quitting || m.readOnly || m.wallClockFrozen() || m.status == "done" || m.status == "failed" || m.status == "error" {
+		if m.quitting || m.readOnly || m.wallClockFrozen() || m.status == "done" || m.status == "failed" || m.status == "cancelled" || m.status == "error" {
 			return m, nil
 		}
 		// Re-render status bar wall clock; no-op until session_started provides limits.
@@ -492,6 +492,33 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 			return nil
 		}
 		return fmt.Errorf("session failed: %s", failed.GetMessage())
+	case msg.GetCancelled() != nil:
+		cancelled := msg.GetCancelled()
+		if ms := cancelled.GetSessionEndedAtUnixMs(); ms > 0 {
+			m.sessionEndedAt = time.UnixMilli(ms)
+		} else if m.sessionEndedAt.IsZero() {
+			m.sessionEndedAt = time.Now()
+		}
+		if isInteractiveAttachReplay(m.start) && !m.inputEverEnabled {
+			m.status = "cancelled"
+			m.awaitingInput = false
+			m.input.Blur()
+			m.readOnly = true
+			if err := m.closeSend(); err != nil {
+				return err
+			}
+			m.layout()
+			return nil
+		}
+		m.status = "cancelled"
+		m.awaitingInput = false
+		m.input.Blur()
+		m.readOnly = true
+		if err := m.closeSend(); err != nil {
+			return err
+		}
+		m.layout()
+		return nil
 	default:
 		return fmt.Errorf("run session: unexpected server message")
 	}
@@ -639,9 +666,15 @@ func (m *runTUI) appendConversationHistory(msgs []*runtimev1.InteractiveConversa
 			if err != nil {
 				return err
 			}
+			body := string(formatted)
+			if body == "" {
+				body = content
+			} else if len(content) > 0 && len(body) < len(content) {
+				body = content
+			}
 			meta := turnMeta(statsFromHistoryMessage(msg, turn), msg.GetStopReason(), durationFromHistoryMessage(msg))
 			m.transcript.WriteString("\n")
-			m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", string(formatted), meta))
+			m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", body, meta))
 			if meta != nil {
 				m.historyMetaTurns = turn
 			}

@@ -79,17 +79,9 @@ func (s *runtimeServer) runSessionInteractiveStartWithAgentRef(
 		return s.failInteractiveSession(ctx, q, sessionEventsFromStream(stream), sessionID, err)
 	}
 
-	session, err := q.GetSession(ctx, sessionID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return status.Errorf(codes.NotFound, "session %s not found", sessionID)
-	}
-	if err != nil {
-		return status.Errorf(codes.Internal, "load session: %v", err)
-	}
-
 	s.startRunSessionBackground(sessionID, agentVersionID, inputJSON)
 
-	return s.runSessionInteractiveAttachDriver(ctx, stream, q, sessionID, session)
+	return s.runSessionInteractiveAttachDriver(ctx, stream, q, sessionID)
 }
 
 func (s *runtimeServer) runSessionInteractiveAttach(
@@ -98,6 +90,10 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	q *store.Queries,
 	sessionID string,
 ) error {
+	if s.sessionIsActive(sessionID) {
+		return s.runSessionInteractiveAttachDriver(ctx, stream, q, sessionID)
+	}
+
 	session, err := q.GetSession(ctx, sessionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return status.Errorf(codes.NotFound, "session %s not found", sessionID)
@@ -108,9 +104,6 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 
 	if session.Status == model.SessionStatusPending {
 		return status.Error(codes.FailedPrecondition, "session is pending execution")
-	}
-	if s.sessionIsActive(sessionID) {
-		return s.runSessionInteractiveAttachDriver(ctx, stream, q, sessionID, session)
 	}
 
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
@@ -295,6 +288,12 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		}
 		return rejectInteractiveUserMessage(stream)
 
+	case model.SessionStatusCancelled:
+		if err := sendSessionCancelled(events, session.UpdatedAt); err != nil {
+			return err
+		}
+		return rejectInteractiveUserMessage(stream)
+
 	default:
 		return status.Errorf(codes.FailedPrecondition, "session status %q cannot be attached", session.Status)
 	}
@@ -381,7 +380,7 @@ func (s *runtimeServer) runSessionInteractiveAttachBlocked(
 // sessionEndedAtForAttach returns updated_at for terminal attach replays so clients freeze wall-clock display.
 func sessionEndedAtForAttach(session *store.Session) *time.Time {
 	switch session.Status {
-	case model.SessionStatusCompleted:
+	case model.SessionStatusCompleted, model.SessionStatusCancelled:
 		return &session.UpdatedAt
 	case model.SessionStatusFailed:
 		// Non-wall-clock run limits on failed rows are restored to awaiting_input on attach;

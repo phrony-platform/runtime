@@ -30,6 +30,7 @@ type interactiveSessionState struct {
 	toolDispatch       tooldispatch.Dispatcher
 	policies           *policy.Evaluator
 	approvalGate       *sessionApprovalGate
+	liveTextSink       func(cumulative string)
 	clientRecvEOF      bool
 	wallClockPaused    bool
 	pauseStartedAt     time.Time
@@ -103,6 +104,9 @@ func (st *interactiveSessionState) runTurn(
 		switch ev.Type {
 		case executor.EventTextDelta:
 			builder.WriteString(ev.TextDelta)
+			if st.liveTextSink != nil {
+				st.liveTextSink(builder.String())
+			}
 			if err := events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 				Body: &runtimev1.RunSessionInteractiveServerMsg_TextDelta{
 					TextDelta: &runtimev1.RunSessionInteractiveTextDelta{Delta: ev.TextDelta},
@@ -140,6 +144,9 @@ func (st *interactiveSessionState) runTurn(
 		case executor.EventCompleted:
 			if err := <-runErrCh; err != nil {
 				return "", "", provider.TokenUsage{}, err
+			}
+			if st.liveTextSink != nil {
+				st.liveTextSink("")
 			}
 			return ev.StopReason, builder.String(), ev.Usage, nil
 		case executor.EventFailed:

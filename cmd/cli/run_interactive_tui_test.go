@@ -563,6 +563,75 @@ func TestRunTUI_attachCompletedReadOnly(t *testing.T) {
 	}
 }
 
+func TestRunTUI_attachCancelledReadOnly(t *testing.T) {
+	stream := &mockInteractiveClientStream{}
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-cancelled"})
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	endedAt := time.Date(2026, 3, 1, 12, 0, 18, 0, time.UTC)
+	startedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_SessionStarted{
+			SessionStarted: &runtimev1.RunSessionInteractiveSessionStarted{
+				SessionId:              "sess-cancelled",
+				SessionStartedAtUnixMs: startedAt.UnixMilli(),
+				SessionEndedAtUnixMs:   endedAt.UnixMilli(),
+				MaxWallClockSeconds:    60,
+				History: []*runtimev1.InteractiveConversationMessage{
+					{Role: "user", Content: "hello"},
+					{Role: "assistant", Content: "partial"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("session_started: %v", err)
+	}
+	if err := m.handleServerMsg(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_Cancelled{
+			Cancelled: &runtimev1.RunSessionInteractiveCancelled{
+				SessionEndedAtUnixMs: endedAt.UnixMilli(),
+			},
+		},
+	}); err != nil {
+		t.Fatalf("cancelled: %v", err)
+	}
+	if !m.sessionEndedAt.Equal(endedAt) {
+		t.Fatalf("sessionEndedAt = %v, want %v", m.sessionEndedAt, endedAt)
+	}
+	if !strings.Contains(m.statusBarView(), "18s / 60s") {
+		t.Fatalf("statusBar = %q, want frozen wall clock from session end", m.statusBarView())
+	}
+	if m.status != "cancelled" {
+		t.Fatalf("status = %q, want cancelled", m.status)
+	}
+	if !strings.Contains(m.statusBarView(), "Cancelled") {
+		t.Fatalf("statusBar = %q, want cancelled indicator", m.statusBarView())
+	}
+	if !m.readOnly {
+		t.Fatal("expected readOnly attach replay")
+	}
+	if m.awaitingInput || m.input.Focused() {
+		t.Fatal("input should stay disabled on cancelled attach")
+	}
+	if !m.sendClosed {
+		t.Fatal("expected stream send closed after read-only cancelled")
+	}
+
+	model, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = model.(*runTUI)
+	if m.quitting {
+		t.Fatal("read-only cancelled attach should stay open for review")
+	}
+	if cmd != nil {
+		t.Fatal("expected no recv cmd after window resize on read-only cancelled")
+	}
+	if !strings.Contains(m.footerView(), "scroll to review") {
+		t.Fatalf("footer = %q, want scroll help", m.footerView())
+	}
+}
+
 func TestRunTUI_attachFailedReadOnlyWallClockFrozen(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
 	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-failed"})

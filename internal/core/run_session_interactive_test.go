@@ -698,6 +698,59 @@ func TestRuntime_RunSessionInteractive_attachFailed(t *testing.T) {
 	}
 }
 
+func TestRuntime_RunSessionInteractive_attachCancelled(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusCancelled, nil, nil, []byte(`[]`), now, now))
+
+	stream := &mockInteractiveStream{
+		ctx: context.Background(),
+		recv: []*runtimev1.RunSessionInteractiveClientMsg{
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+				Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+			}},
+		},
+	}
+
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
+				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
+			}, providertest.DeltaCompleted()), nil
+		},
+	}
+	if err := srv.RunSessionInteractive(stream); err != nil {
+		t.Fatalf("RunSessionInteractive: %v", err)
+	}
+
+	var started, cancelled bool
+	for _, msg := range stream.sent {
+		if msg.GetSessionStarted() != nil {
+			started = true
+			if ms := msg.GetSessionStarted().GetSessionEndedAtUnixMs(); ms != now.UnixMilli() {
+				t.Fatalf("session_ended_at_unix_ms = %d, want %d", ms, now.UnixMilli())
+			}
+		}
+		if c := msg.GetCancelled(); c != nil {
+			cancelled = true
+			if c.GetSessionEndedAtUnixMs() != now.UnixMilli() {
+				t.Fatalf("cancelled session_ended_at_unix_ms = %d, want %d", c.GetSessionEndedAtUnixMs(), now.UnixMilli())
+			}
+		}
+	}
+	if !started || !cancelled {
+		t.Fatalf("started=%v cancelled=%v", started, cancelled)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestRuntime_RunSessionInteractive_attachFailedRejectsUserMessage(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
@@ -730,6 +783,77 @@ func TestRuntime_RunSessionInteractive_attachFailedRejectsUserMessage(t *testing
 	}
 	err := srv.RunSessionInteractive(stream)
 	assertGRPCCode(t, err, codes.InvalidArgument)
+}
+
+func TestRuntime_RunSessionInteractive_attachRunningReplaysLiveAssistant(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").WillReturnRows(sqlmock.NewRows([]string{
+		"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+	}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hi"}`), model.SessionStatusRunning, nil, nil,
+		[]byte(`[{"role":"user","content":"hi"}]`), now, now))
+
+	hub := newSessionEventHub()
+	inputMux := newSessionInputMux(context.Background())
+	entry := activeSessionEntry{
+		cancel:        func() {},
+		eventHub:      hub,
+		inputMux:      inputMux,
+		liveAssistant: "partial stream text",
+	}
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
+				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
+			}, providertest.DeltaCompleted()), nil
+		},
+	}
+	if err := srv.registerActiveSession("sess-1", entry); err != nil {
+		t.Fatalf("registerActiveSession: %v", err)
+	}
+	defer srv.unregisterActiveSession("sess-1")
+
+	attachCtx, detach := context.WithCancel(context.Background())
+	defer detach()
+	stream := &blockingAfterStartStream{mockInteractiveStream: &mockInteractiveStream{
+		ctx: attachCtx,
+		recv: []*runtimev1.RunSessionInteractiveClientMsg{
+			{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+				Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+			}},
+		},
+	}}
+	done := make(chan error, 1)
+	go func() { done <- srv.RunSessionInteractive(stream) }()
+	deadline := time.After(2 * time.Second)
+	var replayDelta string
+	for replayDelta == "" {
+		for _, msg := range stream.sent {
+			if d := msg.GetTextDelta(); d != nil {
+				replayDelta = d.GetDelta()
+			}
+		}
+		if replayDelta != "" {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("sent = %+v, want live replay text_delta", stream.sent)
+		case err := <-done:
+			t.Fatalf("attach ended early: %v", err)
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	detach()
+	<-done
+	if replayDelta != "partial stream text" {
+		t.Fatalf("replay delta = %q, want partial stream text", replayDelta)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
 }
 
 func TestRuntime_RunSessionInteractive_attachRunningSubscribesToActiveDriver(t *testing.T) {
@@ -1150,6 +1274,11 @@ func Test_sessionEndedAtForAttach(t *testing.T) {
 		{
 			name: "completed",
 			session: store.Session{Status: model.SessionStatusCompleted, UpdatedAt: now},
+			wantEnd: true,
+		},
+		{
+			name: "cancelled",
+			session: store.Session{Status: model.SessionStatusCancelled, UpdatedAt: now},
 			wantEnd: true,
 		},
 		{
