@@ -1,0 +1,55 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/phrony-platform/runtime/internal/executor"
+	"github.com/phrony-platform/runtime/internal/manifest"
+	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/providertest"
+	"github.com/phrony-platform/runtime/internal/store"
+)
+
+func TestRuntime_reconcileSessionsOnStartup_pendingStartsBackgroundDriver(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	mock.ExpectQuery(`FROM sessions`).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-pending", "version-uuid", []byte(`{"message":"hi"}`), model.SessionStatusPending, nil, nil, []byte(`[]`), now, now))
+
+	var mu sync.Mutex
+	var started []string
+	srv := &runtimeServer{
+		db:             db,
+		activeSessions: &sync.Map{},
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
+				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
+			}, providertest.DeltaCompleted()), nil
+		},
+		startRunSessionBackgroundFn: func(sessionID, agentVersionID string, _ json.RawMessage) {
+			mu.Lock()
+			started = append(started, sessionID)
+			mu.Unlock()
+		},
+	}
+
+	srv.reconcileSessionsOnStartup(context.Background())
+
+	mu.Lock()
+	got := append([]string(nil), started...)
+	mu.Unlock()
+	if len(got) != 1 || got[0] != "sess-pending" {
+		t.Fatalf("started = %v, want [sess-pending]", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}

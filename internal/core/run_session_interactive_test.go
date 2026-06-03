@@ -836,6 +836,209 @@ func TestRuntime_RunSessionInteractive_attachRunningSubscribesToActiveDriver(t *
 	}
 }
 
+func TestRuntime_RunSessionInteractive_attachRunningFanOutToMultipleSubscribers(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	for range 2 {
+		mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+	}
+
+	driverCtx, driverCancel := context.WithCancel(context.Background())
+	defer driverCancel()
+	hub := newSessionEventHub()
+	inputMux := newSessionInputMux(driverCtx)
+
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
+				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
+			}, providertest.DeltaCompleted()), nil
+		},
+	}
+	if err := srv.registerActiveSession("sess-1", activeSessionEntry{
+		cancel: driverCancel, eventHub: hub, inputMux: inputMux,
+	}); err != nil {
+		t.Fatalf("registerActiveSession: %v", err)
+	}
+	defer srv.unregisterActiveSession("sess-1")
+
+	startAttach := func() (*blockingAfterStartStream, chan error) {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		stream := &blockingAfterStartStream{mockInteractiveStream: &mockInteractiveStream{
+			ctx: ctx,
+			recv: []*runtimev1.RunSessionInteractiveClientMsg{
+				{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+					Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+				}},
+			},
+		}}
+		done := make(chan error, 1)
+		go func() { done <- srv.RunSessionInteractive(stream) }()
+		deadline := time.After(2 * time.Second)
+		for stream.sent == nil {
+			select {
+			case <-deadline:
+				t.Fatal("timed out waiting for session_started")
+			case err := <-done:
+				t.Fatalf("attach ended early: %v", err)
+			default:
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+		return stream, done
+	}
+
+	stream1, done1 := startAttach()
+	stream2, done2 := startAttach()
+
+	hub.Send(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_TextDelta{
+			TextDelta: &runtimev1.RunSessionInteractiveTextDelta{Delta: "live"},
+		},
+	})
+
+	waitDelta := func(stream *blockingAfterStartStream, done chan error) {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for {
+			for _, msg := range stream.sent {
+				if msg.GetTextDelta() != nil && msg.GetTextDelta().GetDelta() == "live" {
+					return
+				}
+			}
+			select {
+			case <-deadline:
+				t.Fatalf("sent = %+v, want text_delta from hub", stream.sent)
+			case err := <-done:
+				t.Fatalf("attach ended before hub event: %v", err)
+			default:
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+	}
+	waitDelta(stream1, done1)
+	waitDelta(stream2, done2)
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestRuntime_RunSessionInteractive_detachThenReattachReceivesHubEvents(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	for range 2 {
+		mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+	}
+
+	driverCtx, driverCancel := context.WithCancel(context.Background())
+	defer driverCancel()
+	hub := newSessionEventHub()
+	inputMux := newSessionInputMux(driverCtx)
+	driverCancelled := false
+	entryCancel := func() { driverCancelled = true; driverCancel() }
+
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
+				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
+			}, providertest.DeltaCompleted()), nil
+		},
+	}
+	if err := srv.registerActiveSession("sess-1", activeSessionEntry{
+		cancel: entryCancel, eventHub: hub, inputMux: inputMux,
+	}); err != nil {
+		t.Fatalf("registerActiveSession: %v", err)
+	}
+	defer srv.unregisterActiveSession("sess-1")
+
+	startAttach := func() (*blockingAfterStartStream, context.CancelFunc, chan error) {
+		attachCtx, detach := context.WithCancel(context.Background())
+		stream := &blockingAfterStartStream{mockInteractiveStream: &mockInteractiveStream{
+			ctx: attachCtx,
+			recv: []*runtimev1.RunSessionInteractiveClientMsg{
+				{Body: &runtimev1.RunSessionInteractiveClientMsg_Start{
+					Start: &runtimev1.RunSessionInteractiveStart{SessionId: "sess-1"},
+				}},
+			},
+		}}
+		done := make(chan error, 1)
+		go func() { done <- srv.RunSessionInteractive(stream) }()
+		deadline := time.After(2 * time.Second)
+		for stream.sent == nil {
+			select {
+			case <-deadline:
+				t.Fatal("timed out waiting for session_started")
+			case err := <-done:
+				t.Fatalf("attach ended early: %v", err)
+			default:
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+		if stream.sent[0].GetSessionStarted() == nil {
+			t.Fatalf("first message = %T, want session_started", stream.sent[0].GetBody())
+		}
+		return stream, detach, done
+	}
+
+	waitHubDelta := func(stream *blockingAfterStartStream, done chan error) {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for {
+			for _, msg := range stream.sent {
+				if msg.GetTextDelta() != nil && msg.GetTextDelta().GetDelta() == "reattach" {
+					return
+				}
+			}
+			select {
+			case <-deadline:
+				t.Fatalf("sent = %+v, want text_delta reattach", stream.sent)
+			case err := <-done:
+				t.Fatalf("attach ended before hub event: %v", err)
+			default:
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+	}
+
+	_, detach1, done1 := startAttach()
+	detach1()
+	if err := <-done1; err != nil {
+		t.Fatalf("first attach: %v", err)
+	}
+	if driverCancelled {
+		t.Fatal("detach must not cancel the background driver")
+	}
+	if _, ok := srv.activeSessionEntryFor("sess-1"); !ok {
+		t.Fatal("driver should remain registered after detach")
+	}
+
+	stream2, detach2, done2 := startAttach()
+	hub.Send(&runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_TextDelta{
+			TextDelta: &runtimev1.RunSessionInteractiveTextDelta{Delta: "reattach"},
+		},
+	})
+	waitHubDelta(stream2, done2)
+	detach2()
+	if err := <-done2; err != nil {
+		t.Fatalf("second attach: %v", err)
+	}
+	if driverCancelled {
+		t.Fatal("second detach must not cancel the background driver")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestRuntime_RunSessionInteractive_attachDetachDeliversInboundToDriver(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()

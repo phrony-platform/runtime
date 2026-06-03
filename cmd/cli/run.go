@@ -18,7 +18,7 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 		Short: "Start a session for the active deployed agent",
 		Long: "Start a new session for AGENT (namespace/name). Uses the active deployment; an explicit @version must match the active deployment. " +
 			"By default the runtime runs the first turn in the background and the CLI prints the session id and exits. " +
-			"Use --attach for a foreground interactive session.",
+			"Use --attach to start the session in the background and attach a foreground view (Ctrl+C detaches; use sessions cancel to stop).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAgentSession(cmd, runtimeAddr, args[0], version, input, attach)
@@ -26,7 +26,7 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&version, "version", "v", "", "active agent version (alternative to AGENT@version)")
 	cmd.Flags().StringVar(&input, "input", "", "session input as a JSON object")
-	cmd.Flags().BoolVarP(&attach, "attach", "a", false, "run in the foreground with interactive streaming")
+	cmd.Flags().BoolVarP(&attach, "attach", "a", false, "start in the background and attach an interactive view")
 
 	return cmd
 }
@@ -49,14 +49,30 @@ func runAgentSession(cmd *cobra.Command, runtimeAddr *string, agentRefArg, versi
 	}
 
 	if attach {
-		start := &runtimev1.RunSessionInteractiveStart{
-			AgentRef: ref,
-			Input:    inputBytes,
-		}
-		return runInteractiveSessionCLI(cmd, runtimeAddr, start, false)
+		return runAttachedSession(cmd, runtimeAddr, ref, inputBytes)
 	}
 
 	return runDetachedSession(cmd, runtimeAddr, ref, inputBytes)
+}
+
+func runAttachedSession(cmd *cobra.Command, runtimeAddr *string, ref *runtimev1.AgentRef, input []byte) error {
+	var sessionID string
+	if err := withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
+		resp, err := rt.RunSession(cmd.Context(), &runtimev1.RunSessionRequest{
+			AgentRef: ref,
+			Input:    input,
+		})
+		if err != nil {
+			return clierr.WrapRPC("run session", err)
+		}
+		sessionID = resp.GetSessionId()
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	start := &runtimev1.RunSessionInteractiveStart{SessionId: sessionID}
+	return runInteractiveSessionCLI(cmd, runtimeAddr, start, false)
 }
 
 func runDetachedSession(cmd *cobra.Command, runtimeAddr *string, ref *runtimev1.AgentRef, input []byte) error {

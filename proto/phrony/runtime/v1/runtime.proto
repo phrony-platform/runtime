@@ -68,11 +68,11 @@ message RunSessionInteractiveClientMsg {
 }
 
 message RunSessionInteractiveStart {
+  // When set without session_id, starts a background session (same as RunSession) and
+  // attaches this stream as the first subscriber. input uses RunSessionRequest semantics.
   AgentRef agent_ref = 1;
-  // JSON object with session inputs (same semantics as RunSessionRequest.input).
   bytes input = 2;
-  // When set, attach to an existing session instead of creating one.
-  // agent_ref and input are ignored.
+  // When set, attach to an existing session; agent_ref and input are ignored.
   string session_id = 3;
 }
 

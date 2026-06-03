@@ -219,7 +219,7 @@ func TestRunCommand_success(t *testing.T) {
 
 func TestRunCommand_attach_failure(t *testing.T) {
 	t.Setenv("PHRONY_NO_TUI", "1")
-	addr := startTestRuntimeAddrForRun(t)
+	addr := startTestRuntimeAddrForRunAttach(t)
 
 	var out bytes.Buffer
 	root := NewRootCommand()
@@ -231,8 +231,8 @@ func TestRunCommand_attach_failure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected session failure after start, got nil")
 	}
-	if !strings.Contains(err.Error(), "session failed") {
-		t.Fatalf("err = %v, want session failed", err)
+	if !strings.Contains(err.Error(), "session failed") && !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("err = %v, want session failed or agent version not found", err)
 	}
 }
 

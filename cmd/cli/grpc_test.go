@@ -173,6 +173,41 @@ func startTestRuntimeAddrForRun(t *testing.T) string {
 	return lis.Addr().String()
 }
 
+func startTestRuntimeAddrForRunAttach(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	mock.MatchExpectationsInOrder(false)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM deployments d`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "deprecated_at", "retired_at", "archived_at",
+		}).AddRow("version-uuid", "1.2.0", nil, nil, nil))
+	expectRunAttachSessionMocks(mock, "version-uuid", sqlmock.AnyArg())
+
+	db := sqlx.NewDb(sqlDB, "pgx")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+
+	srv, err := core.NewServer(db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	go func() { _ = srv.GRPC().Serve(lis) }()
+	t.Cleanup(func() { srv.GRPC().Stop() })
+
+	waitForGRPC(t, lis.Addr().String())
+	return lis.Addr().String()
+}
+
 func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
 	t.Helper()
 
@@ -216,6 +251,22 @@ func expectInteractiveRunSessionMocks(mock sqlmock.Sqlmock, versionID string, in
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`UPDATE sessions`).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
+}
+
+// expectRunAttachSessionMocks satisfies GetSession when phrony run --attach calls
+// RunSession then RunSessionInteractive(session_id).
+func expectRunAttachSessionMocks(mock sqlmock.Sqlmock, versionID string, input any) {
+	expectInteractiveRunSessionMocks(mock, versionID, input)
+	sessionInput := []byte(`{}`)
+	now := time.Now()
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("run_attach_test", versionID, sessionInput, model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+	mock.ExpectQuery(`SELECT manifest`).
+		WithArgs(versionID).
+		WillReturnError(sql.ErrNoRows)
 }
 
 func startTestRuntimeAddrForAgentsList(t *testing.T) string {

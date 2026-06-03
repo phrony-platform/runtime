@@ -41,9 +41,15 @@ func (c *runtimeClients) Close() error {
 	return c.conn.Close()
 }
 
+// testWithRuntimeClientHook, when set by tests, replaces dialRuntime.
+var testWithRuntimeClientHook func(fn func(runtimev1.RuntimeClient) error) error
+
 // withRuntimeClient dials the runtime, invokes fn with the runtime client, and
 // closes the connection afterwards.
 func withRuntimeClient(cmd *cobra.Command, runtimeAddrFlag string, fn func(runtimev1.RuntimeClient) error) error {
+	if testWithRuntimeClientHook != nil {
+		return testWithRuntimeClientHook(fn)
+	}
 	clients, err := dialRuntime(cmd.Context(), runtimeAddrFlag)
 	if err != nil {
 		return err

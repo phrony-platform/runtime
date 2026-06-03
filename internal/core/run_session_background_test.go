@@ -17,6 +17,58 @@ import (
 	"github.com/phrony-platform/runtime/internal/store"
 )
 
+func TestRuntime_RunSessionBackground_hubDeliversEventsToSubscriber(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("sess-bg", model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Instructions: manifest.InstructionsSpec{Text: "System."},
+			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"},
+		},
+	}
+	hub := newSessionEventHub()
+	events, unsub := hub.Subscribe()
+	defer unsub()
+
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
+		},
+	}
+	driverCtx, cancel := context.WithCancel(context.Background())
+	inputMux := newSessionInputMux(driverCtx)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.runSessionBackground(driverCtx, "sess-bg", "version-uuid", []byte(`{"message":"hi"}`), hub, inputMux)
+	}()
+
+	select {
+	case msg := <-events:
+		if msg.GetTextDelta() == nil {
+			t.Fatalf("first hub event = %T, want text_delta", msg.GetBody())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for hub event from background driver")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestRuntime_RunSessionBackground_reachesAwaitingInput(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()

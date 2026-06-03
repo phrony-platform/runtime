@@ -279,17 +279,17 @@ func (m *runTUI) footerView() string {
 	switch {
 	case m.awaitingApprovalDecision():
 		help := tuiHelpStyle.Render(
-			"A approve  ·  D deny  ·  PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C quit",
+			"A approve  ·  D deny  ·  PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C detach",
 		)
 		return m.approvalPanelView() + "\n" + help
 	case m.inputBlocked():
 		help := tuiHelpStyle.Render(
-			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C quit",
+			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Ctrl+D end  ·  Ctrl+C detach",
 		)
 		return m.blockedPanelView() + "\n" + help
 	case m.awaitingInput:
 		help := tuiHelpStyle.Render(
-			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Enter send  ·  Ctrl+D end  ·  Ctrl+C quit",
+			"PgUp/PgDn scroll  ·  Shift+↑↓ line  ·  Ctrl+End latest  ·  Enter send  ·  Ctrl+D end  ·  Ctrl+C detach",
 		)
 		return m.inputPanelView() + "\n" + help
 	case m.readOnly:
@@ -299,7 +299,7 @@ func (m *runTUI) footerView() string {
 	case m.status == "done":
 		return tuiHelpStyle.Render("Session finished — press Ctrl+C to exit")
 	default:
-		return tuiHelpStyle.Render("PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+C quit")
+		return tuiHelpStyle.Render("PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+C detach")
 	}
 }
 
