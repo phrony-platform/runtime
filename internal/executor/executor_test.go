@@ -18,7 +18,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
 )
 
-func TestExecutor_LoadVersion(t *testing.T) {
+func TestExecutor_LoadVersionForSession(t *testing.T) {
 	manifestJSON := []byte(`{
 		"apiVersion":"phrony.com/v1",
 		"kind":"Agent",
@@ -33,7 +33,7 @@ func TestExecutor_LoadVersion(t *testing.T) {
 
 	enc := mustTestEncryptor(t)
 	plaintext := []byte("sk-test-key")
-	sealed, err := enc.Encrypt("version-uuid", "anthropic", plaintext)
+	sealed, err := enc.Encrypt("session-id", "anthropic", plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -48,14 +48,14 @@ func TestExecutor_LoadVersion(t *testing.T) {
 		WithArgs("version-uuid").
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifestJSON))
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("version-uuid", "anthropic").
+		WithArgs("session-id", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
 	ex := &Executor{Enc: enc, Q: store.New(db)}
-	v, err := ex.LoadVersion(context.Background(), "version-uuid")
+	v, err := ex.LoadVersionForSession(context.Background(), "session-id", "version-uuid")
 	if err != nil {
-		t.Fatalf("LoadVersion: %v", err)
+		t.Fatalf("LoadVersionForSession: %v", err)
 	}
 	if v.AgentVersionID != "version-uuid" {
 		t.Fatalf("agent_version_id = %q", v.AgentVersionID)
@@ -77,23 +77,23 @@ func mustTestEncryptor(t *testing.T) *secrets.Encryptor {
 	return enc
 }
 
-func TestExecutor_LoadVersion_nilExecutor(t *testing.T) {
+func TestExecutor_LoadVersionForSession_nilExecutor(t *testing.T) {
 	var ex *Executor
-	_, err := ex.LoadVersion(context.Background(), "v")
+	_, err := ex.LoadVersionForSession(context.Background(), "session-id", "v")
 	if err == nil {
-		t.Fatal("LoadVersion() = nil, want error")
+		t.Fatal("LoadVersionForSession() = nil, want error")
 	}
 }
 
-func TestExecutor_LoadVersion_noDatabase(t *testing.T) {
+func TestExecutor_LoadVersionForSession_noDatabase(t *testing.T) {
 	ex := &Executor{Enc: mustTestEncryptor(t)}
-	_, err := ex.LoadVersion(context.Background(), "v")
+	_, err := ex.LoadVersionForSession(context.Background(), "session-id", "v")
 	if err == nil {
-		t.Fatal("LoadVersion() = nil, want error")
+		t.Fatal("LoadVersionForSession() = nil, want error")
 	}
 }
 
-func TestExecutor_LoadVersion_emptyID(t *testing.T) {
+func TestExecutor_LoadVersionForSession_emptySessionID(t *testing.T) {
 	db, _, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
@@ -101,13 +101,27 @@ func TestExecutor_LoadVersion_emptyID(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	ex := &Executor{Enc: mustTestEncryptor(t), Q: store.New(db)}
-	_, err = ex.LoadVersion(context.Background(), "")
+	_, err = ex.LoadVersionForSession(context.Background(), "", "version-uuid")
 	if err == nil {
-		t.Fatal("LoadVersion() = nil, want error")
+		t.Fatal("LoadVersionForSession() = nil, want error")
 	}
 }
 
-func TestExecutor_LoadVersion_invalidManifest(t *testing.T) {
+func TestExecutor_LoadVersionForSession_emptyVersionID(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	ex := &Executor{Enc: mustTestEncryptor(t), Q: store.New(db)}
+	_, err = ex.LoadVersionForSession(context.Background(), "session-id", "")
+	if err == nil {
+		t.Fatal("LoadVersionForSession() = nil, want error")
+	}
+}
+
+func TestExecutor_LoadVersionForSession_invalidManifest(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
@@ -119,13 +133,13 @@ func TestExecutor_LoadVersion_invalidManifest(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow([]byte(`not json`)))
 
 	ex := &Executor{Enc: mustTestEncryptor(t), Q: store.New(db)}
-	_, err = ex.LoadVersion(context.Background(), "version-uuid")
+	_, err = ex.LoadVersionForSession(context.Background(), "session-id", "version-uuid")
 	if err == nil {
-		t.Fatal("LoadVersion() = nil, want error")
+		t.Fatal("LoadVersionForSession() = nil, want error")
 	}
 }
 
-func TestExecutor_LoadVersion_notFound(t *testing.T) {
+func TestExecutor_LoadVersionForSession_notFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
@@ -137,9 +151,9 @@ func TestExecutor_LoadVersion_notFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	ex := &Executor{Enc: mustTestEncryptor(t), Q: store.New(db)}
-	_, err = ex.LoadVersion(context.Background(), "missing")
+	_, err = ex.LoadVersionForSession(context.Background(), "session-id", "missing")
 	if err == nil {
-		t.Fatal("LoadVersion() = nil, want error")
+		t.Fatal("LoadVersionForSession() = nil, want error")
 	}
 }
 
@@ -252,7 +266,7 @@ func TestStreamCompletion_enforcesTokenLimit(t *testing.T) {
 		Input: json.RawMessage(`{"message":"hello"}`),
 	}, ch)
 	if err == nil {
-		t.Fatal("StreamCompletion() = nil, want limit error")
+		t.Fatal("StreamCompletion() = nil, want error")
 	}
 	var lim *LimitError
 	if !errors.As(err, &lim) || lim.Kind != LimitMaxTokensPerRun {

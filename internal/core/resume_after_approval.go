@@ -52,7 +52,7 @@ func (s *runtimeServer) resumeAfterApproval(
 		return s.resumeAfterLimitApproval(ctx, q, row, approved, comment, gate)
 	}
 
-	ver, err := s.loadSessionVersion(ctx, q, session.AgentVersionID)
+	ver, err := s.loadSessionVersion(ctx, q, session.ID, session.AgentVersionID)
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 		st.history = history
 		st.turnCount = countCompletedTurns(history)
 	} else {
-		dispatch, err := s.sessionToolDispatch(ctx, q, ver)
+		dispatch, err := s.sessionToolDispatch(ctx, q, session.ID, ver)
 		if err != nil {
 			return err
 		}

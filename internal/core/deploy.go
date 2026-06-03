@@ -93,10 +93,6 @@ func (s *runtimeServer) Publish(ctx context.Context, req *runtimev1.PublishReque
 		return nil, status.Errorf(codes.Internal, "persist agent version: %v", err)
 	}
 
-	if err := s.persistAgentVersionSecrets(ctx, q, versionID, agent, req.GetResolvedSecrets()); err != nil {
-		return nil, err
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, status.Errorf(codes.Internal, "commit transaction: %v", err)
 	}

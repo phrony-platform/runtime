@@ -38,7 +38,7 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 		return status.Errorf(codes.Internal, "load session: %v", err)
 	}
 
-	ver, err := s.loadSessionVersion(ctx, q, session.AgentVersionID)
+	ver, err := s.loadSessionVersion(ctx, q, sessionID, session.AgentVersionID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "load agent version: %v", err)
 	}

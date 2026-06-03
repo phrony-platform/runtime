@@ -50,6 +50,9 @@ message RunSessionRequest {
   AgentRef agent_ref = 1;
   // JSON object with session inputs (opaque to the runtime until execution).
   bytes input = 2;
+  // Resolved secret values keyed by secrets.<name>. Required for every manifest
+  // secret when starting a session. Never logged or stored in manifest JSONB.
+  map<string, bytes> resolved_secrets = 3;
 }
 
 message RunSessionResponse {
@@ -72,8 +75,10 @@ message RunSessionInteractiveStart {
   // attaches this stream as the first subscriber. input uses RunSessionRequest semantics.
   AgentRef agent_ref = 1;
   bytes input = 2;
-  // When set, attach to an existing session; agent_ref and input are ignored.
+  // When set, attach to an existing session; agent_ref, input, and resolved_secrets are ignored.
   string session_id = 3;
+  // Resolved secret values for a new session (same semantics as RunSessionRequest).
+  map<string, bytes> resolved_secrets = 4;
 }
 
 message RunSessionInteractiveUserMessage {
@@ -230,10 +235,8 @@ message RunSessionInteractiveToolApproval {
 
 message PublishRequest {
   bytes manifest = 1;
-  // Resolved secret values keyed by secrets.<name>. Never logged or stored in manifest JSONB.
-  map<string, bytes> resolved_secrets = 2;
   // Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
-  string actor = 3;
+  string actor = 2;
 }
 
 message PublishResponse {

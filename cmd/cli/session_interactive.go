@@ -19,6 +19,16 @@ func runInteractiveSessionCLI(
 	}
 
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
+		if !isInteractiveAttachReplay(start) && start.GetAgentRef() != nil {
+			resolvedSecrets, err := resolveRunSecrets(cmd.Context(), rt, start.GetAgentRef())
+			if err != nil {
+				return err
+			}
+			if len(resolvedSecrets) > 0 {
+				start.ResolvedSecrets = resolvedSecrets
+			}
+		}
+
 		stream, err := rt.RunSessionInteractive(cmd.Context())
 		if err != nil {
 			return clierr.WrapRPC("run session", err)

@@ -43,7 +43,7 @@ func TestSessionToolDispatch_noMCPReturnsWorkerDispatcher(t *testing.T) {
 			Tools: []manifest.ToolBinding{{Ref: "weather.get-forecast"}},
 		},
 	}
-	got, err := srv.sessionToolDispatch(context.Background(), nil, mcpDispatchVersion(agent))
+	got, err := srv.sessionToolDispatch(context.Background(), nil, "sess-1", mcpDispatchVersion(agent))
 	if err != nil {
 		t.Fatalf("sessionToolDispatch: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestSessionToolDispatch_mcpServerButNoMCPToolsReturnsWorkerDispatcher(t *te
 	agent := mcpDispatchAgent()
 	agent.Spec.Tools = []manifest.ToolBinding{{Ref: "weather.get-forecast"}}
 
-	got, err := srv.sessionToolDispatch(context.Background(), nil, mcpDispatchVersion(agent))
+	got, err := srv.sessionToolDispatch(context.Background(), nil, "sess-1", mcpDispatchVersion(agent))
 	if err != nil {
 		t.Fatalf("sessionToolDispatch: %v", err)
 	}
@@ -74,16 +74,16 @@ func TestSessionToolDispatch_buildsRoutingDispatcherForMCPTool(t *testing.T) {
 	worker := &tooldispatch.FakeDispatcher{}
 	srv := &runtimeServer{db: db, secretsEnc: enc, toolDispatch: worker}
 
-	sealed, err := enc.Encrypt("av-1", "mcp_token", []byte("secret-token"))
+	sealed, err := enc.Encrypt("sess-1", "mcp_token", []byte("secret-token"))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("av-1", "mcp_token").
+		WithArgs("sess-1", "mcp_token").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
-	got, err := srv.sessionToolDispatch(context.Background(), store.New(db), mcpDispatchVersion(mcpDispatchAgent()))
+	got, err := srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(mcpDispatchAgent()))
 	if err != nil {
 		t.Fatalf("sessionToolDispatch: %v", err)
 	}
@@ -111,10 +111,10 @@ func TestSessionToolDispatch_secretDecryptErrorPropagates(t *testing.T) {
 	srv := &runtimeServer{db: db, secretsEnc: enc, toolDispatch: &tooldispatch.FakeDispatcher{}}
 
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("av-1", "mcp_token").
+		WithArgs("sess-1", "mcp_token").
 		WillReturnError(context.DeadlineExceeded)
 
-	_, err := srv.sessionToolDispatch(context.Background(), store.New(db), mcpDispatchVersion(mcpDispatchAgent()))
+	_, err := srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(mcpDispatchAgent()))
 	if err == nil {
 		t.Fatal("expected error when auth secret cannot be decrypted")
 	}
@@ -125,19 +125,19 @@ func TestSessionToolDispatch_unsupportedAuthScheme(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	srv := &runtimeServer{db: db, secretsEnc: enc, toolDispatch: &tooldispatch.FakeDispatcher{}}
 
-	sealed, err := enc.Encrypt("av-1", "mcp_token", []byte("secret-token"))
+	sealed, err := enc.Encrypt("sess-1", "mcp_token", []byte("secret-token"))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("av-1", "mcp_token").
+		WithArgs("sess-1", "mcp_token").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
 	agent := mcpDispatchAgent()
 	agent.Spec.MCPServers[0].Auth.Scheme = "oauth"
 
-	_, err = srv.sessionToolDispatch(context.Background(), store.New(db), mcpDispatchVersion(agent))
+	_, err = srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(agent))
 	if err == nil {
 		t.Fatal("expected error for unsupported auth scheme")
 	}

@@ -36,7 +36,7 @@ func TestRuntime_RunSessionBackground_hubDeliversEventsToSubscriber(t *testing.T
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}
@@ -84,7 +84,7 @@ func TestRuntime_RunSessionBackground_reachesAwaitingInput(t *testing.T) {
 	}
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}
@@ -116,7 +116,7 @@ func TestRuntime_RunSessionBackground_loadFailureMarksFailed(t *testing.T) {
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return nil, context.Canceled
 		},
 	}
@@ -152,7 +152,7 @@ func TestRuntime_RunSessionBackground_registersActiveSession(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	srv := &runtimeServer{db: db, activeSessions: &sync.Map{}}
-	srv.loadSessionVersionFn = func(context.Context, *store.Queries, string) (*executor.Version, error) {
+	srv.loadSessionVersionFn = func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 		return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 	}
 	srv.startRunSessionBackgroundFn = func(sessionID, agentVersionID string, inputJSON json.RawMessage) {
@@ -180,9 +180,7 @@ func TestRuntime_RunSessionBackground_registersActiveSession(t *testing.T) {
 	}
 
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"hi"}`), model.SessionStatusRunning).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-bg"))
+	expectCreateRunSessionMocks(mock, "version-uuid", []byte(`{"message":"hi"}`))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now())).
@@ -241,6 +239,9 @@ func TestRuntime_expireWallClockSession_marksParkedSessionFailed(t *testing.T) {
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs("sess-bg", model.SessionStatusFailed, nil, sqlmock.AnyArg(), nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("sess-bg").
+		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	srv := &runtimeServer{db: db, activeSessions: &sync.Map{}}
 	srv.expireWallClockSession("sess-bg", "halt")
@@ -293,7 +294,7 @@ func TestRuntime_runSessionInteractiveLoop_waitForUserFalseStopsAfterAwaitingInp
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}
@@ -327,7 +328,7 @@ func TestRuntime_runSessionInteractiveLoop_waitForUserFalseDoesNotAutoCompleteOn
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}

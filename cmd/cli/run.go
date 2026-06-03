@@ -12,6 +12,7 @@ import (
 func newRunCommand(runtimeAddr *string) *cobra.Command {
 	var version, input string
 	var attach bool
+	var envFiles []string
 
 	cmd := &cobra.Command{
 		Use:   "run AGENT[@VERSION]",
@@ -21,17 +22,18 @@ func newRunCommand(runtimeAddr *string) *cobra.Command {
 			"Use --attach to start the session in the background and attach a foreground view (Ctrl+C detaches; use sessions cancel to stop).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAgentSession(cmd, runtimeAddr, args[0], version, input, attach)
+			return runAgentSession(cmd, runtimeAddr, args[0], version, input, attach, envFiles)
 		},
 	}
 	cmd.Flags().StringVarP(&version, "version", "v", "", "active agent version (alternative to AGENT@version)")
 	cmd.Flags().StringVar(&input, "input", "", "session input as a JSON object")
 	cmd.Flags().BoolVarP(&attach, "attach", "a", false, "start in the background and attach an interactive view")
+	cmd.Flags().StringArrayVarP(&envFiles, "env-file", "e", nil, "load environment variables from a file before resolving secrets (repeatable; does not override existing env)")
 
 	return cmd
 }
 
-func runAgentSession(cmd *cobra.Command, runtimeAddr *string, agentRefArg, version, input string, attach bool) error {
+func runAgentSession(cmd *cobra.Command, runtimeAddr *string, agentRefArg, version, input string, attach bool, envFiles []string) error {
 	ref, err := parseAgentRef(agentRefArg)
 	if err != nil {
 		return err
@@ -49,18 +51,23 @@ func runAgentSession(cmd *cobra.Command, runtimeAddr *string, agentRefArg, versi
 	}
 
 	if attach {
-		return runAttachedSession(cmd, runtimeAddr, ref, inputBytes)
+		return runAttachedSession(cmd, runtimeAddr, ref, inputBytes, envFiles)
 	}
 
-	return runDetachedSession(cmd, runtimeAddr, ref, inputBytes)
+	return runDetachedSession(cmd, runtimeAddr, ref, inputBytes, envFiles)
 }
 
-func runAttachedSession(cmd *cobra.Command, runtimeAddr *string, ref *runtimev1.AgentRef, input []byte) error {
+func runAttachedSession(cmd *cobra.Command, runtimeAddr *string, ref *runtimev1.AgentRef, input []byte, envFiles []string) error {
 	var sessionID string
 	if err := withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
+		resolvedSecrets, err := prepareRunSecrets(cmd.Context(), rt, ref, envFiles)
+		if err != nil {
+			return err
+		}
 		resp, err := rt.RunSession(cmd.Context(), &runtimev1.RunSessionRequest{
-			AgentRef: ref,
-			Input:    input,
+			AgentRef:        ref,
+			Input:           input,
+			ResolvedSecrets: resolvedSecrets,
 		})
 		if err != nil {
 			return clierr.WrapRPC("run session", err)
@@ -75,11 +82,16 @@ func runAttachedSession(cmd *cobra.Command, runtimeAddr *string, ref *runtimev1.
 	return runInteractiveSessionCLI(cmd, runtimeAddr, start, false)
 }
 
-func runDetachedSession(cmd *cobra.Command, runtimeAddr *string, ref *runtimev1.AgentRef, input []byte) error {
+func runDetachedSession(cmd *cobra.Command, runtimeAddr *string, ref *runtimev1.AgentRef, input []byte, envFiles []string) error {
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
+		resolvedSecrets, err := prepareRunSecrets(cmd.Context(), rt, ref, envFiles)
+		if err != nil {
+			return err
+		}
 		resp, err := rt.RunSession(cmd.Context(), &runtimev1.RunSessionRequest{
-			AgentRef: ref,
-			Input:    input,
+			AgentRef:        ref,
+			Input:           input,
+			ResolvedSecrets: resolvedSecrets,
 		})
 		if err != nil {
 			return clierr.WrapRPC("run session", err)

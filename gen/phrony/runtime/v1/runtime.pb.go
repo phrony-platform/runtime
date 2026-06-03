@@ -224,9 +224,12 @@ type RunSessionRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	AgentRef *AgentRef              `protobuf:"bytes,1,opt,name=agent_ref,json=agentRef,proto3" json:"agent_ref,omitempty"`
 	// JSON object with session inputs (opaque to the runtime until execution).
-	Input         []byte `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Input []byte `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	// Resolved secret values keyed by secrets.<name>. Required for every manifest
+	// secret when starting a session. Never logged or stored in manifest JSONB.
+	ResolvedSecrets map[string][]byte `protobuf:"bytes,3,rep,name=resolved_secrets,json=resolvedSecrets,proto3" json:"resolved_secrets,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RunSessionRequest) Reset() {
@@ -269,6 +272,13 @@ func (x *RunSessionRequest) GetAgentRef() *AgentRef {
 func (x *RunSessionRequest) GetInput() []byte {
 	if x != nil {
 		return x.Input
+	}
+	return nil
+}
+
+func (x *RunSessionRequest) GetResolvedSecrets() map[string][]byte {
+	if x != nil {
+		return x.ResolvedSecrets
 	}
 	return nil
 }
@@ -438,10 +448,12 @@ type RunSessionInteractiveStart struct {
 	// attaches this stream as the first subscriber. input uses RunSessionRequest semantics.
 	AgentRef *AgentRef `protobuf:"bytes,1,opt,name=agent_ref,json=agentRef,proto3" json:"agent_ref,omitempty"`
 	Input    []byte    `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
-	// When set, attach to an existing session; agent_ref and input are ignored.
-	SessionId     string `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// When set, attach to an existing session; agent_ref, input, and resolved_secrets are ignored.
+	SessionId string `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// Resolved secret values for a new session (same semantics as RunSessionRequest).
+	ResolvedSecrets map[string][]byte `protobuf:"bytes,4,rep,name=resolved_secrets,json=resolvedSecrets,proto3" json:"resolved_secrets,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RunSessionInteractiveStart) Reset() {
@@ -493,6 +505,13 @@ func (x *RunSessionInteractiveStart) GetSessionId() string {
 		return x.SessionId
 	}
 	return ""
+}
+
+func (x *RunSessionInteractiveStart) GetResolvedSecrets() map[string][]byte {
+	if x != nil {
+		return x.ResolvedSecrets
+	}
+	return nil
 }
 
 type RunSessionInteractiveUserMessage struct {
@@ -1874,10 +1893,8 @@ func (x *RunSessionInteractiveToolApproval) GetArgs() []byte {
 type PublishRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Manifest []byte                 `protobuf:"bytes,1,opt,name=manifest,proto3" json:"manifest,omitempty"`
-	// Resolved secret values keyed by secrets.<name>. Never logged or stored in manifest JSONB.
-	ResolvedSecrets map[string][]byte `protobuf:"bytes,2,rep,name=resolved_secrets,json=resolvedSecrets,proto3" json:"resolved_secrets,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
-	Actor         string `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	Actor         string `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1915,13 +1932,6 @@ func (*PublishRequest) Descriptor() ([]byte, []int) {
 func (x *PublishRequest) GetManifest() []byte {
 	if x != nil {
 		return x.Manifest
-	}
-	return nil
-}
-
-func (x *PublishRequest) GetResolvedSecrets() map[string][]byte {
-	if x != nil {
-		return x.ResolvedSecrets
 	}
 	return nil
 }
@@ -5056,10 +5066,14 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\bAgentRef\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"c\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\"\x8d\x02\n" +
 	"\x11RunSessionRequest\x128\n" +
 	"\tagent_ref\x18\x01 \x01(\v2\x1b.phrony.runtime.v1.AgentRefR\bagentRef\x12\x14\n" +
-	"\x05input\x18\x02 \x01(\fR\x05input\"u\n" +
+	"\x05input\x18\x02 \x01(\fR\x05input\x12d\n" +
+	"\x10resolved_secrets\x18\x03 \x03(\v29.phrony.runtime.v1.RunSessionRequest.ResolvedSecretsEntryR\x0fresolvedSecrets\x1aB\n" +
+	"\x14ResolvedSecretsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"u\n" +
 	"\x12RunSessionResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12(\n" +
@@ -5069,12 +5083,16 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x05start\x18\x01 \x01(\v2-.phrony.runtime.v1.RunSessionInteractiveStartH\x00R\x05start\x12X\n" +
 	"\fuser_message\x18\x02 \x01(\v23.phrony.runtime.v1.RunSessionInteractiveUserMessageH\x00R\vuserMessage\x12[\n" +
 	"\rtool_approval\x18\x03 \x01(\v24.phrony.runtime.v1.RunSessionInteractiveToolApprovalH\x00R\ftoolApprovalB\x06\n" +
-	"\x04body\"\x8b\x01\n" +
+	"\x04body\"\xbe\x02\n" +
 	"\x1aRunSessionInteractiveStart\x128\n" +
 	"\tagent_ref\x18\x01 \x01(\v2\x1b.phrony.runtime.v1.AgentRefR\bagentRef\x12\x14\n" +
 	"\x05input\x18\x02 \x01(\fR\x05input\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\"6\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12m\n" +
+	"\x10resolved_secrets\x18\x04 \x03(\v2B.phrony.runtime.v1.RunSessionInteractiveStart.ResolvedSecretsEntryR\x0fresolvedSecrets\x1aB\n" +
+	"\x14ResolvedSecretsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"6\n" +
 	" RunSessionInteractiveUserMessage\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"\xc0\x06\n" +
 	"\x1eRunSessionInteractiveServerMsg\x12a\n" +
@@ -5199,14 +5217,10 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"approvalId\x12\x1a\n" +
 	"\bapproved\x18\x02 \x01(\bR\bapproved\x12\x18\n" +
 	"\acomment\x18\x03 \x01(\tR\acomment\x12\x12\n" +
-	"\x04args\x18\x04 \x01(\fR\x04args\"\xe9\x01\n" +
+	"\x04args\x18\x04 \x01(\fR\x04args\"B\n" +
 	"\x0ePublishRequest\x12\x1a\n" +
-	"\bmanifest\x18\x01 \x01(\fR\bmanifest\x12a\n" +
-	"\x10resolved_secrets\x18\x02 \x03(\v26.phrony.runtime.v1.PublishRequest.ResolvedSecretsEntryR\x0fresolvedSecrets\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\x1aB\n" +
-	"\x14ResolvedSecretsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\xba\x01\n" +
+	"\bmanifest\x18\x01 \x01(\fR\bmanifest\x12\x14\n" +
+	"\x05actor\x18\x02 \x01(\tR\x05actor\"\xba\x01\n" +
 	"\x0fPublishResponse\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1d\n" +
 	"\n" +
@@ -5483,7 +5497,7 @@ func file_phrony_runtime_v1_runtime_proto_rawDescGZIP() []byte {
 }
 
 var file_phrony_runtime_v1_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_phrony_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 79)
+var file_phrony_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 80)
 var file_phrony_runtime_v1_runtime_proto_goTypes = []any{
 	(ApprovalDecision)(0),                         // 0: phrony.runtime.v1.ApprovalDecision
 	(*GetVersionRequest)(nil),                     // 1: phrony.runtime.v1.GetVersionRequest
@@ -5562,111 +5576,113 @@ var file_phrony_runtime_v1_runtime_proto_goTypes = []any{
 	(*WorkToolNack)(nil),                          // 74: phrony.runtime.v1.WorkToolNack
 	(*WorkToolError)(nil),                         // 75: phrony.runtime.v1.WorkToolError
 	(*WorkResultAck)(nil),                         // 76: phrony.runtime.v1.WorkResultAck
-	nil,                                           // 77: phrony.runtime.v1.DescriptiveMetadataEvidence.LabelsEntry
-	nil,                                           // 78: phrony.runtime.v1.DescriptiveMetadataEvidence.AnnotationsEntry
-	nil,                                           // 79: phrony.runtime.v1.PublishRequest.ResolvedSecretsEntry
+	nil,                                           // 77: phrony.runtime.v1.RunSessionRequest.ResolvedSecretsEntry
+	nil,                                           // 78: phrony.runtime.v1.RunSessionInteractiveStart.ResolvedSecretsEntry
+	nil,                                           // 79: phrony.runtime.v1.DescriptiveMetadataEvidence.LabelsEntry
+	nil,                                           // 80: phrony.runtime.v1.DescriptiveMetadataEvidence.AnnotationsEntry
 }
 var file_phrony_runtime_v1_runtime_proto_depIdxs = []int32{
 	3,  // 0: phrony.runtime.v1.RunSessionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	7,  // 1: phrony.runtime.v1.RunSessionInteractiveClientMsg.start:type_name -> phrony.runtime.v1.RunSessionInteractiveStart
-	8,  // 2: phrony.runtime.v1.RunSessionInteractiveClientMsg.user_message:type_name -> phrony.runtime.v1.RunSessionInteractiveUserMessage
-	25, // 3: phrony.runtime.v1.RunSessionInteractiveClientMsg.tool_approval:type_name -> phrony.runtime.v1.RunSessionInteractiveToolApproval
-	3,  // 4: phrony.runtime.v1.RunSessionInteractiveStart.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	11, // 5: phrony.runtime.v1.RunSessionInteractiveServerMsg.session_started:type_name -> phrony.runtime.v1.RunSessionInteractiveSessionStarted
-	15, // 6: phrony.runtime.v1.RunSessionInteractiveServerMsg.text_delta:type_name -> phrony.runtime.v1.RunSessionInteractiveTextDelta
-	18, // 7: phrony.runtime.v1.RunSessionInteractiveServerMsg.awaiting_input:type_name -> phrony.runtime.v1.RunSessionInteractiveAwaitingInput
-	19, // 8: phrony.runtime.v1.RunSessionInteractiveServerMsg.completed:type_name -> phrony.runtime.v1.RunSessionInteractiveCompleted
-	20, // 9: phrony.runtime.v1.RunSessionInteractiveServerMsg.failed:type_name -> phrony.runtime.v1.RunSessionInteractiveFailed
-	22, // 10: phrony.runtime.v1.RunSessionInteractiveServerMsg.tool_call:type_name -> phrony.runtime.v1.RunSessionInteractiveToolCall
-	23, // 11: phrony.runtime.v1.RunSessionInteractiveServerMsg.tool_result:type_name -> phrony.runtime.v1.RunSessionInteractiveToolResult
-	24, // 12: phrony.runtime.v1.RunSessionInteractiveServerMsg.approval_required:type_name -> phrony.runtime.v1.RunSessionInteractiveApprovalRequired
-	21, // 13: phrony.runtime.v1.RunSessionInteractiveServerMsg.cancelled:type_name -> phrony.runtime.v1.RunSessionInteractiveCancelled
-	16, // 14: phrony.runtime.v1.InteractiveConversationMessage.turn_usage:type_name -> phrony.runtime.v1.TokenUsage
-	10, // 15: phrony.runtime.v1.RunSessionInteractiveSessionStarted.history:type_name -> phrony.runtime.v1.InteractiveConversationMessage
-	12, // 16: phrony.runtime.v1.RunSessionInteractiveSessionStarted.descriptive_metadata:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence
-	77, // 17: phrony.runtime.v1.DescriptiveMetadataEvidence.labels:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence.LabelsEntry
-	78, // 18: phrony.runtime.v1.DescriptiveMetadataEvidence.annotations:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence.AnnotationsEntry
-	13, // 19: phrony.runtime.v1.DescriptiveMetadataEvidence.governance:type_name -> phrony.runtime.v1.GovernanceMetadataEvidence
-	14, // 20: phrony.runtime.v1.GovernanceMetadataEvidence.frameworks:type_name -> phrony.runtime.v1.FrameworkPackEvidence
-	16, // 21: phrony.runtime.v1.InteractiveSessionStats.turn_usage:type_name -> phrony.runtime.v1.TokenUsage
-	16, // 22: phrony.runtime.v1.InteractiveSessionStats.session_usage:type_name -> phrony.runtime.v1.TokenUsage
-	17, // 23: phrony.runtime.v1.RunSessionInteractiveAwaitingInput.stats:type_name -> phrony.runtime.v1.InteractiveSessionStats
-	17, // 24: phrony.runtime.v1.RunSessionInteractiveCompleted.stats:type_name -> phrony.runtime.v1.InteractiveSessionStats
-	79, // 25: phrony.runtime.v1.PublishRequest.resolved_secrets:type_name -> phrony.runtime.v1.PublishRequest.ResolvedSecretsEntry
-	3,  // 26: phrony.runtime.v1.DeployRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	3,  // 27: phrony.runtime.v1.RollbackRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	3,  // 28: phrony.runtime.v1.GetActiveVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	3,  // 29: phrony.runtime.v1.ListDeploymentsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	35, // 30: phrony.runtime.v1.ListDeploymentsResponse.deployments:type_name -> phrony.runtime.v1.DeploymentEntry
-	3,  // 31: phrony.runtime.v1.GetAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	3,  // 32: phrony.runtime.v1.RetireAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	44, // 33: phrony.runtime.v1.ListAgentsResponse.agents:type_name -> phrony.runtime.v1.AgentSummary
-	3,  // 34: phrony.runtime.v1.ListAgentVersionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	47, // 35: phrony.runtime.v1.ListAgentVersionsResponse.versions:type_name -> phrony.runtime.v1.AgentVersionSummary
-	3,  // 36: phrony.runtime.v1.ListSessionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	50, // 37: phrony.runtime.v1.ListSessionsResponse.sessions:type_name -> phrony.runtime.v1.SessionSummary
-	52, // 38: phrony.runtime.v1.Approval.votes:type_name -> phrony.runtime.v1.ApprovalVote
-	53, // 39: phrony.runtime.v1.ListApprovalsResponse.approvals:type_name -> phrony.runtime.v1.Approval
-	0,  // 40: phrony.runtime.v1.DecideApprovalRequest.decision:type_name -> phrony.runtime.v1.ApprovalDecision
-	3,  // 41: phrony.runtime.v1.DeprecateAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	3,  // 42: phrony.runtime.v1.ArchiveAgentRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
-	67, // 43: phrony.runtime.v1.WorkClientMsg.register:type_name -> phrony.runtime.v1.WorkRegister
-	69, // 44: phrony.runtime.v1.WorkClientMsg.heartbeat:type_name -> phrony.runtime.v1.WorkHeartbeat
-	73, // 45: phrony.runtime.v1.WorkClientMsg.result:type_name -> phrony.runtime.v1.WorkToolResult
-	74, // 46: phrony.runtime.v1.WorkClientMsg.nack:type_name -> phrony.runtime.v1.WorkToolNack
-	68, // 47: phrony.runtime.v1.WorkServerMsg.registered:type_name -> phrony.runtime.v1.WorkRegistered
-	71, // 48: phrony.runtime.v1.WorkServerMsg.invoke:type_name -> phrony.runtime.v1.WorkInvoke
-	72, // 49: phrony.runtime.v1.WorkServerMsg.cancel:type_name -> phrony.runtime.v1.WorkToolCancel
-	76, // 50: phrony.runtime.v1.WorkServerMsg.result_ack:type_name -> phrony.runtime.v1.WorkResultAck
-	70, // 51: phrony.runtime.v1.WorkServerMsg.heartbeat_ack:type_name -> phrony.runtime.v1.WorkHeartbeatAck
-	65, // 52: phrony.runtime.v1.WorkRegister.handlers:type_name -> phrony.runtime.v1.WorkHandlerAdvertisement
-	66, // 53: phrony.runtime.v1.WorkRegister.in_flight:type_name -> phrony.runtime.v1.WorkInFlightCall
-	75, // 54: phrony.runtime.v1.WorkToolResult.error:type_name -> phrony.runtime.v1.WorkToolError
-	1,  // 55: phrony.runtime.v1.Runtime.GetVersion:input_type -> phrony.runtime.v1.GetVersionRequest
-	4,  // 56: phrony.runtime.v1.Runtime.RunSession:input_type -> phrony.runtime.v1.RunSessionRequest
-	6,  // 57: phrony.runtime.v1.Runtime.RunSessionInteractive:input_type -> phrony.runtime.v1.RunSessionInteractiveClientMsg
-	26, // 58: phrony.runtime.v1.Runtime.Publish:input_type -> phrony.runtime.v1.PublishRequest
-	28, // 59: phrony.runtime.v1.Runtime.Deploy:input_type -> phrony.runtime.v1.DeployRequest
-	30, // 60: phrony.runtime.v1.Runtime.Rollback:input_type -> phrony.runtime.v1.RollbackRequest
-	32, // 61: phrony.runtime.v1.Runtime.GetActiveVersion:input_type -> phrony.runtime.v1.GetActiveVersionRequest
-	34, // 62: phrony.runtime.v1.Runtime.ListDeployments:input_type -> phrony.runtime.v1.ListDeploymentsRequest
-	37, // 63: phrony.runtime.v1.Runtime.GetAgentVersion:input_type -> phrony.runtime.v1.GetAgentVersionRequest
-	39, // 64: phrony.runtime.v1.Runtime.RetireAgentVersion:input_type -> phrony.runtime.v1.RetireAgentVersionRequest
-	41, // 65: phrony.runtime.v1.Runtime.CancelSession:input_type -> phrony.runtime.v1.CancelSessionRequest
-	43, // 66: phrony.runtime.v1.Runtime.ListAgents:input_type -> phrony.runtime.v1.ListAgentsRequest
-	46, // 67: phrony.runtime.v1.Runtime.ListAgentVersions:input_type -> phrony.runtime.v1.ListAgentVersionsRequest
-	49, // 68: phrony.runtime.v1.Runtime.ListSessions:input_type -> phrony.runtime.v1.ListSessionsRequest
-	54, // 69: phrony.runtime.v1.Runtime.GetApproval:input_type -> phrony.runtime.v1.GetApprovalRequest
-	55, // 70: phrony.runtime.v1.Runtime.ListApprovals:input_type -> phrony.runtime.v1.ListApprovalsRequest
-	57, // 71: phrony.runtime.v1.Runtime.DecideApproval:input_type -> phrony.runtime.v1.DecideApprovalRequest
-	59, // 72: phrony.runtime.v1.Runtime.DeprecateAgentVersion:input_type -> phrony.runtime.v1.DeprecateAgentVersionRequest
-	61, // 73: phrony.runtime.v1.Runtime.ArchiveAgent:input_type -> phrony.runtime.v1.ArchiveAgentRequest
-	63, // 74: phrony.runtime.v1.Runtime.Work:input_type -> phrony.runtime.v1.WorkClientMsg
-	2,  // 75: phrony.runtime.v1.Runtime.GetVersion:output_type -> phrony.runtime.v1.GetVersionResponse
-	5,  // 76: phrony.runtime.v1.Runtime.RunSession:output_type -> phrony.runtime.v1.RunSessionResponse
-	9,  // 77: phrony.runtime.v1.Runtime.RunSessionInteractive:output_type -> phrony.runtime.v1.RunSessionInteractiveServerMsg
-	27, // 78: phrony.runtime.v1.Runtime.Publish:output_type -> phrony.runtime.v1.PublishResponse
-	29, // 79: phrony.runtime.v1.Runtime.Deploy:output_type -> phrony.runtime.v1.DeployResponse
-	31, // 80: phrony.runtime.v1.Runtime.Rollback:output_type -> phrony.runtime.v1.RollbackResponse
-	33, // 81: phrony.runtime.v1.Runtime.GetActiveVersion:output_type -> phrony.runtime.v1.GetActiveVersionResponse
-	36, // 82: phrony.runtime.v1.Runtime.ListDeployments:output_type -> phrony.runtime.v1.ListDeploymentsResponse
-	38, // 83: phrony.runtime.v1.Runtime.GetAgentVersion:output_type -> phrony.runtime.v1.GetAgentVersionResponse
-	40, // 84: phrony.runtime.v1.Runtime.RetireAgentVersion:output_type -> phrony.runtime.v1.RetireAgentVersionResponse
-	42, // 85: phrony.runtime.v1.Runtime.CancelSession:output_type -> phrony.runtime.v1.CancelSessionResponse
-	45, // 86: phrony.runtime.v1.Runtime.ListAgents:output_type -> phrony.runtime.v1.ListAgentsResponse
-	48, // 87: phrony.runtime.v1.Runtime.ListAgentVersions:output_type -> phrony.runtime.v1.ListAgentVersionsResponse
-	51, // 88: phrony.runtime.v1.Runtime.ListSessions:output_type -> phrony.runtime.v1.ListSessionsResponse
-	53, // 89: phrony.runtime.v1.Runtime.GetApproval:output_type -> phrony.runtime.v1.Approval
-	56, // 90: phrony.runtime.v1.Runtime.ListApprovals:output_type -> phrony.runtime.v1.ListApprovalsResponse
-	58, // 91: phrony.runtime.v1.Runtime.DecideApproval:output_type -> phrony.runtime.v1.DecideApprovalResponse
-	60, // 92: phrony.runtime.v1.Runtime.DeprecateAgentVersion:output_type -> phrony.runtime.v1.DeprecateAgentVersionResponse
-	62, // 93: phrony.runtime.v1.Runtime.ArchiveAgent:output_type -> phrony.runtime.v1.ArchiveAgentResponse
-	64, // 94: phrony.runtime.v1.Runtime.Work:output_type -> phrony.runtime.v1.WorkServerMsg
-	75, // [75:95] is the sub-list for method output_type
-	55, // [55:75] is the sub-list for method input_type
-	55, // [55:55] is the sub-list for extension type_name
-	55, // [55:55] is the sub-list for extension extendee
-	0,  // [0:55] is the sub-list for field type_name
+	77, // 1: phrony.runtime.v1.RunSessionRequest.resolved_secrets:type_name -> phrony.runtime.v1.RunSessionRequest.ResolvedSecretsEntry
+	7,  // 2: phrony.runtime.v1.RunSessionInteractiveClientMsg.start:type_name -> phrony.runtime.v1.RunSessionInteractiveStart
+	8,  // 3: phrony.runtime.v1.RunSessionInteractiveClientMsg.user_message:type_name -> phrony.runtime.v1.RunSessionInteractiveUserMessage
+	25, // 4: phrony.runtime.v1.RunSessionInteractiveClientMsg.tool_approval:type_name -> phrony.runtime.v1.RunSessionInteractiveToolApproval
+	3,  // 5: phrony.runtime.v1.RunSessionInteractiveStart.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	78, // 6: phrony.runtime.v1.RunSessionInteractiveStart.resolved_secrets:type_name -> phrony.runtime.v1.RunSessionInteractiveStart.ResolvedSecretsEntry
+	11, // 7: phrony.runtime.v1.RunSessionInteractiveServerMsg.session_started:type_name -> phrony.runtime.v1.RunSessionInteractiveSessionStarted
+	15, // 8: phrony.runtime.v1.RunSessionInteractiveServerMsg.text_delta:type_name -> phrony.runtime.v1.RunSessionInteractiveTextDelta
+	18, // 9: phrony.runtime.v1.RunSessionInteractiveServerMsg.awaiting_input:type_name -> phrony.runtime.v1.RunSessionInteractiveAwaitingInput
+	19, // 10: phrony.runtime.v1.RunSessionInteractiveServerMsg.completed:type_name -> phrony.runtime.v1.RunSessionInteractiveCompleted
+	20, // 11: phrony.runtime.v1.RunSessionInteractiveServerMsg.failed:type_name -> phrony.runtime.v1.RunSessionInteractiveFailed
+	22, // 12: phrony.runtime.v1.RunSessionInteractiveServerMsg.tool_call:type_name -> phrony.runtime.v1.RunSessionInteractiveToolCall
+	23, // 13: phrony.runtime.v1.RunSessionInteractiveServerMsg.tool_result:type_name -> phrony.runtime.v1.RunSessionInteractiveToolResult
+	24, // 14: phrony.runtime.v1.RunSessionInteractiveServerMsg.approval_required:type_name -> phrony.runtime.v1.RunSessionInteractiveApprovalRequired
+	21, // 15: phrony.runtime.v1.RunSessionInteractiveServerMsg.cancelled:type_name -> phrony.runtime.v1.RunSessionInteractiveCancelled
+	16, // 16: phrony.runtime.v1.InteractiveConversationMessage.turn_usage:type_name -> phrony.runtime.v1.TokenUsage
+	10, // 17: phrony.runtime.v1.RunSessionInteractiveSessionStarted.history:type_name -> phrony.runtime.v1.InteractiveConversationMessage
+	12, // 18: phrony.runtime.v1.RunSessionInteractiveSessionStarted.descriptive_metadata:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence
+	79, // 19: phrony.runtime.v1.DescriptiveMetadataEvidence.labels:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence.LabelsEntry
+	80, // 20: phrony.runtime.v1.DescriptiveMetadataEvidence.annotations:type_name -> phrony.runtime.v1.DescriptiveMetadataEvidence.AnnotationsEntry
+	13, // 21: phrony.runtime.v1.DescriptiveMetadataEvidence.governance:type_name -> phrony.runtime.v1.GovernanceMetadataEvidence
+	14, // 22: phrony.runtime.v1.GovernanceMetadataEvidence.frameworks:type_name -> phrony.runtime.v1.FrameworkPackEvidence
+	16, // 23: phrony.runtime.v1.InteractiveSessionStats.turn_usage:type_name -> phrony.runtime.v1.TokenUsage
+	16, // 24: phrony.runtime.v1.InteractiveSessionStats.session_usage:type_name -> phrony.runtime.v1.TokenUsage
+	17, // 25: phrony.runtime.v1.RunSessionInteractiveAwaitingInput.stats:type_name -> phrony.runtime.v1.InteractiveSessionStats
+	17, // 26: phrony.runtime.v1.RunSessionInteractiveCompleted.stats:type_name -> phrony.runtime.v1.InteractiveSessionStats
+	3,  // 27: phrony.runtime.v1.DeployRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 28: phrony.runtime.v1.RollbackRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 29: phrony.runtime.v1.GetActiveVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 30: phrony.runtime.v1.ListDeploymentsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	35, // 31: phrony.runtime.v1.ListDeploymentsResponse.deployments:type_name -> phrony.runtime.v1.DeploymentEntry
+	3,  // 32: phrony.runtime.v1.GetAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 33: phrony.runtime.v1.RetireAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	44, // 34: phrony.runtime.v1.ListAgentsResponse.agents:type_name -> phrony.runtime.v1.AgentSummary
+	3,  // 35: phrony.runtime.v1.ListAgentVersionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	47, // 36: phrony.runtime.v1.ListAgentVersionsResponse.versions:type_name -> phrony.runtime.v1.AgentVersionSummary
+	3,  // 37: phrony.runtime.v1.ListSessionsRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	50, // 38: phrony.runtime.v1.ListSessionsResponse.sessions:type_name -> phrony.runtime.v1.SessionSummary
+	52, // 39: phrony.runtime.v1.Approval.votes:type_name -> phrony.runtime.v1.ApprovalVote
+	53, // 40: phrony.runtime.v1.ListApprovalsResponse.approvals:type_name -> phrony.runtime.v1.Approval
+	0,  // 41: phrony.runtime.v1.DecideApprovalRequest.decision:type_name -> phrony.runtime.v1.ApprovalDecision
+	3,  // 42: phrony.runtime.v1.DeprecateAgentVersionRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	3,  // 43: phrony.runtime.v1.ArchiveAgentRequest.agent_ref:type_name -> phrony.runtime.v1.AgentRef
+	67, // 44: phrony.runtime.v1.WorkClientMsg.register:type_name -> phrony.runtime.v1.WorkRegister
+	69, // 45: phrony.runtime.v1.WorkClientMsg.heartbeat:type_name -> phrony.runtime.v1.WorkHeartbeat
+	73, // 46: phrony.runtime.v1.WorkClientMsg.result:type_name -> phrony.runtime.v1.WorkToolResult
+	74, // 47: phrony.runtime.v1.WorkClientMsg.nack:type_name -> phrony.runtime.v1.WorkToolNack
+	68, // 48: phrony.runtime.v1.WorkServerMsg.registered:type_name -> phrony.runtime.v1.WorkRegistered
+	71, // 49: phrony.runtime.v1.WorkServerMsg.invoke:type_name -> phrony.runtime.v1.WorkInvoke
+	72, // 50: phrony.runtime.v1.WorkServerMsg.cancel:type_name -> phrony.runtime.v1.WorkToolCancel
+	76, // 51: phrony.runtime.v1.WorkServerMsg.result_ack:type_name -> phrony.runtime.v1.WorkResultAck
+	70, // 52: phrony.runtime.v1.WorkServerMsg.heartbeat_ack:type_name -> phrony.runtime.v1.WorkHeartbeatAck
+	65, // 53: phrony.runtime.v1.WorkRegister.handlers:type_name -> phrony.runtime.v1.WorkHandlerAdvertisement
+	66, // 54: phrony.runtime.v1.WorkRegister.in_flight:type_name -> phrony.runtime.v1.WorkInFlightCall
+	75, // 55: phrony.runtime.v1.WorkToolResult.error:type_name -> phrony.runtime.v1.WorkToolError
+	1,  // 56: phrony.runtime.v1.Runtime.GetVersion:input_type -> phrony.runtime.v1.GetVersionRequest
+	4,  // 57: phrony.runtime.v1.Runtime.RunSession:input_type -> phrony.runtime.v1.RunSessionRequest
+	6,  // 58: phrony.runtime.v1.Runtime.RunSessionInteractive:input_type -> phrony.runtime.v1.RunSessionInteractiveClientMsg
+	26, // 59: phrony.runtime.v1.Runtime.Publish:input_type -> phrony.runtime.v1.PublishRequest
+	28, // 60: phrony.runtime.v1.Runtime.Deploy:input_type -> phrony.runtime.v1.DeployRequest
+	30, // 61: phrony.runtime.v1.Runtime.Rollback:input_type -> phrony.runtime.v1.RollbackRequest
+	32, // 62: phrony.runtime.v1.Runtime.GetActiveVersion:input_type -> phrony.runtime.v1.GetActiveVersionRequest
+	34, // 63: phrony.runtime.v1.Runtime.ListDeployments:input_type -> phrony.runtime.v1.ListDeploymentsRequest
+	37, // 64: phrony.runtime.v1.Runtime.GetAgentVersion:input_type -> phrony.runtime.v1.GetAgentVersionRequest
+	39, // 65: phrony.runtime.v1.Runtime.RetireAgentVersion:input_type -> phrony.runtime.v1.RetireAgentVersionRequest
+	41, // 66: phrony.runtime.v1.Runtime.CancelSession:input_type -> phrony.runtime.v1.CancelSessionRequest
+	43, // 67: phrony.runtime.v1.Runtime.ListAgents:input_type -> phrony.runtime.v1.ListAgentsRequest
+	46, // 68: phrony.runtime.v1.Runtime.ListAgentVersions:input_type -> phrony.runtime.v1.ListAgentVersionsRequest
+	49, // 69: phrony.runtime.v1.Runtime.ListSessions:input_type -> phrony.runtime.v1.ListSessionsRequest
+	54, // 70: phrony.runtime.v1.Runtime.GetApproval:input_type -> phrony.runtime.v1.GetApprovalRequest
+	55, // 71: phrony.runtime.v1.Runtime.ListApprovals:input_type -> phrony.runtime.v1.ListApprovalsRequest
+	57, // 72: phrony.runtime.v1.Runtime.DecideApproval:input_type -> phrony.runtime.v1.DecideApprovalRequest
+	59, // 73: phrony.runtime.v1.Runtime.DeprecateAgentVersion:input_type -> phrony.runtime.v1.DeprecateAgentVersionRequest
+	61, // 74: phrony.runtime.v1.Runtime.ArchiveAgent:input_type -> phrony.runtime.v1.ArchiveAgentRequest
+	63, // 75: phrony.runtime.v1.Runtime.Work:input_type -> phrony.runtime.v1.WorkClientMsg
+	2,  // 76: phrony.runtime.v1.Runtime.GetVersion:output_type -> phrony.runtime.v1.GetVersionResponse
+	5,  // 77: phrony.runtime.v1.Runtime.RunSession:output_type -> phrony.runtime.v1.RunSessionResponse
+	9,  // 78: phrony.runtime.v1.Runtime.RunSessionInteractive:output_type -> phrony.runtime.v1.RunSessionInteractiveServerMsg
+	27, // 79: phrony.runtime.v1.Runtime.Publish:output_type -> phrony.runtime.v1.PublishResponse
+	29, // 80: phrony.runtime.v1.Runtime.Deploy:output_type -> phrony.runtime.v1.DeployResponse
+	31, // 81: phrony.runtime.v1.Runtime.Rollback:output_type -> phrony.runtime.v1.RollbackResponse
+	33, // 82: phrony.runtime.v1.Runtime.GetActiveVersion:output_type -> phrony.runtime.v1.GetActiveVersionResponse
+	36, // 83: phrony.runtime.v1.Runtime.ListDeployments:output_type -> phrony.runtime.v1.ListDeploymentsResponse
+	38, // 84: phrony.runtime.v1.Runtime.GetAgentVersion:output_type -> phrony.runtime.v1.GetAgentVersionResponse
+	40, // 85: phrony.runtime.v1.Runtime.RetireAgentVersion:output_type -> phrony.runtime.v1.RetireAgentVersionResponse
+	42, // 86: phrony.runtime.v1.Runtime.CancelSession:output_type -> phrony.runtime.v1.CancelSessionResponse
+	45, // 87: phrony.runtime.v1.Runtime.ListAgents:output_type -> phrony.runtime.v1.ListAgentsResponse
+	48, // 88: phrony.runtime.v1.Runtime.ListAgentVersions:output_type -> phrony.runtime.v1.ListAgentVersionsResponse
+	51, // 89: phrony.runtime.v1.Runtime.ListSessions:output_type -> phrony.runtime.v1.ListSessionsResponse
+	53, // 90: phrony.runtime.v1.Runtime.GetApproval:output_type -> phrony.runtime.v1.Approval
+	56, // 91: phrony.runtime.v1.Runtime.ListApprovals:output_type -> phrony.runtime.v1.ListApprovalsResponse
+	58, // 92: phrony.runtime.v1.Runtime.DecideApproval:output_type -> phrony.runtime.v1.DecideApprovalResponse
+	60, // 93: phrony.runtime.v1.Runtime.DeprecateAgentVersion:output_type -> phrony.runtime.v1.DeprecateAgentVersionResponse
+	62, // 94: phrony.runtime.v1.Runtime.ArchiveAgent:output_type -> phrony.runtime.v1.ArchiveAgentResponse
+	64, // 95: phrony.runtime.v1.Runtime.Work:output_type -> phrony.runtime.v1.WorkServerMsg
+	76, // [76:96] is the sub-list for method output_type
+	56, // [56:76] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_phrony_runtime_v1_runtime_proto_init() }
@@ -5709,7 +5725,7 @@ func file_phrony_runtime_v1_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_phrony_runtime_v1_runtime_proto_rawDesc), len(file_phrony_runtime_v1_runtime_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   79,
+			NumMessages:   80,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

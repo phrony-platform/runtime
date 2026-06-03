@@ -116,9 +116,6 @@ func startTestRuntimeAddrForDeployWithSecrets(t *testing.T) string {
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs(sqlmock.AnyArg(), "agent-uuid", "1.2.0", sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("version-uuid"))
-	mock.ExpectExec(`INSERT INTO agent_version_secrets`).
-		WithArgs("version-uuid", "anthropic", 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
 	db := sqlx.NewDb(sqlDB, "pgx")
@@ -148,6 +145,7 @@ func startTestRuntimeAddrForRun(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectCLIRunSecretsMocks(mock)
 	mock.ExpectQuery(`FROM deployments d`).
 		WithArgs("demo", "echo-agent").
 		WillReturnRows(sqlmock.NewRows([]string{
@@ -183,6 +181,7 @@ func startTestRuntimeAddrForRunAttach(t *testing.T) string {
 	mock.MatchExpectationsInOrder(false)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectCLIRunSecretsMocks(mock)
 	mock.ExpectQuery(`FROM deployments d`).
 		WithArgs("demo", "echo-agent").
 		WillReturnRows(sqlmock.NewRows([]string{
@@ -217,6 +216,7 @@ func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectCLIRunSecretsVersionedMocks(mock, "1.2.0")
 	mock.ExpectQuery(`FROM deployments d`).
 		WithArgs("demo", "echo-agent").
 		WillReturnRows(sqlmock.NewRows([]string{
@@ -242,13 +242,49 @@ func startTestRuntimeAddrForRunWithVersion(t *testing.T) string {
 	return lis.Addr().String()
 }
 
+const runTestManifestJSON = `{
+	"apiVersion":"phrony.com/v1",
+	"kind":"Agent",
+	"metadata":{"name":"echo-agent","namespace":"demo","version":"1.2.0"},
+	"spec":{
+		"purpose":"p",
+		"instructions":{"text":"System."},
+		"model":{"provider":"stub","name":"stub-script"}
+	}
+}`
+
+// expectCLIRunSecretsMocks satisfies GetActiveVersion and GetAgentVersion before RunSession.
+func expectCLIRunSecretsMocks(mock sqlmock.Sqlmock) {
+	now := time.Now()
+	mock.ExpectQuery(`SELECT av.version, d.created_at, d.actor`).
+		WithArgs("demo", "echo-agent").
+		WillReturnRows(sqlmock.NewRows([]string{"version", "created_at", "actor"}).
+			AddRow("1.2.0", now, "test"))
+	expectCLIRunSecretsVersionedMocks(mock, "1.2.0")
+}
+
+func expectCLIRunSecretsVersionedMocks(mock sqlmock.Sqlmock, version string) {
+	now := time.Now()
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("demo", "echo-agent", version).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "content_hash", "manifest", "published_at", "deprecated_at", "retired_at",
+		}).AddRow("version-uuid", version, "hash", []byte(runTestManifestJSON), now, nil, nil))
+}
+
 func expectInteractiveRunSessionMocks(mock sqlmock.Sqlmock, versionID string, input any) {
+	manifest := []byte(runTestManifestJSON)
+	mock.ExpectQuery(`SELECT manifest`).
+		WithArgs(versionID).
+		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
+	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO sessions`).
 		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	mock.ExpectCommit()
 	mock.ExpectQuery(`SELECT manifest`).
 		WithArgs(versionID).
-		WillReturnError(sql.ErrNoRows)
+		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
 }
@@ -642,7 +678,7 @@ func startTestRuntimeAddrForRunAttachFailed(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("NewEncryptor: %v", err)
 	}
-	sealed, err := enc.Encrypt("version-uuid", "anthropic", []byte("sk-test"))
+	sealed, err := enc.Encrypt("sess-failed", "anthropic", []byte("sk-test"))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -664,7 +700,7 @@ func startTestRuntimeAddrForRunAttachFailed(t *testing.T) string {
 		WithArgs("version-uuid").
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow([]byte(attachTestManifestJSON)))
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("version-uuid", "anthropic").
+		WithArgs("sess-failed", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
@@ -680,7 +716,7 @@ func startTestRuntimeAddrForRunAttachCompleted(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("NewEncryptor: %v", err)
 	}
-	sealed, err := enc.Encrypt("version-uuid", "anthropic", []byte("sk-test"))
+	sealed, err := enc.Encrypt("sess-completed", "anthropic", []byte("sk-test"))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -702,7 +738,7 @@ func startTestRuntimeAddrForRunAttachCompleted(t *testing.T) string {
 		WithArgs("version-uuid").
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow([]byte(attachTestManifestJSON)))
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("version-uuid", "anthropic").
+		WithArgs("sess-completed", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 

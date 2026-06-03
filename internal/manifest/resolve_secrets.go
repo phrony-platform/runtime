@@ -18,7 +18,7 @@ func ResolveSecretsFromEnv(agent *Agent) (map[string][]byte, error) {
 		val := strings.TrimSpace(os.Getenv(varName))
 		if val == "" {
 			return nil, fmt.Errorf(
-				"secret %q: environment variable %s is not set; set %s and retry deploy",
+				"secret %q: environment variable %s is not set; set %s and retry run",
 				name, varName, varName,
 			)
 		}

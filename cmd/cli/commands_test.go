@@ -471,21 +471,22 @@ func TestValidateCommand_readManifestFailed(t *testing.T) {
 	}
 }
 
-func TestPublishCommand_missingSecretEnv(t *testing.T) {
+func TestPublishCommand_withSecretsManifestSucceedsWithoutEnv(t *testing.T) {
 	manifest := writeDeployTestBundleWithSecrets(t, t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "")
+	addr := startTestRuntimeAddrForDeploy(t)
 
+	var out bytes.Buffer
 	root := NewRootCommand()
-	root.SetOut(&bytes.Buffer{})
+	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", manifest, "--runtime-addr", "127.0.0.1:1"})
+	root.SetArgs([]string{"publish", manifest, "--runtime-addr", addr})
 
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
-		t.Fatalf("unexpected error: %v", err)
+	if !strings.Contains(out.String(), "demo/echo-agent 1.2.0") {
+		t.Fatalf("output = %q, want agent name and version", out.String())
 	}
 }
 

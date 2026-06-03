@@ -17,6 +17,12 @@ func TestRuntime_CancelSession_success(t *testing.T) {
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs("run_abc").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("run_abc"))
+	mock.ExpectQuery(`INSERT INTO session_events`).
+		WithArgs("run_abc", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("run_abc").
+		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	srv := &runtimeServer{db: db}
 	_, err := srv.CancelSession(context.Background(), &runtimev1.CancelSessionRequest{
@@ -35,6 +41,12 @@ func TestRuntime_CancelSession_invokesActiveCancel(t *testing.T) {
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs("run_live").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("run_live"))
+	mock.ExpectQuery(`INSERT INTO session_events`).
+		WithArgs("run_live", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("run_live").
+		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	srv := &runtimeServer{db: db, activeSessions: &sync.Map{}}
 	cancelled := false

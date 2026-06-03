@@ -671,7 +671,7 @@ func TestToolDispatchE2E_recoveryAfterRestart(t *testing.T) {
 	// Simulated restart: fresh registry and worker, same durable ledger.
 	h := newToolE2EHarness(t, toolE2EConfig{DB: db})
 	h.srv.db = db
-	h.srv.loadSessionVersionFn = func(context.Context, *store.Queries, string) (*executor.Version, error) {
+	h.srv.loadSessionVersionFn = func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 		return executor.NewVersionWithProvider(agentVersionID, e2eWeatherAgent(nil), providertest.DeltaCompleted()), nil
 	}
 	h.startWorker(testworker.Options{

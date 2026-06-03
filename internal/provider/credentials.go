@@ -10,19 +10,19 @@ import (
 	"github.com/phrony-platform/runtime/internal/store"
 )
 
-// APIKeyForModel decrypts the manifest secret bound to spec.model for an agent version.
+// APIKeyForModel decrypts the manifest secret bound to spec.model for a session.
 func APIKeyForModel(
 	ctx context.Context,
 	enc *secrets.Encryptor,
 	q *store.Queries,
-	agentVersionID string,
+	sessionID string,
 	agent *manifest.Agent,
 ) (string, error) {
 	if agent == nil {
 		return "", fmt.Errorf("agent manifest is required")
 	}
 	if len(agent.Secrets) == 0 {
-		return "", fmt.Errorf("agent has no secrets; declare secrets in the manifest and deploy with resolved values")
+		return "", fmt.Errorf("agent has no secrets; declare secrets in the manifest and run with resolved values")
 	}
 	if enc == nil {
 		return "", fmt.Errorf("secrets encryptor is not configured")
@@ -39,7 +39,7 @@ func APIKeyForModel(
 		return "", fmt.Errorf("secret %q is not defined in manifest secrets", secretName)
 	}
 
-	raw, err := enc.DecryptForVersion(ctx, q, agentVersionID, secretName)
+	raw, err := enc.DecryptForSession(ctx, q, sessionID, secretName)
 	if err != nil {
 		return "", fmt.Errorf("decrypt secret %q: %w", secretName, err)
 	}

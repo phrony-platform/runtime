@@ -23,7 +23,7 @@ type runtimeServer struct {
 	db         *sqlx.DB
 	secretsEnc *secrets.Encryptor
 	// loadSessionVersionFn overrides version loading for interactive sessions (tests only).
-	loadSessionVersionFn func(context.Context, *store.Queries, string) (*executor.Version, error)
+	loadSessionVersionFn func(ctx context.Context, q *store.Queries, sessionID string, agentVersionID string) (*executor.Version, error)
 	// startRunSessionBackgroundFn replaces detached session startup (tests only).
 	startRunSessionBackgroundFn func(sessionID, agentVersionID string, inputJSON json.RawMessage)
 	// activeSessions tracks session IDs with a background session driver.

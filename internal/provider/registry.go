@@ -53,13 +53,13 @@ func (r *Registry) ModelProvider(agent *manifest.Agent) (Provider, error) {
 	return p, nil
 }
 
-// NewForAgentVersion builds a registry with the model provider configured from secrets
-// decrypted for the given agent version.
-func NewForAgentVersion(
+// NewForSession builds a registry with the model provider configured from secrets
+// decrypted for the given session.
+func NewForSession(
 	ctx context.Context,
 	enc *secrets.Encryptor,
 	q *store.Queries,
-	agentVersionID string,
+	sessionID string,
 	agent *manifest.Agent,
 ) (*Registry, error) {
 	if agent == nil {
@@ -80,7 +80,7 @@ func NewForAgentVersion(
 		return reg, nil
 	}
 
-	apiKey, err := APIKeyForModel(ctx, enc, q, agentVersionID, agent)
+	apiKey, err := APIKeyForModel(ctx, enc, q, sessionID, agent)
 	if err != nil {
 		return nil, err
 	}

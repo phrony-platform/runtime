@@ -23,6 +23,7 @@ import (
 func (s *runtimeServer) sessionToolDispatch(
 	ctx context.Context,
 	q *store.Queries,
+	sessionID string,
 	ver *executor.Version,
 ) (tooldispatch.Dispatcher, error) {
 	if ver == nil || ver.Agent == nil || len(ver.Agent.Spec.MCPServers) == 0 {
@@ -53,7 +54,7 @@ func (s *runtimeServer) sessionToolDispatch(
 		if !usedServers[srv.Name] {
 			continue
 		}
-		headers, err := s.mcpAuthHeaders(ctx, q, ver.AgentVersionID, srv)
+		headers, err := s.mcpAuthHeaders(ctx, q, sessionID, srv)
 		if err != nil {
 			return nil, err
 		}
@@ -70,17 +71,17 @@ func (s *runtimeServer) sessionToolDispatch(
 }
 
 // mcpAuthHeaders resolves the static request headers for an MCP server from its
-// auth scheme, decrypting the named Phrony secret for this agent version.
+// auth scheme, decrypting the named Phrony secret for this session.
 func (s *runtimeServer) mcpAuthHeaders(
 	ctx context.Context,
 	q *store.Queries,
-	agentVersionID string,
+	sessionID string,
 	srv manifest.MCPServerSpec,
 ) (map[string]string, error) {
 	if srv.Auth == nil {
 		return nil, nil
 	}
-	secret, err := s.secretsEnc.DecryptForVersion(ctx, q, agentVersionID, srv.Auth.Secret)
+	secret, err := s.secretsEnc.DecryptForSession(ctx, q, sessionID, srv.Auth.Secret)
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: decrypt auth secret %q: %w", srv.Name, srv.Auth.Secret, err)
 	}

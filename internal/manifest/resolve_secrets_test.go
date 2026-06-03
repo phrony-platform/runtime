@@ -47,7 +47,7 @@ func TestResolveSecretsFromEnv_missingEnv(t *testing.T) {
 	if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
 		t.Fatalf("error = %v, want env var name", err)
 	}
-	if !strings.Contains(err.Error(), "retry deploy") {
+	if !strings.Contains(err.Error(), "retry run") {
 		t.Fatalf("error = %v, want deploy hint", err)
 	}
 }

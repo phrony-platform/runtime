@@ -315,7 +315,7 @@ func TestSessionEventsE2E_attachReplaysToolTimelineOnCompletedSession(t *testing
 	}
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider(agentVersionID, agent, providertest.DeltaCompleted()), nil
 		},
 	}
@@ -575,7 +575,7 @@ func TestSessionEventsE2E_activeAttachReplaysPersistedToolTimeline(t *testing.T)
 	}
 
 	agent := e2eWeatherAgent(nil)
-	h.srv.loadSessionVersionFn = func(context.Context, *store.Queries, string) (*executor.Version, error) {
+	h.srv.loadSessionVersionFn = func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 		return executor.NewVersionWithProvider(agentVersionID, agent, providertest.DeltaCompleted()), nil
 	}
 

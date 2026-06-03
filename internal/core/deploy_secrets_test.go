@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func TestRuntime_Deploy_withSecrets(t *testing.T) {
+func TestRuntime_Publish_withSecretsManifestRefsOnly(t *testing.T) {
 	manifestJSON := deployManifestWithSecretsJSON(t)
 	storedJSON, err := manifestForStorage(mustParseDeployAgent(t, manifestJSON), manifestJSON)
 	if err != nil {
@@ -38,20 +38,14 @@ func TestRuntime_Deploy_withSecrets(t *testing.T) {
 	if !bytes.Equal(storedJSON, manifestJSON) {
 		t.Log("stored manifest is canonical ref-only JSON")
 	}
-	mock.ExpectExec(`INSERT INTO agent_version_secrets`).
-		WithArgs("version-uuid", "anthropic", 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
 	srv := &runtimeServer{db: db, secretsEnc: enc}
 	resp, err := srv.Publish(context.Background(), &runtimev1.PublishRequest{
 		Manifest: manifestJSON,
-		ResolvedSecrets: map[string][]byte{
-			"anthropic": []byte("sk-test-key"),
-		},
 	})
 	if err != nil {
-		t.Fatalf("Deploy: %v", err)
+		t.Fatalf("Publish: %v", err)
 	}
 	if resp.GetVersionId() != "version-uuid" {
 		t.Fatalf("version_id = %q, want version-uuid", resp.GetVersionId())
@@ -61,14 +55,14 @@ func TestRuntime_Deploy_withSecrets(t *testing.T) {
 	}
 }
 
-func TestPersistAgentVersionSecrets_noEncryptor(t *testing.T) {
+func TestPersistSessionSecrets_noEncryptor(t *testing.T) {
 	agent := &manifest.Agent{
 		Secrets: map[string]manifest.SecretDefinition{
 			"anthropic": {FromEnv: "ANTHROPIC_API_KEY"},
 		},
 	}
 	srv := &runtimeServer{}
-	err := srv.persistAgentVersionSecrets(context.Background(), nil, "version-uuid", agent, map[string][]byte{
+	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", agent, map[string][]byte{
 		"anthropic": []byte("sk-test"),
 	})
 	assertGRPCCode(t, err, codes.FailedPrecondition)
@@ -99,53 +93,53 @@ func TestValidateResolvedSecrets_emptyValue(t *testing.T) {
 	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
-func TestPersistAgentVersionSecrets_resolvedWithoutManifestSecrets(t *testing.T) {
+func TestPersistSessionSecrets_resolvedWithoutManifestSecrets(t *testing.T) {
 	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t)}
-	err := srv.persistAgentVersionSecrets(context.Background(), nil, "version-uuid", &manifest.Agent{}, map[string][]byte{
+	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", &manifest.Agent{}, map[string][]byte{
 		"anthropic": []byte("sk-test"),
 	})
 	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
-func TestPersistAgentVersionSecrets_noSecretsBlock(t *testing.T) {
+func TestPersistSessionSecrets_noSecretsBlock(t *testing.T) {
 	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t)}
-	err := srv.persistAgentVersionSecrets(context.Background(), nil, "version-uuid", &manifest.Agent{}, nil)
+	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", &manifest.Agent{}, nil)
 	if err != nil {
-		t.Fatalf("persistAgentVersionSecrets: %v", err)
+		t.Fatalf("persistSessionSecrets: %v", err)
 	}
 }
 
-func TestPersistAgentVersionSecrets_encryptsAndInserts(t *testing.T) {
+func TestPersistSessionSecrets_encryptsAndInserts(t *testing.T) {
 	agent := &manifest.Agent{
 		Secrets: map[string]manifest.SecretDefinition{
 			"anthropic": {FromEnv: "ANTHROPIC_API_KEY"},
 		},
 	}
 	db, mock := testSQLxDB(t)
-	mock.ExpectExec(`INSERT INTO agent_version_secrets`).
-		WithArgs("version-uuid", "anthropic", 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
+	mock.ExpectExec(`INSERT INTO session_secrets`).
+		WithArgs("session-id", "anthropic", 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t), db: db}
-	err := srv.persistAgentVersionSecrets(context.Background(), store.New(db), "version-uuid", agent, map[string][]byte{
+	err := srv.persistSessionSecrets(context.Background(), store.New(db), "session-id", agent, map[string][]byte{
 		"anthropic": []byte("sk-test-key"),
 	})
 	if err != nil {
-		t.Fatalf("persistAgentVersionSecrets: %v", err)
+		t.Fatalf("persistSessionSecrets: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}
 }
 
-func TestPersistAgentVersionSecrets_missingResolved(t *testing.T) {
+func TestPersistSessionSecrets_missingResolved(t *testing.T) {
 	agent := &manifest.Agent{
 		Secrets: map[string]manifest.SecretDefinition{
 			"anthropic": {FromEnv: "ANTHROPIC_API_KEY"},
 		},
 	}
 	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t)}
-	err := srv.persistAgentVersionSecrets(context.Background(), nil, "version-uuid", agent, nil)
+	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", agent, nil)
 	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 
@@ -220,6 +214,20 @@ func mustParseDeployAgent(t *testing.T, raw []byte) *manifest.Agent {
 		t.Fatalf("ParseJSON: %v", err)
 	}
 	return agent
+}
+
+func TestRuntime_finalizeSessionSecrets_purgesRows(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("sess-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	srv := &runtimeServer{db: db}
+	srv.finalizeSessionSecrets(context.Background(), store.New(db), "sess-1")
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
 }
 
 func mustTestEncryptor(t *testing.T) *secrets.Encryptor {

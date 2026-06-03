@@ -31,6 +31,7 @@ func (s *runtimeServer) CancelSession(ctx context.Context, req *runtimev1.Cancel
 	}
 
 	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionCancelled, json.RawMessage("{}"))
+	s.finalizeSessionSecrets(ctx, q, sessionID) // after audit event
 
 	s.cancelActiveSession(sessionID)
 	if s.toolRegistry != nil {

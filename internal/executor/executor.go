@@ -63,13 +63,17 @@ func NewVersionWithProvider(agentVersionID string, agent *manifest.Agent, p prov
 	}
 }
 
-// LoadVersion loads the ref-only manifest and provider credentials for a deployed version.
-func (e *Executor) LoadVersion(ctx context.Context, agentVersionID string) (*Version, error) {
+// LoadVersionForSession loads the ref-only manifest and provider credentials
+// decrypted from session-scoped secrets for the given session.
+func (e *Executor) LoadVersionForSession(ctx context.Context, sessionID, agentVersionID string) (*Version, error) {
 	if e == nil {
 		return nil, fmt.Errorf("executor is nil")
 	}
 	if e.Q == nil {
 		return nil, fmt.Errorf("database is not configured")
+	}
+	if sessionID == "" {
+		return nil, fmt.Errorf("session_id is required")
 	}
 	if agentVersionID == "" {
 		return nil, fmt.Errorf("agent_version_id is required")
@@ -88,7 +92,7 @@ func (e *Executor) LoadVersion(ctx context.Context, agentVersionID string) (*Ver
 		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
 
-	reg, err := provider.NewForAgentVersion(ctx, e.Enc, e.Q, agentVersionID, agent)
+	reg, err := provider.NewForSession(ctx, e.Enc, e.Q, sessionID, agent)
 	if err != nil {
 		return nil, err
 	}

@@ -47,7 +47,7 @@ func newInteractiveSessionState(
 	events sessionEventSink,
 	q *store.Queries,
 ) (*interactiveSessionState, error) {
-	dispatch, err := s.sessionToolDispatch(ctx, q, ver)
+	dispatch, err := s.sessionToolDispatch(ctx, q, sessionID, ver)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +220,7 @@ func (s *runtimeServer) failInteractiveSession(
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
 	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionFailed, marshalSessionEventJSON(map[string]string{"message": msg}))
+	s.finalizeSessionSecrets(ctx, q, sessionID)
 	_ = events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
 			Failed: &runtimev1.RunSessionInteractiveFailed{Message: msg},
@@ -246,6 +247,7 @@ func (s *runtimeServer) completeInteractiveSession(
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
 	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionCompleted, marshalSessionEventJSON(map[string]string{"stop_reason": stopReason}))
+	s.finalizeSessionSecrets(ctx, q, sessionID)
 	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
 			Completed: &runtimev1.RunSessionInteractiveCompleted{
@@ -299,10 +301,10 @@ func userTextFromSessionInput(input json.RawMessage) (string, error) {
 	return strings.TrimSpace(string(input)), nil
 }
 
-func (s *runtimeServer) loadSessionVersion(ctx context.Context, q *store.Queries, agentVersionID string) (*executor.Version, error) {
+func (s *runtimeServer) loadSessionVersion(ctx context.Context, q *store.Queries, sessionID, agentVersionID string) (*executor.Version, error) {
 	if s.loadSessionVersionFn != nil {
-		return s.loadSessionVersionFn(ctx, q, agentVersionID)
+		return s.loadSessionVersionFn(ctx, q, sessionID, agentVersionID)
 	}
 	ex := &executor.Executor{Enc: s.secretsEnc, Q: q}
-	return ex.LoadVersion(ctx, agentVersionID)
+	return ex.LoadVersionForSession(ctx, sessionID, agentVersionID)
 }

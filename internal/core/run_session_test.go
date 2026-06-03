@@ -14,12 +14,33 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+const runSessionTestManifestJSON = `{
+	"apiVersion":"phrony.com/v1",
+	"kind":"Agent",
+	"metadata":{"name":"echo-agent","namespace":"demo","version":"1.2.0"},
+	"spec":{
+		"purpose":"p",
+		"instructions":{"text":"System."},
+		"model":{"provider":"stub","name":"stub-script"}
+	}
+}`
+
+func expectCreateRunSessionMocks(mock sqlmock.Sqlmock, versionID string, input []byte) {
+	manifest := []byte(runSessionTestManifestJSON)
+	mock.ExpectQuery(`SELECT manifest`).
+		WithArgs(versionID).
+		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO sessions`).
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	mock.ExpectCommit()
+}
+
 func TestRuntime_RunSession_latestVersion(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte("{}"), model.SessionStatusRunning).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	expectCreateRunSessionMocks(mock, "version-uuid", []byte("{}"))
 
 	srv := &runtimeServer{
 		db: db,
@@ -48,9 +69,7 @@ func TestRuntime_RunSession_latestVersion(t *testing.T) {
 func TestRuntime_RunSession_specificVersion(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"q":"hi"}`), model.SessionStatusRunning).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	expectCreateRunSessionMocks(mock, "version-uuid", []byte(`{"q":"hi"}`))
 
 	srv := &runtimeServer{
 		db: db,

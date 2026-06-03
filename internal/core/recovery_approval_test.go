@@ -31,7 +31,7 @@ func TestReconcileRecoveredSession_awaitingApprovalParks(t *testing.T) {
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"},
 		},
 	}
-	srv.loadSessionVersionFn = func(context.Context, *store.Queries, string) (*executor.Version, error) {
+	srv.loadSessionVersionFn = func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 		return executor.NewVersionWithProvider("av-1", agent, providertest.DeltaCompleted()), nil
 	}
 

@@ -86,12 +86,14 @@ func decodeMasterKey(encoded string) ([]byte, error) {
 	return nil, fmt.Errorf("encryption key must be %d bytes encoded as base64 or hex", aesKeySize)
 }
 
-func associatedData(agentVersionID, secretName string) []byte {
-	return []byte(agentVersionID + "\x00" + secretName)
+// associatedData binds ciphertext to its scope (agent version id or session id)
+// and secret name so a payload cannot be replayed under a different scope/name.
+func associatedData(scopeID, secretName string) []byte {
+	return []byte(scopeID + "\x00" + secretName)
 }
 
-// Encrypt seals plaintext for the given agent version and secret name.
-func (e *Encryptor) Encrypt(agentVersionID, secretName string, plaintext []byte) (Encrypted, error) {
+// Encrypt seals plaintext, binding it to the given scope id and secret name.
+func (e *Encryptor) Encrypt(scopeID, secretName string, plaintext []byte) (Encrypted, error) {
 	if e == nil {
 		return Encrypted{}, errors.New("encryptor is not configured")
 	}
@@ -99,7 +101,7 @@ func (e *Encryptor) Encrypt(agentVersionID, secretName string, plaintext []byte)
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return Encrypted{}, fmt.Errorf("generate nonce: %w", err)
 	}
-	aad := associatedData(agentVersionID, secretName)
+	aad := associatedData(scopeID, secretName)
 	ciphertext := e.aead.Seal(nil, nonce, plaintext, aad)
 	return Encrypted{
 		KeyVersion: e.keyVersion,
@@ -108,15 +110,15 @@ func (e *Encryptor) Encrypt(agentVersionID, secretName string, plaintext []byte)
 	}, nil
 }
 
-// Decrypt opens an encrypted payload for the given agent version and secret name.
-func (e *Encryptor) Decrypt(agentVersionID, secretName string, enc Encrypted) ([]byte, error) {
+// Decrypt opens an encrypted payload bound to the given scope id and secret name.
+func (e *Encryptor) Decrypt(scopeID, secretName string, enc Encrypted) ([]byte, error) {
 	if e == nil {
 		return nil, errors.New("encryptor is not configured")
 	}
 	if enc.KeyVersion != e.keyVersion {
 		return nil, fmt.Errorf("unsupported key version %d", enc.KeyVersion)
 	}
-	aad := associatedData(agentVersionID, secretName)
+	aad := associatedData(scopeID, secretName)
 	plaintext, err := e.aead.Open(nil, enc.Nonce, enc.Ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt secret: %w", err)

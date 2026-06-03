@@ -35,13 +35,13 @@ func (c *recordingRuntimeClient) Rollback(context.Context, *runtimev1.RollbackRe
 	return nil, c.unexpected()
 }
 func (c *recordingRuntimeClient) GetActiveVersion(context.Context, *runtimev1.GetActiveVersionRequest, ...grpc.CallOption) (*runtimev1.GetActiveVersionResponse, error) {
-	return nil, c.unexpected()
+	return &runtimev1.GetActiveVersionResponse{Version: "1.2.0"}, nil
 }
 func (c *recordingRuntimeClient) ListDeployments(context.Context, *runtimev1.ListDeploymentsRequest, ...grpc.CallOption) (*runtimev1.ListDeploymentsResponse, error) {
 	return nil, c.unexpected()
 }
 func (c *recordingRuntimeClient) GetAgentVersion(context.Context, *runtimev1.GetAgentVersionRequest, ...grpc.CallOption) (*runtimev1.GetAgentVersionResponse, error) {
-	return nil, c.unexpected()
+	return &runtimev1.GetAgentVersionResponse{Manifest: []byte(runTestManifestJSON)}, nil
 }
 func (c *recordingRuntimeClient) RetireAgentVersion(context.Context, *runtimev1.RetireAgentVersionRequest, ...grpc.CallOption) (*runtimev1.RetireAgentVersionResponse, error) {
 	return nil, c.unexpected()
@@ -132,7 +132,7 @@ func TestRunAttachedSession_callsRunSessionThenAttachBySessionID(t *testing.T) {
 	}
 	input := []byte(`{"message":"hi"}`)
 
-	err = runAttachedSession(cmd, ptr("test-addr"), ref, input)
+	err = runAttachedSession(cmd, ptr("test-addr"), ref, input, nil)
 	// Attach replay of a failed session exits without error (read-only attach).
 	if err != nil {
 		t.Fatalf("runAttachedSession: %v", err)

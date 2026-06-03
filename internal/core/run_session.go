@@ -15,9 +15,8 @@ import (
 )
 
 func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessionRequest) (*runtimev1.RunSessionResponse, error) {
-	q, err := s.queries()
-	if err != nil {
-		return nil, err
+	if s.db == nil {
+		return nil, status.Error(codes.FailedPrecondition, "database is not configured")
 	}
 
 	inputJSON, err := normalizeSessionInput(req.GetInput())
@@ -30,7 +29,7 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 		return nil, err
 	}
 
-	sessionID, err := s.insertRunSession(ctx, q, agentVersionID, inputJSON)
+	sessionID, err := s.createRunSession(ctx, agentVersionID, inputJSON, req.GetResolvedSecrets())
 	if err != nil {
 		return nil, err
 	}
@@ -42,19 +41,6 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 		AgentVersionId: agentVersionID,
 		Status:         model.SessionStatusRunning,
 	}, nil
-}
-
-func (s *runtimeServer) insertRunSession(ctx context.Context, q *store.Queries, agentVersionID string, inputJSON json.RawMessage) (string, error) {
-	sessionID := newRunSessionID()
-	if _, err := q.InsertSession(ctx, store.InsertSessionParams{
-		ID:             sessionID,
-		AgentVersionID: agentVersionID,
-		Input:          inputJSON,
-		Status:         model.SessionStatusRunning,
-	}); err != nil {
-		return "", status.Errorf(codes.Internal, "persist session: %v", err)
-	}
-	return sessionID, nil
 }
 
 func resolveAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.AgentRef) (string, error) {

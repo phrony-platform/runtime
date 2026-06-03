@@ -74,7 +74,7 @@ func TestRuntime_RunSessionBackground_recordsSessionEvidence(t *testing.T) {
 	}
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}

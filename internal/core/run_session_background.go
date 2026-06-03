@@ -51,7 +51,7 @@ func (s *runtimeServer) runSessionBackground(
 		return
 	}
 
-	ver, err := s.loadSessionVersion(ctx, q, agentVersionID)
+	ver, err := s.loadSessionVersion(ctx, q, sessionID, agentVersionID)
 	if err != nil {
 		_ = s.failInteractiveSession(ctx, q, events, sessionID, err)
 		return
@@ -67,7 +67,7 @@ func (s *runtimeServer) runSessionBackground(
 		s.scheduleWallClockExpiry(sessionID, time.Duration(maxSec)*time.Second, onLimit)
 	}
 
-	dispatch, err := s.sessionToolDispatch(ctx, q, ver)
+	dispatch, err := s.sessionToolDispatch(ctx, q, sessionID, ver)
 	if err != nil {
 		_ = s.failInteractiveSession(ctx, q, events, sessionID, err)
 		return
@@ -194,11 +194,13 @@ func (s *runtimeServer) expireWallClockSession(sessionID, onLimit string) {
 	}
 	msg := (&executor.LimitError{Kind: executor.LimitMaxWallClockSeconds, OnLimit: onLimit}).Error()
 	errText := msg
-	_, _ = q.UpdateSession(context.Background(), store.UpdateSessionParams{
+	ctx := context.Background()
+	_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{
 		ID:     sessionID,
 		Status: model.SessionStatusFailed,
 		Error:  &errText,
 	})
+	s.finalizeSessionSecrets(ctx, q, sessionID)
 }
 
 // persistDetachedSessionAfterTurn stores a completed detached turn and parks the

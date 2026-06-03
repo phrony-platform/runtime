@@ -68,9 +68,7 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 	db, mock := testSQLxDB(t)
 	mock.MatchExpectationsInOrder(false)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"one"}`), model.SessionStatusRunning).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
+	expectCreateRunSessionMocks(mock, "version-uuid", []byte(`{"message":"one"}`))
 	expectGetRunningSessionForAttach(mock, "version-uuid", []byte(`{"message":"one"}`))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
@@ -100,7 +98,7 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
@@ -135,9 +133,7 @@ func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.
 	db, mock := testSQLxDB(t)
 	mock.MatchExpectationsInOrder(false)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte(`{"message":"one"}`), model.SessionStatusRunning).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
+	expectCreateRunSessionMocks(mock, "version-uuid", []byte(`{"message":"one"}`))
 	expectGetRunningSessionForAttach(mock, "version-uuid", []byte(`{"message":"one"}`))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
@@ -170,7 +166,7 @@ func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
@@ -229,7 +225,7 @@ func TestRuntime_RunSessionInteractive_attachOverTokenLimitBlocksInput(t *testin
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
@@ -292,7 +288,7 @@ func TestRuntime_RunSessionInteractive_attachFailedRunLimitBlocked(t *testing.T)
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}
@@ -359,7 +355,7 @@ func TestRuntime_RunSessionInteractive_wallClockExpiredAttachIsTerminal(t *testi
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 10, OutputTokens: 5})), nil
 		},
 	}

@@ -52,7 +52,7 @@ func TestRuntime_RunSessionInteractive_attachReconcilesStaleRunningWallClock(t *
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.UsageCompleted(provider.TokenUsage{InputTokens: 1, OutputTokens: 1})), nil
 		},
 	}

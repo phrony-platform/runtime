@@ -77,9 +77,7 @@ func TestRuntime_RunSessionInteractive_noDatabase(t *testing.T) {
 func TestRuntime_RunSessionInteractive_sessionStartedThenFailedOnLoad(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "version-uuid", []byte("{}"), model.SessionStatusRunning).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
+	expectCreateRunSessionMocks(mock, "version-uuid", []byte("{}"))
 	mock.ExpectQuery(`SELECT manifest`).
 		WithArgs("version-uuid").
 		WillReturnError(sql.ErrNoRows)
@@ -236,6 +234,9 @@ func TestRuntime_completeInteractiveSession(t *testing.T) {
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs("sess-1", model.SessionStatusCompleted, output, nil, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("sess-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	srv := &runtimeServer{db: db}
@@ -258,6 +259,9 @@ func TestRuntime_failInteractiveSession(t *testing.T) {
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs("sess-1", model.SessionStatusFailed, nil, errMsg, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("sess-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	srv := &runtimeServer{db: db}
@@ -385,7 +389,7 @@ func TestRuntime_RunSessionInteractive_attachCompleted(t *testing.T) {
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -446,7 +450,7 @@ func TestRuntime_RunSessionInteractive_attachCompletedRejectsUserMessage(t *test
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -497,7 +501,7 @@ func TestRuntime_RunSessionInteractive_attachAwaitingInputContinues(t *testing.T
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
 		},
 	}
@@ -637,7 +641,7 @@ func TestRuntime_RunSessionInteractive_attachInvalidHistory(t *testing.T) {
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -668,7 +672,7 @@ func TestRuntime_RunSessionInteractive_attachFailed(t *testing.T) {
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -718,7 +722,7 @@ func TestRuntime_RunSessionInteractive_attachCancelled(t *testing.T) {
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -775,7 +779,7 @@ func TestRuntime_RunSessionInteractive_attachFailedRejectsUserMessage(t *testing
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -803,7 +807,7 @@ func TestRuntime_RunSessionInteractive_attachRunningReplaysLiveAssistant(t *test
 	}
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -885,7 +889,7 @@ func TestRuntime_RunSessionInteractive_attachRunningSubscribesToActiveDriver(t *
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -976,7 +980,7 @@ func TestRuntime_RunSessionInteractive_attachRunningFanOutToMultipleSubscribers(
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -1070,7 +1074,7 @@ func TestRuntime_RunSessionInteractive_detachThenReattachReceivesHubEvents(t *te
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil
@@ -1207,7 +1211,7 @@ func TestRuntime_RunSessionInteractive_attachDetachDeliversInboundToDriver(t *te
 
 	srv := &runtimeServer{
 		db: db,
-		loadSessionVersionFn: func(context.Context, *store.Queries, string) (*executor.Version, error) {
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
 			return executor.NewVersionWithProvider("version-uuid", &manifest.Agent{
 				Spec: manifest.AgentSpec{Model: manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"}},
 			}, providertest.DeltaCompleted()), nil

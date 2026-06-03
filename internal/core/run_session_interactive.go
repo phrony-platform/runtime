@@ -53,7 +53,7 @@ func (s *runtimeServer) RunSessionInteractive(stream runtimev1.Runtime_RunSessio
 		return err
 	}
 
-	return s.runSessionInteractiveStartWithAgentRef(ctx, stream, q, ref, inputJSON)
+	return s.runSessionInteractiveStartWithAgentRef(ctx, stream, q, ref, inputJSON, start.GetResolvedSecrets())
 }
 
 // runSessionInteractiveStartWithAgentRef starts a session the same way as RunSession
@@ -64,18 +64,19 @@ func (s *runtimeServer) runSessionInteractiveStartWithAgentRef(
 	q *store.Queries,
 	ref *runtimev1.AgentRef,
 	inputJSON json.RawMessage,
+	resolvedSecrets map[string][]byte,
 ) error {
 	agentVersionID, err := resolveAgentVersionID(ctx, s.db.DB, ref)
 	if err != nil {
 		return err
 	}
 
-	sessionID, err := s.insertRunSession(ctx, q, agentVersionID, inputJSON)
+	sessionID, err := s.createRunSession(ctx, agentVersionID, inputJSON, resolvedSecrets)
 	if err != nil {
 		return err
 	}
 
-	if _, err := s.loadSessionVersion(ctx, q, agentVersionID); err != nil {
+	if _, err := s.loadSessionVersion(ctx, q, sessionID, agentVersionID); err != nil {
 		return s.failInteractiveSession(ctx, q, sessionEventsFromStream(stream), sessionID, err)
 	}
 
@@ -110,7 +111,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	defer sessionCancel()
 	events := sessionEventsFromStream(stream)
 
-	ver, err := s.loadSessionVersion(sessionCtx, q, session.AgentVersionID)
+	ver, err := s.loadSessionVersion(sessionCtx, q, sessionID, session.AgentVersionID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "load agent version: %v", err)
 	}

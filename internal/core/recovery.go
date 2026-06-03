@@ -37,10 +37,11 @@ func (s *runtimeServer) reconcileSessionsOnStartup(ctx context.Context) {
 		}
 		s.reconcileRecoveredSession(ctx, q, session)
 	}
+	s.purgeOrphanedTerminalSessionSecrets(ctx)
 }
 
 func (s *runtimeServer) reconcileRecoveredSession(ctx context.Context, q *store.Queries, session store.Session) {
-	ver, err := s.loadSessionVersion(ctx, q, session.AgentVersionID)
+	ver, err := s.loadSessionVersion(ctx, q, session.ID, session.AgentVersionID)
 	if err != nil {
 		slog.Error("recovery: load agent version", "session_id", session.ID, "error", err)
 		return
@@ -87,7 +88,7 @@ func (s *runtimeServer) recoverDetachedSession(sessionID string) {
 		return
 	}
 
-	ver, err := s.loadSessionVersion(ctx, q, session.AgentVersionID)
+	ver, err := s.loadSessionVersion(ctx, q, sessionID, session.AgentVersionID)
 	if err != nil {
 		_ = s.failDetachedSession(ctx, q, sessionID, err)
 		return
@@ -168,7 +169,7 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 	if s.toolDispatch == nil {
 		return errors.New("tool dispatch is not configured")
 	}
-	dispatch, err := s.sessionToolDispatch(ctx, q, ver)
+	dispatch, err := s.sessionToolDispatch(ctx, q, session.ID, ver)
 	if err != nil {
 		return err
 	}
@@ -317,7 +318,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 	}
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
 	defer sessionCancel()
-	dispatch, err := s.sessionToolDispatch(sessionCtx, q, ver)
+	dispatch, err := s.sessionToolDispatch(sessionCtx, q, session.ID, ver)
 	if err != nil {
 		return err
 	}
@@ -399,6 +400,9 @@ func (s *runtimeServer) failDetachedSession(ctx context.Context, q *store.Querie
 		Status: model.SessionStatusFailed,
 		Error:  &errText,
 	})
+	if err == nil {
+		s.finalizeSessionSecrets(ctx, q, sessionID)
+	}
 	return err
 }
 

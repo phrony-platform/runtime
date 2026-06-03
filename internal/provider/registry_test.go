@@ -38,10 +38,10 @@ func TestRegistry_ModelProvider(t *testing.T) {
 	}
 }
 
-func TestNewForAgentVersion_decryptsModelSecret(t *testing.T) {
+func TestNewForSession_decryptsModelSecret(t *testing.T) {
 	enc := mustTestEncryptor(t)
 	plaintext := []byte("sk-test-key")
-	sealed, err := enc.Encrypt("version-uuid", "anthropic", plaintext)
+	sealed, err := enc.Encrypt("session-id", "anthropic", plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -53,14 +53,14 @@ func TestNewForAgentVersion_decryptsModelSecret(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("version-uuid", "anthropic").
+		WithArgs("session-id", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
 	agent := testAgentWithSecrets()
-	reg, err := NewForAgentVersion(context.Background(), enc, store.New(db), "version-uuid", agent)
+	reg, err := NewForSession(context.Background(), enc, store.New(db), "session-id", agent)
 	if err != nil {
-		t.Fatalf("NewForAgentVersion: %v", err)
+		t.Fatalf("NewForSession: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -85,7 +85,7 @@ func TestAPIKeyForModel_noSecrets(t *testing.T) {
 func TestAPIKeyForModel_success(t *testing.T) {
 	enc := mustTestEncryptor(t)
 	plaintext := []byte("sk-test-key")
-	sealed, err := enc.Encrypt("version-uuid", "anthropic", plaintext)
+	sealed, err := enc.Encrypt("session-id", "anthropic", plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -97,11 +97,11 @@ func TestAPIKeyForModel_success(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("version-uuid", "anthropic").
+		WithArgs("session-id", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
-	key, err := APIKeyForModel(context.Background(), enc, store.New(db), "version-uuid", testAgentWithSecrets())
+	key, err := APIKeyForModel(context.Background(), enc, store.New(db), "session-id", testAgentWithSecrets())
 	if err != nil {
 		t.Fatalf("APIKeyForModel: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestAPIKeyForModel_noEncryptor(t *testing.T) {
 
 func TestAPIKeyForModel_emptySecret(t *testing.T) {
 	enc := mustTestEncryptor(t)
-	sealed, err := enc.Encrypt("version-uuid", "anthropic", []byte("   "))
+	sealed, err := enc.Encrypt("session-id", "anthropic", []byte("   "))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -138,11 +138,11 @@ func TestAPIKeyForModel_emptySecret(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("version-uuid", "anthropic").
+		WithArgs("session-id", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
-	_, err = APIKeyForModel(context.Background(), enc, store.New(db), "version-uuid", testAgentWithSecrets())
+	_, err = APIKeyForModel(context.Background(), enc, store.New(db), "session-id", testAgentWithSecrets())
 	if err == nil {
 		t.Fatal("APIKeyForModel() = nil, want error")
 	}
@@ -171,14 +171,14 @@ func TestAPIKeyForModel_missingRow(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("version-uuid", "anthropic").
+		WithArgs("session-id", "anthropic").
 		WillReturnError(sql.ErrNoRows)
 
 	_, err = APIKeyForModel(
 		context.Background(),
 		mustTestEncryptor(t),
 		store.New(db),
-		"version-uuid",
+		"session-id",
 		testAgentWithSecrets(),
 	)
 	if err == nil {
