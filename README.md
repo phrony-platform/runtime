@@ -1,7 +1,7 @@
-<p align="center" style="padding-top: 2rem; padding-bottom: 2rem;">
+<p style="display: block; width: 100%; padding-top: 2rem; padding-bottom: 2rem;">
   <picture>
     <source srcset="assets/phrony-runtime-logo.png">
-    <img alt="Phrony" src="assets/logo-dark.png" width="400">
+    <img alt="Phrony" src="assets/logo-dark.png" style="width: 100%; max-width: 600px; display: block; margin: 0 auto;">
   </picture>
 </p>
 
