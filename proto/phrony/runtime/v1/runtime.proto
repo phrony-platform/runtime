@@ -12,9 +12,12 @@ service Runtime {
   // session_started, text_delta, awaiting_input, completed, or failed.
   rpc RunSessionInteractive(stream RunSessionInteractiveClientMsg) returns (stream RunSessionInteractiveServerMsg);
   rpc Publish(PublishRequest) returns (PublishResponse);
+  rpc PublishBundle(PublishBundleRequest) returns (PublishBundleResponse);
   rpc Deploy(DeployRequest) returns (DeployResponse);
+  rpc DeployBundle(DeployBundleRequest) returns (DeployBundleResponse);
   rpc Rollback(RollbackRequest) returns (RollbackResponse);
   rpc GetActiveVersion(GetActiveVersionRequest) returns (GetActiveVersionResponse);
+  rpc GetActiveBundle(GetActiveBundleRequest) returns (GetActiveBundleResponse);
   rpc ListDeployments(ListDeploymentsRequest) returns (ListDeploymentsResponse);
   rpc GetAgentVersion(GetAgentVersionRequest) returns (GetAgentVersionResponse);
   rpc RetireAgentVersion(RetireAgentVersionRequest) returns (RetireAgentVersionResponse);
@@ -49,6 +52,14 @@ message AgentRef {
   string version = 3;
 }
 
+// BundleRef identifies a published bundle. version is the lockfile hash (sha256:…).
+// For run/deploy, an empty version resolves the active bundle deployment.
+message BundleRef {
+  string namespace = 1;
+  string name = 2;
+  string version = 3;
+}
+
 message RunSessionRequest {
   AgentRef agent_ref = 1;
   // JSON object with session inputs (opaque to the runtime until execution).
@@ -56,6 +67,8 @@ message RunSessionRequest {
   // Resolved secret values keyed by secrets.<name>. Required for every manifest
   // secret when starting a session. Never logged or stored in manifest JSONB.
   map<string, bytes> resolved_secrets = 3;
+  // When set, runs the bundle root member from the deployed bundle closure.
+  BundleRef bundle_ref = 4;
 }
 
 message RunSessionResponse {
@@ -82,6 +95,8 @@ message RunSessionInteractiveStart {
   string session_id = 3;
   // Resolved secret values for a new session (same semantics as RunSessionRequest).
   map<string, bytes> resolved_secrets = 4;
+  // When set, runs the bundle root member from the deployed bundle closure.
+  BundleRef bundle_ref = 5;
 }
 
 message RunSessionInteractiveUserMessage {
@@ -251,6 +266,35 @@ message PublishResponse {
   string version = 6;
 }
 
+message BundleMemberPackage {
+  string child_name = 1;
+  // vendored or external
+  string origin = 2;
+  // Bundle-relative path or namespace/name@version pin from authoring.
+  string authoring_ref = 3;
+  bytes resolved_manifest = 4;
+  bool is_root = 5;
+  // Set for external members: existing published agent_version id.
+  string member_version_id = 6;
+}
+
+message PublishBundleRequest {
+  bytes bundle_manifest = 1;
+  repeated BundleMemberPackage members = 2;
+  // Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
+  string actor = 3;
+}
+
+message PublishBundleResponse {
+  string bundle_id = 1;
+  string bundle_version_id = 2;
+  string lock_hash = 3;
+  string namespace = 4;
+  string name = 5;
+  // Canonical lockfile JSON emitted at publish.
+  bytes lock = 6;
+}
+
 message DeployRequest {
   AgentRef agent_ref = 1;
   // Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
@@ -262,6 +306,22 @@ message DeployResponse {
   string name = 2;
   string version = 3;
   // Version that was active before this deployment; empty on first deploy.
+  string previous_version = 4;
+  string deployed_at = 5;  // RFC3339
+}
+
+message DeployBundleRequest {
+  BundleRef bundle_ref = 1;
+  // Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
+  string actor = 2;
+}
+
+message DeployBundleResponse {
+  string namespace = 1;
+  string name = 2;
+  // Lockfile hash of the deployed bundle version.
+  string version = 3;
+  // Lock hash that was active before this deployment; empty on first deploy.
   string previous_version = 4;
   string deployed_at = 5;  // RFC3339
 }
@@ -283,6 +343,17 @@ message GetActiveVersionRequest {
 }
 
 message GetActiveVersionResponse {
+  string version = 1;
+  string deployed_at = 2;  // RFC3339
+  string actor = 3;
+}
+
+message GetActiveBundleRequest {
+  BundleRef bundle_ref = 1;
+}
+
+message GetActiveBundleResponse {
+  // Lockfile hash of the active bundle deployment.
   string version = 1;
   string deployed_at = 2;  // RFC3339
   string actor = 3;

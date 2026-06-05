@@ -23,9 +23,12 @@ const (
 	Runtime_RunSession_FullMethodName            = "/phrony.runtime.v1.Runtime/RunSession"
 	Runtime_RunSessionInteractive_FullMethodName = "/phrony.runtime.v1.Runtime/RunSessionInteractive"
 	Runtime_Publish_FullMethodName               = "/phrony.runtime.v1.Runtime/Publish"
+	Runtime_PublishBundle_FullMethodName         = "/phrony.runtime.v1.Runtime/PublishBundle"
 	Runtime_Deploy_FullMethodName                = "/phrony.runtime.v1.Runtime/Deploy"
+	Runtime_DeployBundle_FullMethodName          = "/phrony.runtime.v1.Runtime/DeployBundle"
 	Runtime_Rollback_FullMethodName              = "/phrony.runtime.v1.Runtime/Rollback"
 	Runtime_GetActiveVersion_FullMethodName      = "/phrony.runtime.v1.Runtime/GetActiveVersion"
+	Runtime_GetActiveBundle_FullMethodName       = "/phrony.runtime.v1.Runtime/GetActiveBundle"
 	Runtime_ListDeployments_FullMethodName       = "/phrony.runtime.v1.Runtime/ListDeployments"
 	Runtime_GetAgentVersion_FullMethodName       = "/phrony.runtime.v1.Runtime/GetAgentVersion"
 	Runtime_RetireAgentVersion_FullMethodName    = "/phrony.runtime.v1.Runtime/RetireAgentVersion"
@@ -54,9 +57,12 @@ type RuntimeClient interface {
 	// session_started, text_delta, awaiting_input, completed, or failed.
 	RunSessionInteractive(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg], error)
 	Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*PublishResponse, error)
+	PublishBundle(ctx context.Context, in *PublishBundleRequest, opts ...grpc.CallOption) (*PublishBundleResponse, error)
 	Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error)
+	DeployBundle(ctx context.Context, in *DeployBundleRequest, opts ...grpc.CallOption) (*DeployBundleResponse, error)
 	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
 	GetActiveVersion(ctx context.Context, in *GetActiveVersionRequest, opts ...grpc.CallOption) (*GetActiveVersionResponse, error)
+	GetActiveBundle(ctx context.Context, in *GetActiveBundleRequest, opts ...grpc.CallOption) (*GetActiveBundleResponse, error)
 	ListDeployments(ctx context.Context, in *ListDeploymentsRequest, opts ...grpc.CallOption) (*ListDeploymentsResponse, error)
 	GetAgentVersion(ctx context.Context, in *GetAgentVersionRequest, opts ...grpc.CallOption) (*GetAgentVersionResponse, error)
 	RetireAgentVersion(ctx context.Context, in *RetireAgentVersionRequest, opts ...grpc.CallOption) (*RetireAgentVersionResponse, error)
@@ -127,10 +133,30 @@ func (c *runtimeClient) Publish(ctx context.Context, in *PublishRequest, opts ..
 	return out, nil
 }
 
+func (c *runtimeClient) PublishBundle(ctx context.Context, in *PublishBundleRequest, opts ...grpc.CallOption) (*PublishBundleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublishBundleResponse)
+	err := c.cc.Invoke(ctx, Runtime_PublishBundle_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeployResponse)
 	err := c.cc.Invoke(ctx, Runtime_Deploy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) DeployBundle(ctx context.Context, in *DeployBundleRequest, opts ...grpc.CallOption) (*DeployBundleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeployBundleResponse)
+	err := c.cc.Invoke(ctx, Runtime_DeployBundle_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +177,16 @@ func (c *runtimeClient) GetActiveVersion(ctx context.Context, in *GetActiveVersi
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetActiveVersionResponse)
 	err := c.cc.Invoke(ctx, Runtime_GetActiveVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) GetActiveBundle(ctx context.Context, in *GetActiveBundleRequest, opts ...grpc.CallOption) (*GetActiveBundleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActiveBundleResponse)
+	err := c.cc.Invoke(ctx, Runtime_GetActiveBundle_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -312,9 +348,12 @@ type RuntimeServer interface {
 	// session_started, text_delta, awaiting_input, completed, or failed.
 	RunSessionInteractive(grpc.BidiStreamingServer[RunSessionInteractiveClientMsg, RunSessionInteractiveServerMsg]) error
 	Publish(context.Context, *PublishRequest) (*PublishResponse, error)
+	PublishBundle(context.Context, *PublishBundleRequest) (*PublishBundleResponse, error)
 	Deploy(context.Context, *DeployRequest) (*DeployResponse, error)
+	DeployBundle(context.Context, *DeployBundleRequest) (*DeployBundleResponse, error)
 	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
 	GetActiveVersion(context.Context, *GetActiveVersionRequest) (*GetActiveVersionResponse, error)
+	GetActiveBundle(context.Context, *GetActiveBundleRequest) (*GetActiveBundleResponse, error)
 	ListDeployments(context.Context, *ListDeploymentsRequest) (*ListDeploymentsResponse, error)
 	GetAgentVersion(context.Context, *GetAgentVersionRequest) (*GetAgentVersionResponse, error)
 	RetireAgentVersion(context.Context, *RetireAgentVersionRequest) (*RetireAgentVersionResponse, error)
@@ -354,14 +393,23 @@ func (UnimplementedRuntimeServer) RunSessionInteractive(grpc.BidiStreamingServer
 func (UnimplementedRuntimeServer) Publish(context.Context, *PublishRequest) (*PublishResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Publish not implemented")
 }
+func (UnimplementedRuntimeServer) PublishBundle(context.Context, *PublishBundleRequest) (*PublishBundleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishBundle not implemented")
+}
 func (UnimplementedRuntimeServer) Deploy(context.Context, *DeployRequest) (*DeployResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Deploy not implemented")
+}
+func (UnimplementedRuntimeServer) DeployBundle(context.Context, *DeployBundleRequest) (*DeployBundleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeployBundle not implemented")
 }
 func (UnimplementedRuntimeServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Rollback not implemented")
 }
 func (UnimplementedRuntimeServer) GetActiveVersion(context.Context, *GetActiveVersionRequest) (*GetActiveVersionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetActiveVersion not implemented")
+}
+func (UnimplementedRuntimeServer) GetActiveBundle(context.Context, *GetActiveBundleRequest) (*GetActiveBundleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActiveBundle not implemented")
 }
 func (UnimplementedRuntimeServer) ListDeployments(context.Context, *ListDeploymentsRequest) (*ListDeploymentsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDeployments not implemented")
@@ -487,6 +535,24 @@ func _Runtime_Publish_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_PublishBundle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishBundleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).PublishBundle(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_PublishBundle_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).PublishBundle(ctx, req.(*PublishBundleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Runtime_Deploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeployRequest)
 	if err := dec(in); err != nil {
@@ -501,6 +567,24 @@ func _Runtime_Deploy_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).Deploy(ctx, req.(*DeployRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_DeployBundle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeployBundleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).DeployBundle(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_DeployBundle_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).DeployBundle(ctx, req.(*DeployBundleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -537,6 +621,24 @@ func _Runtime_GetActiveVersion_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).GetActiveVersion(ctx, req.(*GetActiveVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_GetActiveBundle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActiveBundleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).GetActiveBundle(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_GetActiveBundle_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).GetActiveBundle(ctx, req.(*GetActiveBundleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -802,8 +904,16 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Runtime_Publish_Handler,
 		},
 		{
+			MethodName: "PublishBundle",
+			Handler:    _Runtime_PublishBundle_Handler,
+		},
+		{
 			MethodName: "Deploy",
 			Handler:    _Runtime_Deploy_Handler,
+		},
+		{
+			MethodName: "DeployBundle",
+			Handler:    _Runtime_DeployBundle_Handler,
 		},
 		{
 			MethodName: "Rollback",
@@ -812,6 +922,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetActiveVersion",
 			Handler:    _Runtime_GetActiveVersion_Handler,
+		},
+		{
+			MethodName: "GetActiveBundle",
+			Handler:    _Runtime_GetActiveBundle_Handler,
 		},
 		{
 			MethodName: "ListDeployments",

@@ -28,7 +28,13 @@ func (c *recordingRuntimeClient) GetVersion(context.Context, *runtimev1.GetVersi
 func (c *recordingRuntimeClient) Publish(context.Context, *runtimev1.PublishRequest, ...grpc.CallOption) (*runtimev1.PublishResponse, error) {
 	return nil, c.unexpected()
 }
+func (c *recordingRuntimeClient) PublishBundle(context.Context, *runtimev1.PublishBundleRequest, ...grpc.CallOption) (*runtimev1.PublishBundleResponse, error) {
+	return nil, c.unexpected()
+}
 func (c *recordingRuntimeClient) Deploy(context.Context, *runtimev1.DeployRequest, ...grpc.CallOption) (*runtimev1.DeployResponse, error) {
+	return nil, c.unexpected()
+}
+func (c *recordingRuntimeClient) DeployBundle(context.Context, *runtimev1.DeployBundleRequest, ...grpc.CallOption) (*runtimev1.DeployBundleResponse, error) {
 	return nil, c.unexpected()
 }
 func (c *recordingRuntimeClient) Rollback(context.Context, *runtimev1.RollbackRequest, ...grpc.CallOption) (*runtimev1.RollbackResponse, error) {
@@ -36,6 +42,9 @@ func (c *recordingRuntimeClient) Rollback(context.Context, *runtimev1.RollbackRe
 }
 func (c *recordingRuntimeClient) GetActiveVersion(context.Context, *runtimev1.GetActiveVersionRequest, ...grpc.CallOption) (*runtimev1.GetActiveVersionResponse, error) {
 	return &runtimev1.GetActiveVersionResponse{Version: "1.2.0"}, nil
+}
+func (c *recordingRuntimeClient) GetActiveBundle(context.Context, *runtimev1.GetActiveBundleRequest, ...grpc.CallOption) (*runtimev1.GetActiveBundleResponse, error) {
+	return nil, c.unexpected()
 }
 func (c *recordingRuntimeClient) ListDeployments(context.Context, *runtimev1.ListDeploymentsRequest, ...grpc.CallOption) (*runtimev1.ListDeploymentsResponse, error) {
 	return nil, c.unexpected()
