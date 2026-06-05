@@ -2,10 +2,12 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/manifest"
@@ -198,7 +200,7 @@ func (d *agentDispatcher) runChild(ctx context.Context, call tooldispatch.ToolCa
 
 	inputJSON := childInputFromArgs(call.Args)
 
-	childSessionID, err := s.createChildSession(ctx, q, d.parentSessionID, agentVersionID, inputJSON)
+	childSessionID, err := s.createChildSession(ctx, q, d.parentSessionID, call.CallID, agentVersionID, inputJSON, childDepth)
 	if err != nil {
 		var missing *missingSecretError
 		if errors.As(err, &missing) {
@@ -207,17 +209,35 @@ func (d *agentDispatcher) runChild(ctx context.Context, call tooldispatch.ToolCa
 		return tooldispatch.ToolResult{}, err
 	}
 
-	ver, err := s.loadSessionVersion(ctx, q, childSessionID, agentVersionID)
+	// On recovery the resumed child may already be terminal; only drive it when
+	// it still needs to advance, then read its outcome either way.
+	child, err := q.GetSession(ctx, childSessionID)
 	if err != nil {
-		s.failChildSession(ctx, q, childSessionID, err.Error())
-		return subagentToolError(call.CallID, "subagent_load_failed", err.Error()), nil
+		return tooldispatch.ToolResult{}, fmt.Errorf("load subagent session: %w", err)
 	}
-
-	if err := s.runChildSessionToCompletion(ctx, q, childSessionID, agentVersionID, ver, inputJSON, childDepth); err != nil {
-		return tooldispatch.ToolResult{}, fmt.Errorf("run subagent session: %w", err)
+	if !sessionStatusTerminal(child.Status) {
+		ver, err := s.loadSessionVersion(ctx, q, childSessionID, agentVersionID)
+		if err != nil {
+			s.failChildSession(ctx, q, childSessionID, err.Error())
+			return subagentToolError(call.CallID, "subagent_load_failed", err.Error()), nil
+		}
+		if err := s.runChildSessionToCompletion(ctx, q, childSessionID, agentVersionID, ver, inputJSON, childDepth); err != nil {
+			return tooldispatch.ToolResult{}, fmt.Errorf("run subagent session: %w", err)
+		}
 	}
 
 	return d.childResult(ctx, q, call.CallID, childSessionID, binding.result)
+}
+
+// childSessionNamespace seeds deterministic child session ids derived from the
+// originating tool call id, so an interrupted delegation resumes the same
+// durable child on recovery instead of spawning a duplicate.
+var childSessionNamespace = uuid.MustParse("b3f2a1c0-1d4e-4f6a-9c2b-7e8d9a0b1c2d")
+
+// childSessionID returns the stable session id for the child spawned by a tool
+// call. It is a pure function of the call id so recovery can locate the child.
+func childSessionID(callID string) string {
+	return "run_" + uuid.NewSHA1(childSessionNamespace, []byte(callID)).String()
 }
 
 // childResult reads the finished child session and maps it to a tool result:
@@ -296,14 +316,25 @@ func newClosedChildInputStream(ctx context.Context) *sessionInputMux {
 	return m
 }
 
-// createChildSession persists a nested child session that inherits the parent
-// session's secrets by name, returning the new session id.
+// createChildSession returns the durable child session for a delegation tool
+// call, creating it (with inherited parent secrets, parent linkage, and depth)
+// when absent. The session id is derived from the call id, so a delegation that
+// is replayed during recovery reuses the existing child rather than spawning a
+// duplicate.
 func (s *runtimeServer) createChildSession(
 	ctx context.Context,
 	q *store.Queries,
-	parentSessionID, agentVersionID string,
+	parentSessionID, callID, agentVersionID string,
 	inputJSON json.RawMessage,
+	depth int,
 ) (string, error) {
+	childID := childSessionID(callID)
+	if existing, err := q.GetSession(ctx, childID); err == nil {
+		return existing.ID, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+
 	agent, err := loadAgentManifestForVersion(ctx, q, agentVersionID)
 	if err != nil {
 		return "", err
@@ -313,7 +344,7 @@ func (s *runtimeServer) createChildSession(
 		return "", err
 	}
 	defer zeroSecretValues(resolved)
-	return s.createRunSession(ctx, agentVersionID, inputJSON, resolved)
+	return s.createChildRunSession(ctx, childID, parentSessionID, agentVersionID, inputJSON, resolved, depth)
 }
 
 // inheritSessionSecrets resolves the secrets the child agent declares by copying

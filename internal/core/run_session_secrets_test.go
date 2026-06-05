@@ -27,7 +27,7 @@ func expectCreateRunSessionWithSecretsMocks(t *testing.T, mock sqlmock.Sqlmock, 
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning).
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
 	mock.ExpectExec(`INSERT INTO session_secrets`).
 		WithArgs(sqlmock.AnyArg(), "anthropic", 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
@@ -43,7 +43,7 @@ func expectCreateRunSessionMissingSecretsMocks(t *testing.T, mock sqlmock.Sqlmoc
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning).
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
 	mock.ExpectRollback()
 }

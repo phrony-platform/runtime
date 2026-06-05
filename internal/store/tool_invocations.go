@@ -342,10 +342,14 @@ func (q *Queries) ListUnfinishedInvocationsBySession(ctx context.Context, sessio
 	return out, rows.Err()
 }
 
+// listSessionsForRecovery returns only top-level (non-delegated) sessions:
+// nested child sessions spawned by agent delegation are recovered by re-driving
+// their parent's delegation, so they must not be independently re-driven here.
 const listSessionsForRecovery = `
 SELECT id, agent_version_id, input, status, output, error, history, created_at, updated_at
 FROM sessions
 WHERE status IN ('pending', 'running', 'awaiting_tool', 'awaiting_approval')
+  AND parent_session_id IS NULL
 ORDER BY created_at ASC
 `
 

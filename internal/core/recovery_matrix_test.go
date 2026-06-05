@@ -108,7 +108,7 @@ func TestRecoverDispatchedInvocation_completedInLedger(t *testing.T) {
 	err := srv.recoverDispatchedInvocation(
 		context.Background(), q, "sess-1", call,
 		manifest.SideEffectReadOnly, 50*time.Millisecond,
-		policy.NewEvaluator(e2eWeatherAgent(nil)), srv.toolDispatch,
+		policy.NewEvaluator(e2eWeatherAgent(nil)), srv.toolDispatch, false,
 	)
 	if err != nil {
 		t.Fatalf("recoverDispatchedInvocation: %v", err)
@@ -138,7 +138,7 @@ func TestRecoverDispatchedInvocation_redispatchesReadOnly(t *testing.T) {
 	err := srv.recoverDispatchedInvocation(
 		context.Background(), q, "sess-1", call,
 		manifest.SideEffectReadOnly, 80*time.Millisecond,
-		policy.NewEvaluator(e2eWeatherAgent(nil)), srv.toolDispatch,
+		policy.NewEvaluator(e2eWeatherAgent(nil)), srv.toolDispatch, false,
 	)
 	if err != nil {
 		t.Fatalf("recoverDispatchedInvocation: %v", err)
@@ -172,7 +172,7 @@ func TestRecoverDispatchedInvocation_nonIdempotentEscalates(t *testing.T) {
 	err := srv.recoverDispatchedInvocation(
 		context.Background(), q, "sess-1", call,
 		manifest.SideEffectNonIdempotentWrite, 60*time.Millisecond,
-		policy.NewEvaluator(e2eWeatherAgent(nil)), srv.toolDispatch,
+		policy.NewEvaluator(e2eWeatherAgent(nil)), srv.toolDispatch, false,
 	)
 	if err != nil {
 		t.Fatalf("recoverDispatchedInvocation: %v", err)

@@ -32,7 +32,7 @@ func expectCreateRunSessionMocks(mock sqlmock.Sqlmock, versionID string, input [
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning).
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
 	mock.ExpectCommit()
 }

@@ -202,7 +202,8 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 				}
 			}
 		case model.ToolInvocationDispatched:
-			if err := s.recoverDispatchedInvocation(ctx, q, session.ID, call, sideClass, resyncWindow, policies, dispatch); err != nil {
+			agentBacked := isAgentBackedTool(ver.Agent, inv.Tool, inv.Version)
+			if err := s.recoverDispatchedInvocation(ctx, q, session.ID, call, sideClass, resyncWindow, policies, dispatch, agentBacked); err != nil {
 				return err
 			}
 		}
@@ -257,7 +258,20 @@ func (s *runtimeServer) recoverDispatchedInvocation(
 	resyncWindow time.Duration,
 	policies *policy.Evaluator,
 	dispatch tooldispatch.Dispatcher,
+	agentBacked bool,
 ) error {
+	// A delegation's outcome is backed by a durable child session that only
+	// advances when this runtime drives it; no external worker can complete it
+	// independently. Re-dispatch through the agent dispatcher, which reuses the
+	// existing child session idempotently (its id is derived from the call id):
+	// a completed child returns its stored output, otherwise it is re-driven to
+	// completion. This is safe despite the non_idempotent_write class because the
+	// same child is resumed rather than a fresh side-effecting call replayed.
+	if agentBacked {
+		_, err := dispatch.Dispatch(ctx, call)
+		return err
+	}
+
 	deadline := time.Now().Add(resyncWindow)
 	for time.Now().Before(deadline) {
 		stored, err := q.GetToolInvocation(ctx, call.CallID)
@@ -422,6 +436,29 @@ func toolInvocationToCall(inv store.ToolInvocation, agent *manifest.Agent, agent
 		Args:            args,
 		SideEffectClass: sideEffectClassForTool(agent, inv.Tool, inv.Version),
 	}
+}
+
+// isAgentBackedTool reports whether the tool ref resolves to a compiled agent
+// (delegation) binding, whose recovery resumes a durable child session rather
+// than re-dispatching to a worker.
+func isAgentBackedTool(agent *manifest.Agent, toolRef, version string) bool {
+	if agent == nil {
+		return false
+	}
+	for i := range agent.Spec.Tools {
+		tb := &agent.Spec.Tools[i]
+		if !tb.IsAgent() {
+			continue
+		}
+		if tb.DispatchRef() != toolRef {
+			continue
+		}
+		if version != "" && tb.Version != "" && tb.Version != version {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func sideEffectClassForTool(agent *manifest.Agent, toolRef, version string) string {

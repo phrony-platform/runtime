@@ -14,20 +14,63 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// createRunSession validates resolved secrets, inserts the session row, and
-// persists encrypted session secrets in a single transaction.
+// newSessionRow describes a session to persist, including optional nested-child
+// linkage (parent session and delegation depth) for agent delegation.
+type newSessionRow struct {
+	sessionID       string
+	agentVersionID  string
+	input           []byte
+	resolved        map[string][]byte
+	parentSessionID *string
+	depth           int
+}
+
+// createRunSession validates resolved secrets, inserts a top-level session row,
+// and persists encrypted session secrets in a single transaction.
 func (s *runtimeServer) createRunSession(
 	ctx context.Context,
 	agentVersionID string,
 	inputJSON []byte,
 	resolved map[string][]byte,
 ) (string, error) {
+	return s.persistNewSession(ctx, newSessionRow{
+		sessionID:      newRunSessionID(),
+		agentVersionID: agentVersionID,
+		input:          inputJSON,
+		resolved:       resolved,
+	})
+}
+
+// createChildRunSession persists a nested child session (agent delegation) with
+// an explicit id and parent linkage, reusing the same transactional insert as a
+// top-level run so secret validation and persistence stay identical.
+func (s *runtimeServer) createChildRunSession(
+	ctx context.Context,
+	sessionID, parentSessionID, agentVersionID string,
+	inputJSON []byte,
+	resolved map[string][]byte,
+	depth int,
+) (string, error) {
+	parent := parentSessionID
+	return s.persistNewSession(ctx, newSessionRow{
+		sessionID:       sessionID,
+		agentVersionID:  agentVersionID,
+		input:           inputJSON,
+		resolved:        resolved,
+		parentSessionID: &parent,
+		depth:           depth,
+	})
+}
+
+// persistNewSession inserts a running session row and its encrypted secrets in a
+// single transaction. It is the shared core for top-level and nested child runs.
+func (s *runtimeServer) persistNewSession(ctx context.Context, row newSessionRow) (string, error) {
 	if s.db == nil {
 		return "", status.Error(codes.FailedPrecondition, "database is not configured")
 	}
 
 	q := store.New(s.db.DB)
-	agent, err := loadAgentManifestForVersion(ctx, q, agentVersionID)
+	agent, err := loadAgentManifestForVersion(ctx, q, row.agentVersionID)
 	if err != nil {
 		return "", err
 	}
@@ -39,25 +82,26 @@ func (s *runtimeServer) createRunSession(
 	defer func() { _ = tx.Rollback() }()
 
 	txQ := q.WithTx(tx)
-	sessionID := newRunSessionID()
 
 	if _, err := txQ.InsertSession(ctx, store.InsertSessionParams{
-		ID:             sessionID,
-		AgentVersionID: agentVersionID,
-		Input:          inputJSON,
-		Status:         model.SessionStatusRunning,
+		ID:              row.sessionID,
+		AgentVersionID:  row.agentVersionID,
+		Input:           row.input,
+		Status:          model.SessionStatusRunning,
+		ParentSessionID: row.parentSessionID,
+		Depth:           row.depth,
 	}); err != nil {
 		return "", status.Errorf(codes.Internal, "persist session: %v", err)
 	}
 
-	if err := s.persistSessionSecrets(ctx, txQ, sessionID, agent, resolved); err != nil {
+	if err := s.persistSessionSecrets(ctx, txQ, row.sessionID, agent, row.resolved); err != nil {
 		return "", err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return "", status.Errorf(codes.Internal, "commit transaction: %v", err)
 	}
-	return sessionID, nil
+	return row.sessionID, nil
 }
 
 func loadAgentManifestForVersion(ctx context.Context, q *store.Queries, agentVersionID string) (*manifest.Agent, error) {

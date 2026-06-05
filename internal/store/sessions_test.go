@@ -19,7 +19,7 @@ func TestQueries_InsertSession(t *testing.T) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs("sess-1", "ver-1", []byte("{}"), "pending").
+		WithArgs("sess-1", "ver-1", []byte("{}"), "pending", nil, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
 
 	q := New(sqlDB)
