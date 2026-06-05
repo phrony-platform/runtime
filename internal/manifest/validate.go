@@ -22,8 +22,9 @@ var (
 		SideEffectNonIdempotentWrite: {},
 		SideEffectIrreversibleAction: {},
 	}
-	validMCPTransport  = map[string]struct{}{MCPTransportStreamableHTTP: {}}
-	validMCPAuthScheme = map[string]struct{}{MCPAuthSchemeBearer: {}, MCPAuthSchemeHeader: {}}
+	validMCPTransport   = map[string]struct{}{MCPTransportStreamableHTTP: {}}
+	validMCPAuthScheme  = map[string]struct{}{MCPAuthSchemeBearer: {}, MCPAuthSchemeHeader: {}}
+	validSubagentResult = map[string]struct{}{SubagentResultSummary: {}, SubagentResultFull: {}}
 )
 
 // Validate checks structural and semantic rules for a parsed Agent document.
@@ -93,6 +94,7 @@ func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition, agent *A
 	mcpServers, mcpErrs := validateMCPServers(spec.MCPServers, secrets)
 	errs = append(errs, mcpErrs...)
 	errs = append(errs, validateTools(spec.Tools, isCompiledPolicySnapshot(agent), mcpServers)...)
+	errs = append(errs, validateAgents(spec.Agents, spec.Tools, agent)...)
 	errs = append(errs, validateCompiledPolicies(spec.Policies, spec.Tools)...)
 	if spec.Limits != nil {
 		errs = append(errs, validateLimits(spec.Limits)...)
@@ -150,6 +152,112 @@ func validateTools(tools []ToolBinding, compiledSnapshot bool, mcpServers map[st
 
 		if t.MCP != nil {
 			errs = append(errs, validateMCPToolBinding(&t, mcpServers, base)...)
+		}
+		if t.Agent != nil {
+			if !compiledSnapshot {
+				errs = append(errs, FieldError{
+					Path:    base + ".agent",
+					Message: "must not be set on the Agent; declare delegation under spec.agents, which compiles to an agent binding at publish",
+				})
+			} else {
+				errs = append(errs, validateAgentToolBinding(&t, base)...)
+			}
+		}
+	}
+	return errs
+}
+
+// validateAgentToolBinding checks a compiled agent-backed tool binding produced
+// by expanding a spec.agents entry at publish. Authoring manifests never set it
+// directly (see validateTools); this validates the resolved snapshot shape.
+func validateAgentToolBinding(t *ToolBinding, base string) []FieldError {
+	var errs []FieldError
+	if strings.TrimSpace(t.Agent.Namespace) == "" {
+		errs = append(errs, FieldError{Path: base + ".agent.namespace", Message: "is required"})
+	}
+	if strings.TrimSpace(t.Agent.Name) == "" {
+		errs = append(errs, FieldError{Path: base + ".agent.name", Message: "is required"})
+	}
+	if v := strings.TrimSpace(t.Agent.Version); v != "" && !isValidSemver(v) {
+		errs = append(errs, FieldError{Path: base + ".agent.version", Message: "must be valid semver"})
+	}
+	if r := strings.TrimSpace(t.Agent.Result); r != "" {
+		if _, ok := validSubagentResult[r]; !ok {
+			errs = append(errs, FieldError{Path: base + ".agent.result", Message: "must be one of summary, full"})
+		}
+	}
+	return errs
+}
+
+// validateAgents checks the authoring-only spec.agents delegation block. Each
+// entry references another deployed agent by logical id (namespace.name with an
+// optional pinned @version) and compiles to an agent-backed tool binding at
+// publish, so its wire name shares the model-facing tool namespace and must not
+// collide with spec.tools bindings or other delegations.
+func validateAgents(agents []SubagentBinding, tools []ToolBinding, agent *Agent) []FieldError {
+	if len(agents) == 0 {
+		return nil
+	}
+	var errs []FieldError
+	seenRefs := make(map[string]struct{}, len(agents))
+	// Seed the wire-name set with tool wire names so an agent alias cannot
+	// collide with a tool binding presented to the same model.
+	seenNames := make(map[string]struct{}, len(tools)+len(agents))
+	for _, t := range tools {
+		if name := t.ToolName(); name != "" {
+			seenNames[name] = struct{}{}
+		}
+	}
+	selfID := LogicalID(agent.Metadata.Namespace, agent.Metadata.Name)
+	for i, sub := range agents {
+		base := fmt.Sprintf("spec.agents[%d]", i)
+		raw := ""
+		ref := strings.TrimSpace(sub.Ref)
+		if ref == "" {
+			errs = append(errs, FieldError{Path: base + ".ref", Message: "is required"})
+		} else if parsed, err := ParseLogicalRef(ref); err != nil {
+			errs = append(errs, FieldError{Path: base + ".ref", Message: "must be a logical id of the form namespace.name[@version]"})
+		} else {
+			raw = parsed.Raw
+			if c := strings.TrimSpace(parsed.Constraint); c != "" && !isValidSemver(c) {
+				errs = append(errs, FieldError{Path: base + ".ref", Message: "version must be valid semver (for example namespace.name@1.2.0)"})
+			}
+			if _, dup := seenRefs[raw]; dup {
+				errs = append(errs, FieldError{Path: base + ".ref", Message: "must be unique"})
+			} else {
+				seenRefs[raw] = struct{}{}
+			}
+			if selfID != "" && raw == selfID {
+				errs = append(errs, FieldError{Path: base + ".ref", Message: "must not reference the declaring agent"})
+			}
+		}
+
+		name := strings.TrimSpace(sub.As)
+		namePath := base + ".as"
+		if name == "" {
+			namePath = base
+			if raw != "" {
+				name = sanitizeToolName(raw)
+			}
+		}
+		if name != "" {
+			if !toolNamePattern.MatchString(name) {
+				errs = append(errs, FieldError{Path: namePath, Message: "must match [a-zA-Z0-9_-]{1,64}"})
+			} else if _, dup := seenNames[name]; dup {
+				errs = append(errs, FieldError{Path: namePath, Message: "resolves to a duplicate tool name"})
+			} else {
+				seenNames[name] = struct{}{}
+			}
+		}
+
+		if sub.InputSchema != nil {
+			errs = append(errs, validateSchemaAt(sub.InputSchema, base+".input_schema")...)
+		}
+
+		if r := strings.TrimSpace(sub.Result); r != "" {
+			if _, ok := validSubagentResult[r]; !ok {
+				errs = append(errs, FieldError{Path: base + ".result", Message: "must be one of summary, full"})
+			}
 		}
 	}
 	return errs
@@ -430,16 +538,22 @@ func validateModelParameters(p *ModelParameters) []FieldError {
 }
 
 func validateLimits(l *Limits) []FieldError {
-	if l.OnLimit == "" {
-		return nil
+	var errs []FieldError
+	if l.OnLimit != "" {
+		if _, ok := validOnLimit[l.OnLimit]; !ok {
+			errs = append(errs, FieldError{
+				Path:    "spec.limits.on_limit",
+				Message: "must be one of halt, escalate",
+			})
+		}
 	}
-	if _, ok := validOnLimit[l.OnLimit]; !ok {
-		return []FieldError{{
-			Path:    "spec.limits.on_limit",
-			Message: "must be one of halt, escalate",
-		}}
+	if l.MaxSubagentDepth != nil && *l.MaxSubagentDepth < 1 {
+		errs = append(errs, FieldError{
+			Path:    "spec.limits.max_subagent_depth",
+			Message: "must be >= 1",
+		})
 	}
-	return nil
+	return errs
 }
 
 func validateOutput(out *OutputSpec) []FieldError {
