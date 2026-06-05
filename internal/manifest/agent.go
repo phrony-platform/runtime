@@ -54,6 +54,10 @@ type AgentSpec struct {
 	Model           ModelConfig        `yaml:"model" json:"model"`
 	Tools           []ToolBinding      `yaml:"tools,omitempty" json:"tools,omitempty"`
 	MCPServers      []MCPServerSpec    `yaml:"mcp_servers,omitempty" json:"mcp_servers,omitempty"`
+	// Agents is the authoring-only sugar block for agent-to-agent delegation. Each
+	// entry compiles down to an ordinary spec.tools binding with Agent set at publish
+	// time and is cleared from the resolved snapshot.
+	Agents          []SubagentBinding  `yaml:"agents,omitempty" json:"agents,omitempty"`
 	DefaultPolicies []PolicyAttachment `yaml:"default_policies,omitempty" json:"default_policies,omitempty"`
 	// Policies holds compiled rules on resolved snapshots only (see AnnotationPoliciesCompiled).
 	Policies []PolicySpec `yaml:"policies,omitempty" json:"policies,omitempty"`
@@ -112,6 +116,10 @@ type ToolBinding struct {
 	// MCP, when set, routes this binding to a declared spec.mcp_servers entry
 	// instead of the worker registry.
 	MCP *ToolMCPBinding `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	// Agent, when set, routes this binding to a nested child agent session
+	// instead of the worker registry. Compiled-only: produced by expanding a
+	// spec.agents entry at publish and never set on authoring manifests.
+	Agent *ToolAgentBinding `yaml:"agent,omitempty" json:"agent,omitempty"`
 	// Policies attaches Policy documents by logical id or bundle file ref.
 	Policies []PolicyAttachment `yaml:"policies,omitempty" json:"policies,omitempty"`
 }
@@ -122,6 +130,55 @@ type ToolBinding struct {
 type ToolMCPBinding struct {
 	Server string `yaml:"server" json:"server"`
 	Tool   string `yaml:"tool,omitempty" json:"tool,omitempty"`
+}
+
+// SubagentBinding is one authoring-only spec.agents entry declaring another
+// deployed agent this agent may call as a tool. It compiles to a ToolBinding
+// with Agent set at publish time.
+type SubagentBinding struct {
+	// Ref identifies the target agent as namespace.name[@version].
+	Ref string `yaml:"ref" json:"ref"`
+	// As is the wire name presented to the parent model; defaults from ref.
+	As          string      `yaml:"as,omitempty" json:"as,omitempty"`
+	Description string      `yaml:"description,omitempty" json:"description,omitempty"`
+	InputSchema *SchemaSpec `yaml:"input_schema,omitempty" json:"input_schema,omitempty"`
+	// Result selects how the child output is returned to the parent model:
+	// summary (default) returns the final output; full includes the step trace.
+	Result string `yaml:"result,omitempty" json:"result,omitempty"`
+	// Policies attaches Policy documents gating the delegation call.
+	Policies []PolicyAttachment `yaml:"policies,omitempty" json:"policies,omitempty"`
+}
+
+// ToolAgentBinding marks a ToolBinding as backed by a nested child agent
+// session. It is compiled from a spec.agents entry and pins the resolved
+// target agent identity plus the requested result shape.
+type ToolAgentBinding struct {
+	Namespace string `yaml:"namespace" json:"namespace"`
+	Name      string `yaml:"name" json:"name"`
+	// Version is the pinned target agent version when the ref constrained it;
+	// empty resolves to the active deployment at call time.
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+	// Result selects how the child output is returned (summary | full).
+	Result string `yaml:"result,omitempty" json:"result,omitempty"`
+}
+
+// Subagent result shapes presented back to the parent model.
+const (
+	SubagentResultSummary = "summary"
+	SubagentResultFull    = "full"
+)
+
+// ResolvedResult returns the configured result shape, defaulting to summary.
+func (b ToolAgentBinding) ResolvedResult() string {
+	if r := strings.TrimSpace(b.Result); r != "" {
+		return r
+	}
+	return SubagentResultSummary
+}
+
+// LogicalID returns the target agent catalog identifier namespace.name.
+func (b ToolAgentBinding) LogicalID() string {
+	return LogicalID(b.Namespace, b.Name)
 }
 
 // Side effect classes (whitepaper / runtime dispatch).
@@ -178,10 +235,20 @@ func (t ToolBinding) IsMCP() bool {
 	return t.MCP != nil
 }
 
+// IsAgent reports whether the binding is backed by a nested child agent.
+func (t ToolBinding) IsAgent() bool {
+	return t.Agent != nil
+}
+
 // DispatchRef returns the logical ref used as the tool dispatch routing key
 // (ToolCall.Tool). It mirrors how the executor derives the ref from the binding
-// so MCP routing and the executor agree on the same key.
+// so MCP/agent routing and the executor agree on the same key.
 func (t ToolBinding) DispatchRef() string {
+	if t.Agent != nil {
+		if id := t.Agent.LogicalID(); id != "" {
+			return id
+		}
+	}
 	ref := strings.TrimSpace(t.Ref)
 	if parsed, err := ParseLogicalRef(ref); err == nil {
 		return parsed.Raw
@@ -261,7 +328,10 @@ type Limits struct {
 	MaxLoopIterations   *int   `yaml:"max_loop_iterations,omitempty" json:"max_loop_iterations,omitempty"`
 	MaxWallClockSeconds *int   `yaml:"max_wall_clock_seconds,omitempty" json:"max_wall_clock_seconds,omitempty"`
 	MaxHITLWaitMinutes  *int   `yaml:"max_hitl_wait_minutes,omitempty" json:"max_hitl_wait_minutes,omitempty"`
-	OnLimit             string `yaml:"on_limit,omitempty" json:"on_limit,omitempty"`
+	// MaxSubagentDepth caps agent-to-agent delegation nesting across the run
+	// tree, preventing unbounded recursion (e.g. A->B->A). Enforced runtime-wide.
+	MaxSubagentDepth *int   `yaml:"max_subagent_depth,omitempty" json:"max_subagent_depth,omitempty"`
+	OnLimit          string `yaml:"on_limit,omitempty" json:"on_limit,omitempty"`
 }
 
 // OutputSpec is a top-level sibling of spec (not nested under spec).
