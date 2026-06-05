@@ -54,7 +54,7 @@ func ResolveBundle(agentPath string, agent *Agent) (*ResolvedAgent, error) {
 	if err := resolver.resolveOutputSchema(resolved); err != nil {
 		return nil, err
 	}
-	if err := expandSubagentBindings(resolved); err != nil {
+	if err := expandSubagentBindings(resolved, nil); err != nil {
 		return nil, err
 	}
 	if err := resolver.resolveTools(resolved); err != nil {
@@ -124,7 +124,9 @@ func (r *bundleResolver) resolveTools(agent *Agent) error {
 // delegation like any other tool. It runs before resolveTools/resolvePolicies so
 // the expanded bindings flow through the standard machinery. The authoring
 // spec.agents block is left intact here and cleared from the snapshot at compile.
-func expandSubagentBindings(agent *Agent) error {
+// When closure is non-nil, pinned ChildName and AgentVersionID are taken from the
+// walked bundle closure.
+func expandSubagentBindings(agent *Agent, closure *ClosureContext) error {
 	if agent == nil || len(agent.Spec.Agents) == 0 {
 		return nil
 	}
@@ -149,6 +151,27 @@ func expandSubagentBindings(agent *Agent) error {
 			agentBinding.Namespace = edge.External.Namespace
 			agentBinding.Name = edge.External.Name
 			agentBinding.Version = strings.TrimSpace(edge.External.Constraint)
+		}
+		if closure != nil {
+			if target, ok := closure.Lookup(edge); ok {
+				if target.ChildName != "" {
+					agentBinding.ChildName = target.ChildName
+				}
+				if target.AgentVersionID != "" {
+					agentBinding.AgentVersionID = target.AgentVersionID
+				}
+				if edge.Kind == AgentEdgeRefKindExternal {
+					if target.Namespace != "" {
+						agentBinding.Namespace = target.Namespace
+					}
+					if target.Name != "" {
+						agentBinding.Name = target.Name
+					}
+					if target.Version != "" {
+						agentBinding.Version = target.Version
+					}
+				}
+			}
 		}
 		binding := ToolBinding{
 			Ref:             ref,
