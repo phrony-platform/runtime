@@ -54,6 +54,9 @@ func ResolveBundle(agentPath string, agent *Agent) (*ResolvedAgent, error) {
 	if err := resolver.resolveOutputSchema(resolved); err != nil {
 		return nil, err
 	}
+	if err := expandSubagentBindings(resolved); err != nil {
+		return nil, err
+	}
 	if err := resolver.resolveTools(resolved); err != nil {
 		return nil, err
 	}
@@ -115,10 +118,80 @@ func (r *bundleResolver) resolveTools(agent *Agent) error {
 	return nil
 }
 
+// expandSubagentBindings compiles each authoring-only spec.agents entry into an
+// ordinary spec.tools binding with Agent set, so the entire downstream pipeline
+// (schema resolution, policy inlining, model tool defs, dispatch) treats agent
+// delegation like any other tool. It runs before resolveTools/resolvePolicies so
+// the expanded bindings flow through the standard machinery. The authoring
+// spec.agents block is left intact here and cleared from the snapshot at compile.
+func expandSubagentBindings(agent *Agent) error {
+	if agent == nil || len(agent.Spec.Agents) == 0 {
+		return nil
+	}
+	expanded := make([]ToolBinding, 0, len(agent.Spec.Agents))
+	for i, sub := range agent.Spec.Agents {
+		fieldBase := fmt.Sprintf("spec.agents[%d]", i)
+		parsed, err := ParseLogicalRef(sub.Ref)
+		if err != nil {
+			return FieldError{Path: fieldBase + ".ref", Message: err.Error()}
+		}
+		binding := ToolBinding{
+			Ref:             parsed.Raw,
+			As:              subagentWireName(sub, parsed),
+			Description:     strings.TrimSpace(sub.Description),
+			InputSchema:     subagentInputSchema(sub),
+			SideEffectClass: SideEffectNonIdempotentWrite,
+			Agent: &ToolAgentBinding{
+				Namespace: parsed.Namespace,
+				Name:      parsed.Name,
+				Version:   strings.TrimSpace(parsed.Constraint),
+				Result:    strings.TrimSpace(sub.Result),
+			},
+		}
+		if len(sub.Policies) > 0 {
+			binding.Policies = append([]PolicyAttachment(nil), sub.Policies...)
+		}
+		expanded = append(expanded, binding)
+	}
+	agent.Spec.Tools = append(agent.Spec.Tools, expanded...)
+	return nil
+}
+
+// subagentWireName returns the model-facing tool name for a delegation binding,
+// preferring the authored alias and falling back to a sanitized logical ref.
+func subagentWireName(sub SubagentBinding, parsed ParsedLogicalRef) string {
+	if name := strings.TrimSpace(sub.As); name != "" {
+		return name
+	}
+	return sanitizeToolName(parsed.Raw)
+}
+
+// subagentInputSchema returns the authored input schema or the default single
+// "task" string contract when the binding does not declare one.
+func subagentInputSchema(sub SubagentBinding) *SchemaSpec {
+	if sub.InputSchema != nil {
+		return cloneSchemaSpec(sub.InputSchema)
+	}
+	return &SchemaSpec{Inline: defaultSubagentInputSchema()}
+}
+
+// defaultSubagentInputSchema is the implicit { task: string } contract presented
+// to the parent model when a spec.agents entry omits input_schema.
+func defaultSubagentInputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task": map[string]any{"type": "string"},
+		},
+		"required": []any{"task"},
+	}
+}
+
 func (r *bundleResolver) resolveToolBinding(tb *ToolBinding, fieldBase string) error {
-	if tb.IsMCP() {
-		// MCP-backed bindings declare their schema explicitly and have no
-		// tools/ catalog entry to merge; only resolve a schema ref if present.
+	if tb.IsMCP() || tb.IsAgent() {
+		// MCP- and agent-backed bindings declare their schema explicitly and
+		// have no tools/ catalog entry to merge; only resolve a schema ref if
+		// present.
 		return r.resolveBindingSchema(tb, fieldBase+".input_schema")
 	}
 	parsed, err := ParseLogicalRef(tb.Ref)
@@ -529,7 +602,24 @@ func cloneAgent(agent *Agent) *Agent {
 				mcp := *t.MCP
 				tool.MCP = &mcp
 			}
+			if t.Agent != nil {
+				ag := *t.Agent
+				tool.Agent = &ag
+			}
 			out.Spec.Tools[i] = tool
+		}
+	}
+	if len(agent.Spec.Agents) > 0 {
+		out.Spec.Agents = make([]SubagentBinding, len(agent.Spec.Agents))
+		for i, sub := range agent.Spec.Agents {
+			subCopy := sub
+			if sub.InputSchema != nil {
+				subCopy.InputSchema = cloneSchemaSpec(sub.InputSchema)
+			}
+			if len(sub.Policies) > 0 {
+				subCopy.Policies = append([]PolicyAttachment(nil), sub.Policies...)
+			}
+			out.Spec.Agents[i] = subCopy
 		}
 	}
 	if len(agent.Spec.MCPServers) > 0 {

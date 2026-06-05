@@ -309,6 +309,10 @@ func intersectAllowLists(lists [][]string) []string {
 
 func normalizeResolvedSnapshot(agent *Agent) {
 	agent.Spec.DefaultPolicies = nil
+	// spec.agents is authoring-only sugar already expanded into spec.tools
+	// agent bindings during resolve; clear it so the snapshot carries only the
+	// compiled tool form (mirrors how policy attachments become compiled-only).
+	agent.Spec.Agents = nil
 	for i := range agent.Spec.Tools {
 		agent.Spec.Tools[i].Policies = nil
 		normalizeToolBindingSchema(&agent.Spec.Tools[i])
