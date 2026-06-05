@@ -118,7 +118,7 @@ func (s *runtimeServer) resumeAfterApproval(
 	if gate != nil && gate.events != nil {
 		return s.completeApprovalTurnOnStream(ctx, q, gate, session, ver, history)
 	}
-	return s.continueRecoveredTurn(ctx, q, session, ver, history)
+	return s.continueRecoveredTurn(ctx, q, session, ver, history, 0)
 }
 
 func (s *runtimeServer) completeApprovalTurnOnStream(

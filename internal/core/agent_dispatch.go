@@ -130,7 +130,7 @@ func (d *agentDispatcher) Dispatch(ctx context.Context, call tooldispatch.ToolCa
 		if stored, found, err := rec.LookupCompleted(runCtx, call.CallID); err != nil {
 			return tooldispatch.ToolResult{}, err
 		} else if found {
-			return stored, nil
+			return d.enrichDelegatedUsageIfNeeded(runCtx, call.CallID, stored, binding.result), nil
 		}
 		if err := rec.RecordPending(runCtx, call, ""); err != nil {
 			return tooldispatch.ToolResult{}, fmt.Errorf("record tool invocation: %w", err)
@@ -248,6 +248,29 @@ func childSessionID(callID string) string {
 // childResult reads the finished child session and maps it to a tool result:
 // completed runs return their output (and usage for parent token accounting),
 // failed or non-terminal runs become tool errors for the parent model.
+// enrichDelegatedUsageIfNeeded fills usage from the durable child session when
+// a cached ledger result predates usage persistence (or was recorded without it).
+func (d *agentDispatcher) enrichDelegatedUsageIfNeeded(
+	ctx context.Context,
+	callID string,
+	res tooldispatch.ToolResult,
+	resultShape string,
+) tooldispatch.ToolResult {
+	if res.Usage != nil && res.Usage.Total() > 0 {
+		return res
+	}
+	q, err := d.server.queries()
+	if err != nil {
+		return res
+	}
+	enriched, err := d.childResult(ctx, q, callID, childSessionID(callID), resultShape)
+	if err != nil || enriched.Usage == nil || enriched.Usage.Total() == 0 {
+		return res
+	}
+	res.Usage = enriched.Usage
+	return res
+}
+
 func (d *agentDispatcher) childResult(
 	ctx context.Context,
 	q *store.Queries,

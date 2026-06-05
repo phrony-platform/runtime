@@ -61,7 +61,7 @@ func TestQueries_CompleteToolInvocation(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectQuery(`UPDATE tool_invocations`).
-		WithArgs("call-1", model.ToolInvocationSucceeded, json.RawMessage(`{"ok":true}`), nil, nil).
+		WithArgs("call-1", model.ToolInvocationSucceeded, json.RawMessage(`{"ok":true}`), nil, nil, 0, 0, false).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	q := New(sqlDB)
@@ -83,6 +83,7 @@ func toolInvocationMockRows(now time.Time) *sqlmock.Rows {
 		"call_id", "session_id", "agent_version_id", "turn", "tool", "version", "args",
 		"result", "status", "worker_identity", "image_digest", "descriptor_hash",
 		"manifest_content_hash", "attempt", "error_code", "error_message",
+		"usage_input_tokens", "usage_output_tokens", "usage_estimated",
 		"created_at", "updated_at", "dispatched_at", "completed_at",
 	})
 }
@@ -92,6 +93,7 @@ func addToolInvocationRow(rows *sqlmock.Rows, callID, sessionID, status string, 
 		callID, sessionID, "av-1", 1, "tools.echo", "v1", []byte(`{"x":1}`),
 		nil, status,
 		"", "", "", "", 1, nil, nil,
+		0, 0, false,
 		now, now, nil, nil,
 	)
 }

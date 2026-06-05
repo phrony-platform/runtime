@@ -244,7 +244,11 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 		return err
 	}
 	if resumeCompletion {
-		return s.continueRecoveredTurn(ctx, q, session, ver, history)
+		delegatedUsage, err := sumRecoveredInvocationUsage(ctx, q, invocations)
+		if err != nil {
+			return err
+		}
+		return s.continueRecoveredTurn(ctx, q, session, ver, history, delegatedUsage)
 	}
 	return nil
 }
@@ -326,6 +330,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 	session store.Session,
 	ver *executor.Version,
 	history []provider.Message,
+	priorDelegatedUsage int,
 ) error {
 	if s.sessionIsActive(session.ID) {
 		return nil
@@ -361,14 +366,15 @@ func (s *runtimeServer) continueRecoveredTurn(
 	runErrCh := make(chan error, 1)
 	go func() {
 		runErrCh <- ver.StreamCompletion(sessionCtx, executor.RunParams{
-			SessionID:         session.ID,
-			Turn:              state.turnCount + 1,
-			History:           history,
-			ResumeFromHistory: true,
-			Dispatcher:        state.toolDispatch,
-			Policies:          state.policies,
-			ApprovalGate:      state.approvalGate,
-			NewApprovalID:     newApprovalID,
+			SessionID:           session.ID,
+			Turn:                state.turnCount + 1,
+			History:             history,
+			ResumeFromHistory:   true,
+			PriorDelegatedUsage: priorDelegatedUsage,
+			Dispatcher:          state.toolDispatch,
+			Policies:            state.policies,
+			ApprovalGate:        state.approvalGate,
+			NewApprovalID:       newApprovalID,
 			BeforeToolDispatch: func(ctx context.Context, messages []provider.Message) error {
 				return state.persistBeforeToolDispatch(ctx, q, messages)
 			},

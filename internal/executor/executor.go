@@ -120,6 +120,10 @@ type RunParams struct {
 	NewApprovalID  func() string
 	// ResumeFromHistory continues a turn from persisted history (recovery) without new user input.
 	ResumeFromHistory bool
+	// PriorDelegatedUsage seeds the run token budget with delegated tool usage
+	// already charged in the durable ledger (recovery replays tool results without
+	// re-dispatching).
+	PriorDelegatedUsage int
 	// BeforeToolDispatch persists assistant tool_use history before dispatch (durability).
 	BeforeToolDispatch func(ctx context.Context, messages []provider.Message) error
 }
@@ -146,6 +150,9 @@ func (v *Version) StreamCompletion(ctx context.Context, params RunParams, ch cha
 	defer close(ch)
 
 	tracker := newLimitTracker(v.Agent.Spec.Limits)
+	if err := tracker.addUsageTokens(params.PriorDelegatedUsage); err != nil {
+		return reportLimit(ch, err)
+	}
 	usageEst := newUsageEstimator()
 
 	var messages []provider.Message

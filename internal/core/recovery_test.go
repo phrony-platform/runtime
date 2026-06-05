@@ -24,11 +24,14 @@ func TestToolInvocationRecorder_LookupCompleted(t *testing.T) {
 			"call_id", "session_id", "agent_version_id", "turn", "tool", "version", "args",
 			"result", "status", "worker_identity", "image_digest", "descriptor_hash",
 			"manifest_content_hash", "attempt", "error_code", "error_message",
+			"usage_input_tokens", "usage_output_tokens", "usage_estimated",
 			"created_at", "updated_at", "dispatched_at", "completed_at",
 		}).AddRow(
 			"call-1", "sess-1", "av-1", 1, "tools.echo", "v1", []byte(`{}`),
 			[]byte(`{"ok":true}`), model.ToolInvocationSucceeded,
-			"", "", "", "", 1, nil, nil, now, now, nil, now,
+			"", "", "", "", 1, nil, nil,
+			1500, 600, false,
+			now, now, nil, now,
 		))
 
 	rec := NewToolInvocationRecorder(store.New(sqlDB))
@@ -41,5 +44,8 @@ func TestToolInvocationRecorder_LookupCompleted(t *testing.T) {
 	}
 	if string(res.Payload) != `{"ok":true}` {
 		t.Fatalf("payload = %s", res.Payload)
+	}
+	if res.Usage == nil || res.Usage.Total() != 2100 {
+		t.Fatalf("usage = %+v, want 2100 total tokens", res.Usage)
 	}
 }

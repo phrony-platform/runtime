@@ -191,11 +191,13 @@ func toolInvocationSQLRows(callID, sessionID, status string, result []byte, now 
 		"call_id", "session_id", "agent_version_id", "turn", "tool", "version", "args",
 		"result", "status", "worker_identity", "image_digest", "descriptor_hash",
 		"manifest_content_hash", "attempt", "error_code", "error_message",
+		"usage_input_tokens", "usage_output_tokens", "usage_estimated",
 		"created_at", "updated_at", "dispatched_at", "completed_at",
 	}).AddRow(
 		callID, sessionID, "av-1", 1, "weather.get-forecast", "1.0.0", []byte(`{}`),
 		resultVal, status,
 		"", "", "", "", 1, nil, nil,
+		0, 0, false,
 		now, now, nil, nil,
 	)
 }

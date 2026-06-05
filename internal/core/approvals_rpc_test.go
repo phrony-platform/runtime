@@ -78,11 +78,13 @@ func TestRuntime_GetApproval_enrichesFromInvocation(t *testing.T) {
 			"call_id", "session_id", "agent_version_id", "turn", "tool", "version", "args",
 			"result", "status", "worker_identity", "image_digest", "descriptor_hash",
 			"manifest_content_hash", "attempt", "error_code", "error_message",
+			"usage_input_tokens", "usage_output_tokens", "usage_estimated",
 			"created_at", "updated_at", "dispatched_at", "completed_at",
 		}).AddRow(
 			"call-1", "sess-1", "av-1", 1, "payments.charge", "2.0.0", []byte(`{"amount":100}`),
 			nil, model.ToolInvocationAwaitingApproval,
 			"", "", "", "", 1, nil, nil,
+			0, 0, false,
 			time.Now(), time.Now(), nil, nil,
 		))
 	mock.ExpectQuery(`FROM approval_votes`).WithArgs("appr-1").

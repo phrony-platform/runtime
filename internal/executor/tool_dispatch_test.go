@@ -244,6 +244,36 @@ func TestStreamCompletion_chargesToolResultUsageAgainstTokenBudget(t *testing.T)
 	}
 }
 
+func TestStreamCompletion_priorDelegatedUsageChargesRecoveredLedgerUsage(t *testing.T) {
+	max := 1000
+	toolName := "ask_billing"
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Instructions: manifest.InstructionsSpec{Text: "System."},
+			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
+			Tools:        []manifest.ToolBinding{{Ref: "support.billing", As: toolName}},
+			Limits:       &manifest.Limits{MaxTokensPerRun: &max, OnLimit: "halt"},
+		},
+	}
+	v := NewVersionWithProvider("v", agent, providertest.Sequence(
+		providertest.DeltaCompleted().Events,
+	))
+
+	ch := make(chan Event, 16)
+	err := v.StreamCompletion(context.Background(), RunParams{
+		SessionID:           "sess",
+		Turn:                1,
+		History:             []provider.Message{{Role: provider.RoleUser, Content: "resume"}},
+		ResumeFromHistory:   true,
+		PriorDelegatedUsage: 1500,
+		Dispatcher:          &tooldispatch.FakeDispatcher{},
+		Policies:            policy.NewEvaluator(agent),
+	}, ch)
+	if !IsLimitError(err) {
+		t.Fatalf("StreamCompletion err = %v, want max_tokens_per_run limit error", err)
+	}
+}
+
 func TestApprovalDeniedError(t *testing.T) {
 	if !IsApprovalDenied(&ApprovalDeniedError{CallID: "x"}) {
 		t.Fatal("expected approval denied")

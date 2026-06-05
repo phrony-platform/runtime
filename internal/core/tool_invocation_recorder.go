@@ -111,12 +111,16 @@ func (r *ToolInvocationRecorder) RecordCompleted(ctx context.Context, call toold
 		}
 	}
 
+	usageInput, usageOutput, usageEstimated := usageFieldsFromToolResult(res)
 	_, err := r.Q.CompleteToolInvocation(ctx, store.CompleteToolInvocationParams{
-		CallID:       call.CallID,
-		Status:       status,
-		Result:       result,
-		ErrorCode:    errCode,
-		ErrorMessage: errMsg,
+		CallID:            call.CallID,
+		Status:            status,
+		Result:            result,
+		ErrorCode:         errCode,
+		ErrorMessage:      errMsg,
+		UsageInputTokens:  usageInput,
+		UsageOutputTokens: usageOutput,
+		UsageEstimated:    usageEstimated,
 	})
 	return err
 }
@@ -148,7 +152,11 @@ func (r *ToolInvocationRecorder) LookupCompleted(ctx context.Context, callID str
 		if len(payload) == 0 {
 			payload = json.RawMessage("{}")
 		}
-		return tooldispatch.ToolResult{CallID: callID, Payload: payload}, true, nil
+		res := tooldispatch.ToolResult{CallID: callID, Payload: payload}
+		if usage := toolUsageFromInvocation(inv); usage != nil {
+			res.Usage = usage
+		}
+		return res, true, nil
 	case model.ToolInvocationFailed:
 		res := tooldispatch.ToolResult{CallID: callID}
 		if inv.ErrorCode != nil || inv.ErrorMessage != nil {
@@ -171,4 +179,47 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func usageFieldsFromToolResult(res tooldispatch.ToolResult) (input, output int, estimated bool) {
+	if res.Usage == nil {
+		return 0, 0, false
+	}
+	return res.Usage.InputTokens, res.Usage.OutputTokens, res.Usage.Estimated
+}
+
+func toolUsageFromInvocation(inv store.ToolInvocation) *tooldispatch.ToolUsage {
+	if inv.UsageInputTokens == 0 && inv.UsageOutputTokens == 0 {
+		return nil
+	}
+	return &tooldispatch.ToolUsage{
+		InputTokens:  inv.UsageInputTokens,
+		OutputTokens: inv.UsageOutputTokens,
+		Estimated:    inv.UsageEstimated,
+	}
+}
+
+// sumRecoveredInvocationUsage returns delegated token usage for invocations
+// recovered from the durable ledger, re-reading each row after dispatch.
+func sumRecoveredInvocationUsage(ctx context.Context, q *store.Queries, invocations []store.ToolInvocation) (int, error) {
+	if q == nil {
+		return 0, nil
+	}
+	total := 0
+	for _, inv := range invocations {
+		stored, err := q.GetToolInvocation(ctx, inv.CallID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return 0, err
+		}
+		if stored.Status != model.ToolInvocationSucceeded {
+			continue
+		}
+		if usage := toolUsageFromInvocation(stored); usage != nil {
+			total += usage.Total()
+		}
+	}
+	return total, nil
 }

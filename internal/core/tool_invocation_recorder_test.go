@@ -86,8 +86,17 @@ func TestToolInvocationRecorder_lifecyclePostgres(t *testing.T) {
 	if err := rec.RecordCompleted(ctx, call, tooldispatch.ToolResult{
 		CallID:  call.CallID,
 		Payload: payload,
+		Usage:   &tooldispatch.ToolUsage{InputTokens: 1200, OutputTokens: 300},
 	}, nil); err != nil {
 		t.Fatalf("RecordCompleted: %v", err)
+	}
+
+	inv, err = q.GetToolInvocation(ctx, call.CallID)
+	if err != nil {
+		t.Fatalf("GetToolInvocation completed: %v", err)
+	}
+	if inv.UsageInputTokens != 1200 || inv.UsageOutputTokens != 300 {
+		t.Fatalf("stored usage = %d/%d, want 1200/300", inv.UsageInputTokens, inv.UsageOutputTokens)
 	}
 
 	res, ok, err := rec.LookupCompleted(ctx, call.CallID)
@@ -106,6 +115,9 @@ func TestToolInvocationRecorder_lifecyclePostgres(t *testing.T) {
 	}
 	if got["temp"] != want["temp"] {
 		t.Fatalf("payload = %s", res.Payload)
+	}
+	if res.Usage == nil || res.Usage.Total() != 1500 {
+		t.Fatalf("usage = %+v, want 1500 total tokens", res.Usage)
 	}
 
 	unfinished, err := q.ListUnfinishedInvocationsBySession(ctx, sessionID)

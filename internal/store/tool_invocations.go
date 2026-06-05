@@ -163,6 +163,9 @@ SET status = $2,
 	result = $3::jsonb,
 	error_code = $4,
 	error_message = $5,
+	usage_input_tokens = $6,
+	usage_output_tokens = $7,
+	usage_estimated = $8,
 	completed_at = NOW(),
 	updated_at = NOW()
 WHERE call_id = $1
@@ -170,11 +173,14 @@ RETURNING updated_at
 `
 
 type CompleteToolInvocationParams struct {
-	CallID       string
-	Status       string
-	Result       json.RawMessage
-	ErrorCode    *string
-	ErrorMessage *string
+	CallID            string
+	Status            string
+	Result            json.RawMessage
+	ErrorCode         *string
+	ErrorMessage      *string
+	UsageInputTokens  int
+	UsageOutputTokens int
+	UsageEstimated    bool
 }
 
 func (q *Queries) CompleteToolInvocation(ctx context.Context, arg CompleteToolInvocationParams) (time.Time, error) {
@@ -188,6 +194,9 @@ func (q *Queries) CompleteToolInvocation(ctx context.Context, arg CompleteToolIn
 		result,
 		arg.ErrorCode,
 		arg.ErrorMessage,
+		arg.UsageInputTokens,
+		arg.UsageOutputTokens,
+		arg.UsageEstimated,
 	)
 	var updatedAt time.Time
 	err := row.Scan(&updatedAt)
@@ -215,6 +224,9 @@ SELECT
 	attempt,
 	error_code,
 	error_message,
+	usage_input_tokens,
+	usage_output_tokens,
+	usage_estimated,
 	created_at,
 	updated_at,
 	dispatched_at,
@@ -240,6 +252,9 @@ type ToolInvocation struct {
 	Attempt             int             `json:"attempt"`
 	ErrorCode           *string         `json:"error_code"`
 	ErrorMessage        *string         `json:"error_message"`
+	UsageInputTokens    int             `json:"usage_input_tokens"`
+	UsageOutputTokens   int             `json:"usage_output_tokens"`
+	UsageEstimated      bool            `json:"usage_estimated"`
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`
 	DispatchedAt        *time.Time      `json:"dispatched_at"`
@@ -264,6 +279,9 @@ SELECT
 	attempt,
 	error_code,
 	error_message,
+	usage_input_tokens,
+	usage_output_tokens,
+	usage_estimated,
 	created_at,
 	updated_at,
 	dispatched_at,
@@ -298,6 +316,9 @@ func scanToolInvocation(row interface {
 		&inv.Attempt,
 		&errCode,
 		&errMsg,
+		&inv.UsageInputTokens,
+		&inv.UsageOutputTokens,
+		&inv.UsageEstimated,
 		&inv.CreatedAt,
 		&inv.UpdatedAt,
 		&dispatchedAt,
