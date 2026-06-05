@@ -177,6 +177,49 @@ func cleanupAgentDelegationFixture(t *testing.T, db *sqlx.DB, namespace string) 
 	_, _ = db.Exec(`DELETE FROM agents WHERE namespace = $1`, namespace)
 }
 
+func TestAgentDelegationE2E_pinnedVersionRunsNonActive(t *testing.T) {
+	t.Setenv("RUNTIME_ENABLE_STUB_PROVIDER", "true")
+	db := openToolTestPostgres(t)
+	ns := "agentdeleg-" + uuid.NewString()[:8]
+	t.Cleanup(func() { cleanupAgentDelegationFixture(t, db, ns) })
+
+	insertDeployedStubAgent(t, db, ns, "specialist",
+		stubDelegationAgent(ns, "specialist",
+			`{"turns":[[{"type":"text_delta","text":"answer from v1"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil))
+
+	orchestrator := stubDelegationAgent(ns, "orchestrator",
+		`{"turns":[[{"type":"tool_call","name":"ask_specialist","args":{"task":"help"}},{"type":"completed","stop_reason":"tool_use"}],[{"type":"text_delta","text":"orchestrator done"},{"type":"completed","stop_reason":"end_turn"}]]}`,
+		func(a *manifest.Agent) {
+			a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", func(tb *manifest.ToolBinding) {
+				tb.Agent.Version = "1.0.0"
+			})}
+		})
+	orchestratorVersionID := insertDeployedStubAgent(t, db, ns, "orchestrator", orchestrator)
+
+	redeployStubAgent(t, db, ns, "specialist",
+		stubDelegationAgent(ns, "specialist",
+			`{"turns":[[{"type":"text_delta","text":"answer from v2"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil))
+
+	srv := newAgentDelegationServer(db)
+	rootID := driveStubSessionToCompletion(t, srv, orchestratorVersionID, json.RawMessage(`{"message":"please delegate"}`))
+
+	q := store.New(db.DB)
+	inv, err := q.GetToolInvocation(context.Background(), soleCallID(t, db, rootID))
+	if err != nil {
+		t.Fatalf("GetToolInvocation: %v", err)
+	}
+	if inv.Status != model.ToolInvocationSucceeded {
+		t.Fatalf("delegation invocation status = %q, want succeeded", inv.Status)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(inv.Result, &payload); err != nil {
+		t.Fatalf("decode delegation result %s: %v", inv.Result, err)
+	}
+	if payload["output"] != "answer from v1" {
+		t.Fatalf("delegation result output = %q, want pinned v1 answer", payload["output"])
+	}
+}
+
 func TestAgentDelegationE2E_happyPath(t *testing.T) {
 	t.Setenv("RUNTIME_ENABLE_STUB_PROVIDER", "true")
 	db := openToolTestPostgres(t)

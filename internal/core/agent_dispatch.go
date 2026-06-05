@@ -25,7 +25,8 @@ const rootSessionDepth = 0
 const defaultMaxSubagentDepth = 5
 
 // agentBinding is a compiled spec.agents entry resolved for dispatch: the target
-// agent identity (active deployment when version is empty) and the result shape.
+// agent identity (active deployment when version is empty, otherwise the pinned
+// label) and the result shape.
 type agentBinding struct {
 	namespace string
 	name      string
@@ -189,7 +190,7 @@ func (d *agentDispatcher) runChild(ctx context.Context, call tooldispatch.ToolCa
 		return tooldispatch.ToolResult{}, err
 	}
 
-	agentVersionID, err := resolveAgentVersionID(ctx, s.db.DB, &runtimev1.AgentRef{
+	agentVersionID, err := resolveDelegatedAgentVersionID(ctx, s.db.DB, &runtimev1.AgentRef{
 		Namespace: binding.namespace,
 		Name:      binding.name,
 		Version:   binding.version,

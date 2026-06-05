@@ -82,6 +82,36 @@ func resolveAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.Ag
 	return validateActiveVersionForRun(active, agentRef, versionLabel)
 }
 
+// resolveDelegatedAgentVersionID resolves the target agent version for a compiled
+// spec.agents delegation. An empty version follows the active deployment; a pinned
+// version label runs that published version even when it is not active.
+func resolveDelegatedAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.AgentRef) (string, error) {
+	if ref.GetVersion() == "" {
+		return resolveAgentVersionID(ctx, db, ref)
+	}
+
+	ns, name, err := agentref.FromProto(ref)
+	if err != nil {
+		return "", err
+	}
+	agentRef := agentref.Format(ns, name)
+
+	lookup, err := store.New(db).AgentVersionIDByLabel(ctx, ns, name, ref.GetVersion())
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", status.Errorf(codes.NotFound, "no published version %q for agent %s", ref.GetVersion(), agentRef)
+	}
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "resolve agent version: %v", err)
+	}
+	if lookup.AgentArchive {
+		return "", status.Errorf(codes.FailedPrecondition, "agent %s is archived and cannot be run", agentRef)
+	}
+	if lookup.Retired {
+		return "", status.Errorf(codes.FailedPrecondition, "agent %s version %q is retired and cannot be run", agentRef, ref.GetVersion())
+	}
+	return lookup.ID, nil
+}
+
 func validateActiveVersionForRun(active store.ActiveAgentVersionResult, agentRef, versionLabel string) (string, error) {
 	if active.AgentArchived {
 		return "", status.Errorf(codes.FailedPrecondition, "agent %s is archived and cannot be run", agentRef)

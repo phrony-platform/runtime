@@ -202,3 +202,62 @@ func TestNormalizeSessionInput_invalidJSON(t *testing.T) {
 		t.Fatalf("error = %v, want valid JSON", err)
 	}
 }
+
+func TestResolveDelegatedAgentVersionID_emptyUsesActive(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	expectActiveDeployment(mock, "support", "billing", "active-ver", "2.0.0")
+
+	id, err := resolveDelegatedAgentVersionID(context.Background(), db.DB, &runtimev1.AgentRef{
+		Namespace: "support",
+		Name:      "billing",
+	})
+	if err != nil {
+		t.Fatalf("resolveDelegatedAgentVersionID: %v", err)
+	}
+	if id != "active-ver" {
+		t.Fatalf("version id = %q, want active-ver", id)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestResolveDelegatedAgentVersionID_pinnedLabel(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("support", "billing", "1.2.0").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "retired_at", "archived_at"}).
+			AddRow("pinned-ver", nil, nil, nil))
+
+	id, err := resolveDelegatedAgentVersionID(context.Background(), db.DB, &runtimev1.AgentRef{
+		Namespace: "support",
+		Name:      "billing",
+		Version:   "1.2.0",
+	})
+	if err != nil {
+		t.Fatalf("resolveDelegatedAgentVersionID: %v", err)
+	}
+	if id != "pinned-ver" {
+		t.Fatalf("version id = %q, want pinned-ver", id)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestResolveDelegatedAgentVersionID_pinnedNotPublished(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("support", "billing", "9.9.9").
+		WillReturnError(sql.ErrNoRows)
+
+	_, err := resolveDelegatedAgentVersionID(context.Background(), db.DB, &runtimev1.AgentRef{
+		Namespace: "support",
+		Name:      "billing",
+		Version:   "9.9.9",
+	})
+	assertGRPCCode(t, err, codes.NotFound)
+	if !strings.Contains(statusMessage(t, err), "no published version") {
+		t.Fatalf("error = %v, want not published", err)
+	}
+}
