@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"time"
 
+	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
-	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -67,34 +67,51 @@ func (s *runtimeServer) runSessionBackground(
 		s.scheduleWallClockExpiry(sessionID, time.Duration(maxSec)*time.Second, onLimit)
 	}
 
-	dispatch, err := s.sessionToolDispatch(ctx, q, sessionID, ver)
+	_ = s.driveSessionToCompletion(ctx, q, sessionID, agentVersionID, ver, events, inputMux, inputJSON, true)
+}
+
+// driveSessionToCompletion builds the interactive session state for an
+// already-loaded version and drives it through the interactive loop. It is the
+// shared core used by the root background runner and by nested child sessions
+// dispatched as agent tool calls, so both paths build dispatch, the approval
+// gate, and live-text wiring identically and recurse naturally.
+//
+// waitForUser controls whether the loop parks the session at awaiting_input
+// between turns (root sessions await an operator) or runs autonomously to a
+// terminal state (child delegation returns its final output to the parent).
+// stream supplies client messages (user input, tool approvals); callers driving
+// a non-interactive child pass an input source that yields no further messages.
+//
+// The returned error is the driver loop error (nil on a clean park/completion).
+// A non-benign loop error transitions the session to failed before returning,
+// matching the behaviour callers previously inlined.
+func (s *runtimeServer) driveSessionToCompletion(
+	ctx context.Context,
+	q *store.Queries,
+	sessionID, agentVersionID string,
+	ver *executor.Version,
+	events sessionEventSink,
+	stream runtimev1.Runtime_RunSessionInteractiveServer,
+	inputJSON json.RawMessage,
+	waitForUser bool,
+) error {
+	state, err := newInteractiveSessionState(ctx, s, sessionID, agentVersionID, ver, time.Now(), events, q)
 	if err != nil {
-		_ = s.failInteractiveSession(ctx, q, events, sessionID, err)
-		return
+		return s.failInteractiveSession(ctx, q, events, sessionID, err)
 	}
-	gate := newSessionApprovalGate(s.approvalCoord(), sessionID, events, q, agentVersionID)
-	state := &interactiveSessionState{
-		sessionID:        sessionID,
-		agentVersionID:   agentVersionID,
-		version:          ver,
-		sessionStartedAt: time.Now(),
-		toolDispatch:     dispatch,
-		policies:         policy.NewEvaluator(ver.Agent),
-		approvalGate:     gate,
-	}
-	gate.hitl = state
-	s.attachActiveSessionGate(sessionID, gate)
+	s.attachActiveSessionGate(sessionID, state.approvalGate)
 	state.liveTextSink = func(cumulative string) {
 		s.setActiveSessionLiveAssistant(sessionID, cumulative)
 	}
 
-	loopErr := s.runSessionInteractiveLoop(ctx, inputMux, events, q, sessionID, state, inputJSON, true)
+	loopErr := s.runSessionInteractiveLoop(ctx, stream, events, q, sessionID, state, inputJSON, waitForUser)
 	if loopErr != nil && !isBenignDriverLoopExit(ctx, q, sessionID, loopErr) {
 		session, loadErr := q.GetSession(ctx, sessionID)
 		if loadErr == nil && !sessionStatusTerminal(session.Status) {
 			_ = s.failInteractiveSession(ctx, q, events, sessionID, loopErr)
 		}
 	}
+	return loopErr
 }
 
 // isBenignDriverLoopExit reports whether the driver loop ended without needing to
