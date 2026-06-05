@@ -63,6 +63,36 @@ func delegationBinding(wire, namespace, name string, mutate func(*manifest.ToolB
 	return tb
 }
 
+// redeployStubAgent inserts a new agent version and deployment for an existing
+// agent, making that version the active target for delegation bindings that do
+// not pin a version label.
+func redeployStubAgent(t *testing.T, db *sqlx.DB, namespace, name string, agent *manifest.Agent) string {
+	t.Helper()
+	var agentID string
+	if err := db.QueryRow(`SELECT id FROM agents WHERE namespace = $1 AND name = $2`, namespace, name).Scan(&agentID); err != nil {
+		t.Fatalf("lookup agent %s/%s: %v", namespace, name, err)
+	}
+	manifestJSON, err := json.Marshal(agent)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	agentVersionID := uuid.NewString()
+	deploymentID := uuid.NewString()
+	if _, err := db.Exec(`
+		INSERT INTO agent_versions (id, agent_id, version, content_hash, manifest)
+		VALUES ($1, $2, '2.0.0', $3, $4::jsonb)
+	`, agentVersionID, agentID, uuid.NewString(), manifestJSON); err != nil {
+		t.Fatalf("insert redeployed agent_version %s: %v", name, err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO deployments (id, agent_id, agent_version_id, action, actor)
+		VALUES ($1, $2, $3, 'deploy', 'e2e')
+	`, deploymentID, agentID, agentVersionID); err != nil {
+		t.Fatalf("insert redeployed deployment %s: %v", name, err)
+	}
+	return agentVersionID
+}
+
 func insertDeployedStubAgent(t *testing.T, db *sqlx.DB, namespace, name string, agent *manifest.Agent) string {
 	t.Helper()
 	manifestJSON, err := json.Marshal(agent)
@@ -334,6 +364,89 @@ func TestAgentDelegationE2E_recoveryResumesDelegation(t *testing.T) {
 	}
 	if parent.Status != model.SessionStatusAwaitingInput {
 		t.Fatalf("parent status = %q, want awaiting_input after recovery resumed the turn", parent.Status)
+	}
+}
+
+// TestAgentDelegationE2E_recoveryResumesChildStoredVersionAfterRedeploy proves
+// that recovery drives an existing non-terminal child with the agent version
+// stored on its session row, not the target's current active deployment.
+func TestAgentDelegationE2E_recoveryResumesChildStoredVersionAfterRedeploy(t *testing.T) {
+	t.Setenv("RUNTIME_ENABLE_STUB_PROVIDER", "true")
+	db := openToolTestPostgres(t)
+	ns := "agentdeleg-" + uuid.NewString()[:8]
+	t.Cleanup(func() { cleanupAgentDelegationFixture(t, db, ns) })
+
+	specialistV1ID := insertDeployedStubAgent(t, db, ns, "specialist",
+		stubDelegationAgent(ns, "specialist",
+			`{"turns":[[{"type":"text_delta","text":"answer from v1"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil))
+
+	orchestratorVersionID := insertDeployedStubAgent(t, db, ns, "orchestrator",
+		stubDelegationAgent(ns, "orchestrator",
+			`{"turns":[[{"type":"text_delta","text":"orchestrator recovered"},{"type":"completed","stop_reason":"end_turn"}]]}`,
+			func(a *manifest.Agent) {
+				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", nil)}
+			}))
+
+	parentID := uuid.NewString()
+	callID := uuid.NewString()
+	childID := childSessionID(callID)
+	historyJSON, err := encodeHistory([]provider.Message{{Role: provider.RoleUser, Content: "please delegate"}})
+	if err != nil {
+		t.Fatalf("encodeHistory: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO sessions (id, agent_version_id, input, status, history)
+		VALUES ($1, $2, '{"message":"please delegate"}'::jsonb, $3, $4::jsonb)
+	`, parentID, orchestratorVersionID, model.SessionStatusAwaitingTool, historyJSON); err != nil {
+		t.Fatalf("insert parent session: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO tool_invocations (call_id, session_id, agent_version_id, turn, tool, version, args, status)
+		VALUES ($1, $2, $3, 1, $4, '', '{"task":"help"}'::jsonb, $5)
+	`, callID, parentID, orchestratorVersionID, manifest.LogicalID(ns, "specialist"), model.ToolInvocationDispatched); err != nil {
+		t.Fatalf("insert dispatched delegation invocation: %v", err)
+	}
+	// Child was created under v1 but never finished before the crash.
+	if _, err := db.Exec(`
+		INSERT INTO sessions (id, agent_version_id, parent_session_id, input, status, history, depth)
+		VALUES ($1, $2, $3, '{"task":"help"}'::jsonb, $4, '[]'::jsonb, 1)
+	`, childID, specialistV1ID, parentID, model.SessionStatusRunning); err != nil {
+		t.Fatalf("insert interrupted child session: %v", err)
+	}
+
+	// Target redeploy: active delegation now resolves to v2.
+	redeployStubAgent(t, db, ns, "specialist",
+		stubDelegationAgent(ns, "specialist",
+			`{"turns":[[{"type":"text_delta","text":"answer from v2"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil))
+
+	srv := newAgentDelegationServer(db)
+	srv.recoverDetachedSession(parentID)
+
+	q := store.New(db.DB)
+	inv, err := q.GetToolInvocation(context.Background(), callID)
+	if err != nil {
+		t.Fatalf("GetToolInvocation: %v", err)
+	}
+	if inv.Status != model.ToolInvocationSucceeded {
+		t.Fatalf("delegation invocation status = %q, want succeeded", inv.Status)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(inv.Result, &payload); err != nil {
+		t.Fatalf("decode delegation result %s: %v", inv.Result, err)
+	}
+	if payload["output"] != "answer from v1" {
+		t.Fatalf("delegation result output = %q, want answer from v1 (stored child version)", payload["output"])
+	}
+
+	child, err := q.GetSession(context.Background(), childID)
+	if err != nil {
+		t.Fatalf("GetSession child: %v", err)
+	}
+	if child.AgentVersionID != specialistV1ID {
+		t.Fatalf("child agent_version_id = %q, want v1 %q", child.AgentVersionID, specialistV1ID)
+	}
+	if child.Status != model.SessionStatusCompleted {
+		t.Fatalf("recovered child status = %q, want completed", child.Status)
 	}
 }
 

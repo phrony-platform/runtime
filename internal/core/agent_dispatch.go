@@ -216,12 +216,16 @@ func (d *agentDispatcher) runChild(ctx context.Context, call tooldispatch.ToolCa
 		return tooldispatch.ToolResult{}, fmt.Errorf("load subagent session: %w", err)
 	}
 	if !sessionStatusTerminal(child.Status) {
-		ver, err := s.loadSessionVersion(ctx, q, childSessionID, agentVersionID)
+		// Resume with the version pinned on the durable child row. Recovery may
+		// find an existing child created before a target redeploy; resolving the
+		// binding against current deployment state must not override that.
+		childAgentVersionID := child.AgentVersionID
+		ver, err := s.loadSessionVersion(ctx, q, childSessionID, childAgentVersionID)
 		if err != nil {
 			s.failChildSession(ctx, q, childSessionID, err.Error())
 			return subagentToolError(call.CallID, "subagent_load_failed", err.Error()), nil
 		}
-		if err := s.runChildSessionToCompletion(ctx, q, childSessionID, agentVersionID, ver, inputJSON, childDepth); err != nil {
+		if err := s.runChildSessionToCompletion(ctx, q, childSessionID, childAgentVersionID, ver, inputJSON, childDepth); err != nil {
 			return tooldispatch.ToolResult{}, fmt.Errorf("run subagent session: %w", err)
 		}
 	}
