@@ -3,11 +3,21 @@ package manifest
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"golang.org/x/mod/semver"
 )
+
+// ValidateOptions configures agent validation for standalone publish versus
+// bundle closure walks.
+type ValidateOptions struct {
+	// BundleRoot is the absolute bundle directory used to check local agent refs.
+	BundleRoot string
+	// InBundleClosure allows spec.agents on authoring agents during bundle publish.
+	InBundleClosure bool
+}
 
 var secretNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
@@ -29,6 +39,12 @@ var (
 
 // Validate checks structural and semantic rules for a parsed Agent document.
 func Validate(agent *Agent) error {
+	return ValidateAgent(agent, nil)
+}
+
+// ValidateAgent checks structural and semantic rules for a parsed Agent document
+// with optional bundle-closure context.
+func ValidateAgent(agent *Agent, opts *ValidateOptions) error {
 	if agent == nil {
 		return ValidationErrors{{Path: "", Message: "manifest is nil"}}
 	}
@@ -51,7 +67,7 @@ func Validate(agent *Agent) error {
 	if len(agent.Secrets) > 0 {
 		errs = append(errs, validateSecrets(agent.Secrets)...)
 	}
-	errs = append(errs, validateSpec(&agent.Spec, agent.Secrets, agent)...)
+	errs = append(errs, validateSpec(&agent.Spec, agent.Secrets, agent, opts)...)
 	if agent.Output != nil {
 		errs = append(errs, validateOutput(agent.Output)...)
 	}
@@ -78,7 +94,7 @@ func validateMetadata(m *AgentMetadata) []FieldError {
 	return errs
 }
 
-func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition, agent *Agent) []FieldError {
+func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition, agent *Agent, opts *ValidateOptions) []FieldError {
 	var errs []FieldError
 	if strings.TrimSpace(spec.Purpose) == "" {
 		errs = append(errs, FieldError{Path: "spec.purpose", Message: "is required"})
@@ -94,7 +110,7 @@ func validateSpec(spec *AgentSpec, secrets map[string]SecretDefinition, agent *A
 	mcpServers, mcpErrs := validateMCPServers(spec.MCPServers, secrets)
 	errs = append(errs, mcpErrs...)
 	errs = append(errs, validateTools(spec.Tools, isCompiledPolicySnapshot(agent), mcpServers)...)
-	errs = append(errs, validateAgents(spec.Agents, spec.Tools, agent)...)
+	errs = append(errs, validateAgents(spec.Agents, spec.Tools, agent, opts)...)
 	errs = append(errs, validateCompiledPolicies(spec.Policies, spec.Tools)...)
 	if spec.Limits != nil {
 		errs = append(errs, validateLimits(spec.Limits)...)
@@ -178,6 +194,14 @@ func validateAgentToolBinding(t *ToolBinding, base string) []FieldError {
 	if strings.TrimSpace(t.Agent.Name) == "" {
 		errs = append(errs, FieldError{Path: base + ".agent.name", Message: "is required"})
 	}
+	if !t.Agent.LateBound &&
+		strings.TrimSpace(t.Agent.AgentVersionID) == "" &&
+		strings.TrimSpace(t.Agent.Version) == "" {
+		errs = append(errs, FieldError{
+			Path:    base + ".agent",
+			Message: "delegation target must be pinned (version or agent_version_id) unless late_bound is true",
+		})
+	}
 	if v := strings.TrimSpace(t.Agent.Version); v != "" && !isValidSemver(v) {
 		errs = append(errs, FieldError{Path: base + ".agent.version", Message: "must be valid semver"})
 	}
@@ -190,15 +214,27 @@ func validateAgentToolBinding(t *ToolBinding, base string) []FieldError {
 }
 
 // validateAgents checks the authoring-only spec.agents delegation block. Each
-// entry references another deployed agent by logical id (namespace.name with an
-// optional pinned @version) and compiles to an agent-backed tool binding at
-// publish, so its wire name shares the model-facing tool namespace and must not
-// collide with spec.tools bindings or other delegations.
-func validateAgents(agents []SubagentBinding, tools []ToolBinding, agent *Agent) []FieldError {
+// entry references a bundle-local agent path or a pinned external catalog id and
+// compiles to an agent-backed tool binding at bundle publish, so its wire name
+// shares the model-facing tool namespace and must not collide with spec.tools
+// bindings or other delegations.
+func validateAgents(agents []SubagentBinding, tools []ToolBinding, agent *Agent, opts *ValidateOptions) []FieldError {
 	if len(agents) == 0 {
 		return nil
 	}
+	if opts == nil || !opts.InBundleClosure {
+		return []FieldError{{
+			Path:    "spec.agents",
+			Message: "agents with spec.agents must be published via a Bundle",
+		}}
+	}
+
 	var errs []FieldError
+	bundleRoot := ""
+	if opts != nil {
+		bundleRoot = strings.TrimSpace(opts.BundleRoot)
+	}
+
 	seenRefs := make(map[string]struct{}, len(agents))
 	// Seed the wire-name set with tool wire names so an agent alias cannot
 	// collide with a tool binding presented to the same model.
@@ -211,24 +247,46 @@ func validateAgents(agents []SubagentBinding, tools []ToolBinding, agent *Agent)
 	selfID := LogicalID(agent.Metadata.Namespace, agent.Metadata.Name)
 	for i, sub := range agents {
 		base := fmt.Sprintf("spec.agents[%d]", i)
-		raw := ""
+		wireSeed := ""
 		ref := strings.TrimSpace(sub.Ref)
 		if ref == "" {
 			errs = append(errs, FieldError{Path: base + ".ref", Message: "is required"})
-		} else if parsed, err := ParseLogicalRef(ref); err != nil {
-			errs = append(errs, FieldError{Path: base + ".ref", Message: "must be a logical id of the form namespace.name[@version]"})
 		} else {
-			raw = parsed.Raw
-			if c := strings.TrimSpace(parsed.Constraint); c != "" && !isValidSemver(c) {
-				errs = append(errs, FieldError{Path: base + ".ref", Message: "version must be valid semver (for example namespace.name@1.2.0)"})
-			}
-			if _, dup := seenRefs[raw]; dup {
-				errs = append(errs, FieldError{Path: base + ".ref", Message: "must be unique"})
+			edge, err := ParseAgentEdgeRef(ref, sub.LateBound)
+			if err != nil {
+				errs = append(errs, FieldError{Path: base + ".ref", Message: err.Error()})
 			} else {
-				seenRefs[raw] = struct{}{}
-			}
-			if selfID != "" && raw == selfID {
-				errs = append(errs, FieldError{Path: base + ".ref", Message: "must not reference the declaring agent"})
+				key := edgeRefKey(edge)
+				if _, dup := seenRefs[key]; dup {
+					errs = append(errs, FieldError{Path: base + ".ref", Message: "must be unique"})
+				} else {
+					seenRefs[key] = struct{}{}
+				}
+
+				switch edge.Kind {
+				case AgentEdgeRefKindLocal:
+					errs = append(errs, validateBundleRelativePath(bundleRoot, edge.Path, base+".ref")...)
+					wireSeed = localAgentWireSeed(edge.Path)
+				case AgentEdgeRefKindExternal:
+					raw := edge.External.Raw
+					wireSeed = raw
+					constraint := strings.TrimSpace(edge.External.Constraint)
+					switch {
+					case constraint == "" && !sub.LateBound:
+						errs = append(errs, FieldError{
+							Path:    base + ".ref",
+							Message: "external ref must pin @version unless late_bound is true",
+						})
+					case constraint != "" && !isValidSemver(constraint):
+						errs = append(errs, FieldError{
+							Path:    base + ".ref",
+							Message: "version must be valid semver (for example namespace.name@1.2.0)",
+						})
+					}
+					if selfID != "" && raw == selfID {
+						errs = append(errs, FieldError{Path: base + ".ref", Message: "must not reference the declaring agent"})
+					}
+				}
 			}
 		}
 
@@ -236,8 +294,8 @@ func validateAgents(agents []SubagentBinding, tools []ToolBinding, agent *Agent)
 		namePath := base + ".as"
 		if name == "" {
 			namePath = base
-			if raw != "" {
-				name = sanitizeToolName(raw)
+			if wireSeed != "" {
+				name = sanitizeToolName(wireSeed)
 			}
 		}
 		if name != "" {
@@ -261,6 +319,11 @@ func validateAgents(agents []SubagentBinding, tools []ToolBinding, agent *Agent)
 		}
 	}
 	return errs
+}
+
+func localAgentWireSeed(path string) string {
+	base := filepath.Base(filepath.FromSlash(strings.TrimSpace(path)))
+	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
 // validateMCPServers checks the spec.mcp_servers declarations and returns the set

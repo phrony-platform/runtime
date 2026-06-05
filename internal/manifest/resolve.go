@@ -131,22 +131,32 @@ func expandSubagentBindings(agent *Agent) error {
 	expanded := make([]ToolBinding, 0, len(agent.Spec.Agents))
 	for i, sub := range agent.Spec.Agents {
 		fieldBase := fmt.Sprintf("spec.agents[%d]", i)
-		parsed, err := ParseLogicalRef(sub.Ref)
+		edge, err := ParseAgentEdgeRef(sub.Ref, sub.LateBound)
 		if err != nil {
 			return FieldError{Path: fieldBase + ".ref", Message: err.Error()}
 		}
+		agentBinding := &ToolAgentBinding{
+			LateBound: sub.LateBound,
+			Result:    strings.TrimSpace(sub.Result),
+		}
+		ref := ""
+		switch edge.Kind {
+		case AgentEdgeRefKindLocal:
+			ref = edge.Path
+			agentBinding.ChildName = localAgentWireSeed(edge.Path)
+		case AgentEdgeRefKindExternal:
+			ref = edge.External.Raw
+			agentBinding.Namespace = edge.External.Namespace
+			agentBinding.Name = edge.External.Name
+			agentBinding.Version = strings.TrimSpace(edge.External.Constraint)
+		}
 		binding := ToolBinding{
-			Ref:             parsed.Raw,
-			As:              subagentWireName(sub, parsed),
+			Ref:             ref,
+			As:              subagentWireName(sub, edge),
 			Description:     strings.TrimSpace(sub.Description),
 			InputSchema:     subagentInputSchema(sub),
 			SideEffectClass: SideEffectNonIdempotentWrite,
-			Agent: &ToolAgentBinding{
-				Namespace: parsed.Namespace,
-				Name:      parsed.Name,
-				Version:   strings.TrimSpace(parsed.Constraint),
-				Result:    strings.TrimSpace(sub.Result),
-			},
+			Agent:           agentBinding,
 		}
 		if len(sub.Policies) > 0 {
 			binding.Policies = append([]PolicyAttachment(nil), sub.Policies...)
@@ -158,12 +168,17 @@ func expandSubagentBindings(agent *Agent) error {
 }
 
 // subagentWireName returns the model-facing tool name for a delegation binding,
-// preferring the authored alias and falling back to a sanitized logical ref.
-func subagentWireName(sub SubagentBinding, parsed ParsedLogicalRef) string {
+// preferring the authored alias and falling back to a sanitized ref seed.
+func subagentWireName(sub SubagentBinding, edge AgentEdgeRef) string {
 	if name := strings.TrimSpace(sub.As); name != "" {
 		return name
 	}
-	return sanitizeToolName(parsed.Raw)
+	switch edge.Kind {
+	case AgentEdgeRefKindLocal:
+		return sanitizeToolName(localAgentWireSeed(edge.Path))
+	default:
+		return sanitizeToolName(edge.External.Raw)
+	}
 }
 
 // subagentInputSchema returns the authored input schema or the default single

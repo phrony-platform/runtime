@@ -133,10 +133,12 @@ type ToolMCPBinding struct {
 }
 
 // SubagentBinding is one authoring-only spec.agents entry declaring another
-// deployed agent this agent may call as a tool. It compiles to a ToolBinding
-// with Agent set at publish time.
+// agent this agent may call as a tool. It compiles to a ToolBinding with Agent
+// set at bundle publish time.
 type SubagentBinding struct {
-	// Ref identifies the target agent as namespace.name[@version].
+	// Ref is a bundle-local path (./specialists/billing.yaml), a pinned external
+	// namespace.name@version, or a floating namespace.name only when late_bound
+	// is true.
 	Ref string `yaml:"ref" json:"ref"`
 	// As is the wire name presented to the parent model; defaults from ref.
 	As          string      `yaml:"as,omitempty" json:"as,omitempty"`
@@ -147,17 +149,26 @@ type SubagentBinding struct {
 	Result string `yaml:"result,omitempty" json:"result,omitempty"`
 	// Policies attaches Policy documents gating the delegation call.
 	Policies []PolicyAttachment `yaml:"policies,omitempty" json:"policies,omitempty"`
+	// LateBound opts into live active-deployment resolution at call time and
+	// excludes the edge from bundle closure walks.
+	LateBound bool `yaml:"late_bound,omitempty" json:"late_bound,omitempty"`
 }
 
 // ToolAgentBinding marks a ToolBinding as backed by a nested child agent
 // session. It is compiled from a spec.agents entry and pins the resolved
 // target agent identity plus the requested result shape.
 type ToolAgentBinding struct {
+	// Identity fields are used for tracing and late_bound fallback resolution.
 	Namespace string `yaml:"namespace" json:"namespace"`
 	Name      string `yaml:"name" json:"name"`
-	// Version is the pinned target agent version when the ref constrained it;
-	// empty resolves to the active deployment at call time.
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+	Version   string `yaml:"version,omitempty" json:"version,omitempty"`
+	// ChildName is the vendored member name within a bundle closure.
+	ChildName string `yaml:"child_name,omitempty" json:"child_name,omitempty"`
+	// LateBound resolves to the active deployment at call time when true.
+	LateBound bool `yaml:"late_bound,omitempty" json:"late_bound,omitempty"`
+	// AgentVersionID is the compiled-only frozen target snapshot UUID set at
+	// bundle publish; runtime dispatch uses this directly when LateBound is false.
+	AgentVersionID string `yaml:"agent_version_id,omitempty" json:"agent_version_id,omitempty"`
 	// Result selects how the child output is returned (summary | full).
 	Result string `yaml:"result,omitempty" json:"result,omitempty"`
 }

@@ -26,6 +26,8 @@ func ParseDocument(data []byte) (Document, error) {
 		return ParseTool(data)
 	case KindPolicy:
 		return ParsePolicy(data)
+	case KindBundle:
+		return ParseBundle(data)
 	case "":
 		return nil, fmt.Errorf("parse manifest: missing kind")
 	default:
