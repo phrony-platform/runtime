@@ -140,7 +140,7 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 		st.history = history
 		st.turnCount = countCompletedTurns(history)
 	} else {
-		dispatch, err := s.sessionToolDispatch(ctx, q, session.ID, ver)
+		dispatch, err := s.sessionToolDispatch(ctx, q, session.ID, ver, rootSessionDepth)
 		if err != nil {
 			return err
 		}

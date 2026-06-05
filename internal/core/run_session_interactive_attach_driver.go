@@ -52,7 +52,7 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 	endedAt := sessionEndedAtForAttach(&session)
 
 	if session.Status == model.SessionStatusAwaitingInput {
-		limitState, err := newInteractiveSessionState(ctx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, noopSessionEventSink{}, q)
+		limitState, err := newInteractiveSessionState(ctx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, noopSessionEventSink{}, q, rootSessionDepth)
 		if err != nil {
 			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
 		}
@@ -122,7 +122,7 @@ func (s *runtimeServer) replayAttachSessionState(
 
 	case model.SessionStatusAwaitingInput:
 		lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
-		state, err := newInteractiveSessionState(ctx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q)
+		state, err := newInteractiveSessionState(ctx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q, rootSessionDepth)
 		if err != nil {
 			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
 		}

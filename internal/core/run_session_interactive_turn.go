@@ -46,8 +46,9 @@ func newInteractiveSessionState(
 	startedAt time.Time,
 	events sessionEventSink,
 	q *store.Queries,
+	depth int,
 ) (*interactiveSessionState, error) {
-	dispatch, err := s.sessionToolDispatch(ctx, q, sessionID, ver)
+	dispatch, err := s.sessionToolDispatch(ctx, q, sessionID, ver, depth)
 	if err != nil {
 		return nil, err
 	}

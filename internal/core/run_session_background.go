@@ -67,7 +67,7 @@ func (s *runtimeServer) runSessionBackground(
 		s.scheduleWallClockExpiry(sessionID, time.Duration(maxSec)*time.Second, onLimit)
 	}
 
-	_ = s.driveSessionToCompletion(ctx, q, sessionID, agentVersionID, ver, events, inputMux, inputJSON, true)
+	_ = s.driveSessionToCompletion(ctx, q, sessionID, agentVersionID, ver, events, inputMux, inputJSON, true, rootSessionDepth)
 }
 
 // driveSessionToCompletion builds the interactive session state for an
@@ -94,8 +94,9 @@ func (s *runtimeServer) driveSessionToCompletion(
 	stream runtimev1.Runtime_RunSessionInteractiveServer,
 	inputJSON json.RawMessage,
 	waitForUser bool,
+	depth int,
 ) error {
-	state, err := newInteractiveSessionState(ctx, s, sessionID, agentVersionID, ver, time.Now(), events, q)
+	state, err := newInteractiveSessionState(ctx, s, sessionID, agentVersionID, ver, time.Now(), events, q, depth)
 	if err != nil {
 		return s.failInteractiveSession(ctx, q, events, sessionID, err)
 	}

@@ -134,7 +134,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 	if session.Status == model.SessionStatusAwaitingInput {
 		var sessionUsage provider.TokenUsage
 		attachAwaitingLastTurn, sessionUsage = usageFromSessionOutputJSON(session.Output)
-		attachAwaitingState, err = newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q)
+		attachAwaitingState, err = newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q, rootSessionDepth)
 		if err != nil {
 			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
 		}
@@ -158,7 +158,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 
 	switch session.Status {
 	case model.SessionStatusAwaitingTool:
-		state, err := newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q)
+		state, err := newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q, rootSessionDepth)
 		if err != nil {
 			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
 		}
@@ -210,7 +210,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		})
 
 	case model.SessionStatusAwaitingApproval:
-		state, err := newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q)
+		state, err := newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q, rootSessionDepth)
 		if err != nil {
 			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
 		}
@@ -269,7 +269,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		// limits remain resumable so an operator can continue the conversation.
 		if executor.IsLimitErrorMessage(errMsg) && !isWallClockLimitMessage(errMsg) {
 			lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
-			state, err := newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q)
+			state, err := newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q, rootSessionDepth)
 			if err != nil {
 				return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
 			}

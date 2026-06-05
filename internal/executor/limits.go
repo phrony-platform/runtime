@@ -78,15 +78,15 @@ func (e *LimitError) Error() string {
 }
 
 type limitTracker struct {
-	limits           *manifest.Limits
-	tokensUsed       int
-	iteration        int
-	startedAt        time.Time
-	onLimit          string
-	wallClockPaused  bool
-	pauseStartedAt   time.Time
-	totalWallPaused  time.Duration
-	hitlWaitAccum    time.Duration
+	limits          *manifest.Limits
+	tokensUsed      int
+	iteration       int
+	startedAt       time.Time
+	onLimit         string
+	wallClockPaused bool
+	pauseStartedAt  time.Time
+	totalWallPaused time.Duration
+	hitlWaitAccum   time.Duration
 }
 
 func newLimitTracker(limits *manifest.Limits) *limitTracker {
@@ -121,6 +121,21 @@ func (t *limitTracker) addTokens(text string) error {
 		return nil
 	}
 	t.tokensUsed += estimateTokens(text)
+	max := *t.limits.MaxTokensPerRun
+	if max > 0 && t.tokensUsed > max {
+		return &LimitError{Kind: LimitMaxTokensPerRun, OnLimit: t.onLimit}
+	}
+	return nil
+}
+
+// addUsageTokens charges externally reported token usage (e.g. a delegated agent
+// run returned via a tool result) against the run token budget. It lets
+// cross-tree subagent work count toward max_tokens_per_run.
+func (t *limitTracker) addUsageTokens(n int) error {
+	if t == nil || t.limits == nil || t.limits.MaxTokensPerRun == nil || n <= 0 {
+		return nil
+	}
+	t.tokensUsed += n
 	max := *t.limits.MaxTokensPerRun
 	if max > 0 && t.tokensUsed > max {
 		return &LimitError{Kind: LimitMaxTokensPerRun, OnLimit: t.onLimit}

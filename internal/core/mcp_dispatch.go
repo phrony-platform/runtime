@@ -12,25 +12,58 @@ import (
 )
 
 // sessionToolDispatch resolves the tool dispatcher for a session's agent
-// version. When the version declares spec.mcp_servers with MCP-backed tool
-// bindings, it returns a routing dispatcher that sends those tools to a native
-// MCP client and falls through to the worker registry (s.toolDispatch) for
-// everything else. Versions without MCP tools reuse the shared worker
-// dispatcher unchanged, so the common path allocates nothing extra.
+// version. It layers backend-specific routing dispatchers on top of the shared
+// worker registry (s.toolDispatch): spec.agents bindings route to nested child
+// agent sessions and spec.mcp_servers bindings route to a native MCP client,
+// each falling through to the worker dispatcher for everything else. Versions
+// without agent or MCP bindings reuse the shared worker dispatcher unchanged, so
+// the common path allocates nothing extra.
 //
-// The returned dispatcher may hold MCP sessions; callers that drive turns
-// should closeSessionDispatch it when the session work is done.
+// depth is the delegation depth of this session (0 for a root run); the agent
+// dispatcher uses it to cap nested delegation. The returned dispatcher may hold
+// MCP sessions; callers that drive turns should closeSessionDispatch it when the
+// session work is done.
 func (s *runtimeServer) sessionToolDispatch(
 	ctx context.Context,
 	q *store.Queries,
 	sessionID string,
 	ver *executor.Version,
+	depth int,
 ) (tooldispatch.Dispatcher, error) {
-	if ver == nil || ver.Agent == nil || len(ver.Agent.Spec.MCPServers) == 0 {
+	if ver == nil || ver.Agent == nil {
 		return s.toolDispatch, nil
 	}
 	agent := ver.Agent
 
+	dispatch := s.toolDispatch
+	if agentDisp := s.buildAgentDispatcher(ctx, q, sessionID, agent, depth); agentDisp != nil {
+		dispatch = &tooldispatch.RoutingDispatcher{Primary: agentDisp, Fallback: dispatch}
+	}
+
+	// The MCP dispatcher is layered outermost so closeSessionDispatch reaches it
+	// to release per-session MCP sessions (RoutingDispatcher.Close closes only
+	// its Primary). The agent dispatcher holds no closable resources.
+	mcpDisp, err := s.buildMCPDispatcher(ctx, q, sessionID, agent)
+	if err != nil {
+		return nil, err
+	}
+	if mcpDisp != nil {
+		dispatch = &tooldispatch.RoutingDispatcher{Primary: mcpDisp, Fallback: dispatch}
+	}
+	return dispatch, nil
+}
+
+// buildMCPDispatcher returns an MCP dispatcher for the version's MCP-backed tool
+// bindings, or nil when the version declares none.
+func (s *runtimeServer) buildMCPDispatcher(
+	ctx context.Context,
+	q *store.Queries,
+	sessionID string,
+	agent *manifest.Agent,
+) (*mcp.Dispatcher, error) {
+	if len(agent.Spec.MCPServers) == 0 {
+		return nil, nil
+	}
 	bindings := make(map[string]mcp.Binding)
 	usedServers := make(map[string]bool)
 	for i := range agent.Spec.Tools {
@@ -45,7 +78,7 @@ func (s *runtimeServer) sessionToolDispatch(
 		usedServers[tb.MCP.Server] = true
 	}
 	if len(bindings) == 0 {
-		return s.toolDispatch, nil
+		return nil, nil
 	}
 
 	clients := make(map[string]*mcp.Client)
@@ -67,7 +100,7 @@ func (s *runtimeServer) sessionToolDispatch(
 
 	disp := mcp.NewDispatcher(clients, bindings)
 	disp.SetInvocationRecorder(NewToolInvocationRecorder(q))
-	return &tooldispatch.RoutingDispatcher{Primary: disp, Fallback: s.toolDispatch}, nil
+	return disp, nil
 }
 
 // mcpAuthHeaders resolves the static request headers for an MCP server from its

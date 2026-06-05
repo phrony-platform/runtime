@@ -169,7 +169,7 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 	if s.toolDispatch == nil {
 		return errors.New("tool dispatch is not configured")
 	}
-	dispatch, err := s.sessionToolDispatch(ctx, q, session.ID, ver)
+	dispatch, err := s.sessionToolDispatch(ctx, q, session.ID, ver, rootSessionDepth)
 	if err != nil {
 		return err
 	}
@@ -318,7 +318,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 	}
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
 	defer sessionCancel()
-	dispatch, err := s.sessionToolDispatch(sessionCtx, q, session.ID, ver)
+	dispatch, err := s.sessionToolDispatch(sessionCtx, q, session.ID, ver, rootSessionDepth)
 	if err != nil {
 		return err
 	}

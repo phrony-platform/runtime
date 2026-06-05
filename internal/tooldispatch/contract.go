@@ -16,9 +16,9 @@ type Dispatcher interface {
 // ToolCall is one model-emitted invocation. CallID is the idempotency key and
 // must be stable across restarts for the same logical call (see DeriveCallID).
 type ToolCall struct {
-	CallID          string
-	SessionID       string
-	AgentVersionID  string
+	CallID         string
+	SessionID      string
+	AgentVersionID string
 	// AgentKey is namespace/name for allowlist lookup (e.g. demo/echo).
 	AgentKey        string
 	Turn            int
@@ -54,6 +54,27 @@ type ToolResult struct {
 	CallID  string
 	Payload json.RawMessage
 	Err     *ToolError
+	// Usage reports token consumption attributable to producing this result
+	// (e.g. a nested agent run). It is nil for backends that do no model work,
+	// letting the executor charge delegated work against the parent run budget.
+	Usage *ToolUsage
+}
+
+// ToolUsage carries token counts a dispatcher attributes to a tool result so the
+// caller can account delegated model work against run limits. It mirrors the
+// provider usage shape without importing the provider package.
+type ToolUsage struct {
+	InputTokens  int
+	OutputTokens int
+	Estimated    bool
+}
+
+// Total returns input plus output tokens.
+func (u *ToolUsage) Total() int {
+	if u == nil {
+		return 0
+	}
+	return u.InputTokens + u.OutputTokens
 }
 
 // ToolError is a handler-reported failure surfaced to the model as tool_result content.

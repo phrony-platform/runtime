@@ -43,7 +43,7 @@ func TestSessionToolDispatch_noMCPReturnsWorkerDispatcher(t *testing.T) {
 			Tools: []manifest.ToolBinding{{Ref: "weather.get-forecast"}},
 		},
 	}
-	got, err := srv.sessionToolDispatch(context.Background(), nil, "sess-1", mcpDispatchVersion(agent))
+	got, err := srv.sessionToolDispatch(context.Background(), nil, "sess-1", mcpDispatchVersion(agent), rootSessionDepth)
 	if err != nil {
 		t.Fatalf("sessionToolDispatch: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestSessionToolDispatch_mcpServerButNoMCPToolsReturnsWorkerDispatcher(t *te
 	agent := mcpDispatchAgent()
 	agent.Spec.Tools = []manifest.ToolBinding{{Ref: "weather.get-forecast"}}
 
-	got, err := srv.sessionToolDispatch(context.Background(), nil, "sess-1", mcpDispatchVersion(agent))
+	got, err := srv.sessionToolDispatch(context.Background(), nil, "sess-1", mcpDispatchVersion(agent), rootSessionDepth)
 	if err != nil {
 		t.Fatalf("sessionToolDispatch: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestSessionToolDispatch_buildsRoutingDispatcherForMCPTool(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
-	got, err := srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(mcpDispatchAgent()))
+	got, err := srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(mcpDispatchAgent()), rootSessionDepth)
 	if err != nil {
 		t.Fatalf("sessionToolDispatch: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestSessionToolDispatch_secretDecryptErrorPropagates(t *testing.T) {
 		WithArgs("sess-1", "mcp_token").
 		WillReturnError(context.DeadlineExceeded)
 
-	_, err := srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(mcpDispatchAgent()))
+	_, err := srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(mcpDispatchAgent()), rootSessionDepth)
 	if err == nil {
 		t.Fatal("expected error when auth secret cannot be decrypted")
 	}
@@ -137,7 +137,7 @@ func TestSessionToolDispatch_unsupportedAuthScheme(t *testing.T) {
 	agent := mcpDispatchAgent()
 	agent.Spec.MCPServers[0].Auth.Scheme = "oauth"
 
-	_, err = srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(agent))
+	_, err = srv.sessionToolDispatch(context.Background(), store.New(db), "sess-1", mcpDispatchVersion(agent), rootSessionDepth)
 	if err == nil {
 		t.Fatal("expected error for unsupported auth scheme")
 	}

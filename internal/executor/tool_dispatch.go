@@ -44,6 +44,10 @@ func (v *Version) dispatchToolCalls(
 ) ([]provider.ContentBlock, error) {
 	deadline := tracker.deadline(ctx)
 	results := make([]provider.ContentBlock, len(calls))
+	// usages[i] holds tokens a dispatcher attributes to call i (e.g. a nested
+	// agent run). They are summed and charged to the tracker after g.Wait so the
+	// shared tracker is mutated from a single goroutine.
+	usages := make([]int, len(calls))
 	eval := params.Policies
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -89,8 +93,9 @@ func (v *Version) dispatchToolCalls(
 			res, err := dispatcher.Dispatch(dctx, tdCall)
 			cancelDispatch()
 			if err != nil {
-				return v.handleDispatchError(gctx, params, tracker, call, tdCall, tc, err, dispatcher, ch, &results[i])
+				return v.handleDispatchError(gctx, params, tracker, call, tdCall, tc, err, dispatcher, ch, &results[i], &usages[i])
 			}
+			usages[i] = res.Usage.Total()
 			content, isErr := formatToolResult(res)
 			results[i] = provider.ToolResultBlock(call.ID, content, isErr)
 			emitToolResult(ch, tdCall.CallID, res.Payload, contentIfError(isErr, content))
@@ -98,6 +103,13 @@ func (v *Version) dispatchToolCalls(
 		})
 	}
 	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	total := 0
+	for _, u := range usages {
+		total += u
+	}
+	if err := tracker.addUsageTokens(total); err != nil {
 		return nil, err
 	}
 	return results, nil
@@ -211,6 +223,7 @@ func (v *Version) handleDispatchError(
 	dispatcher tooldispatch.Dispatcher,
 	ch chan<- Event,
 	result *provider.ContentBlock,
+	usage *int,
 ) error {
 	eval := params.Policies
 	if eval == nil {
@@ -256,6 +269,9 @@ func (v *Version) handleDispatchError(
 		cancelDispatch()
 		if redispatchErr != nil {
 			return redispatchErr
+		}
+		if usage != nil {
+			*usage = res.Usage.Total()
 		}
 		content, isErr := formatToolResult(res)
 		*result = provider.ToolResultBlock(call.ID, content, isErr)

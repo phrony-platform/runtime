@@ -30,8 +30,8 @@ func TestStreamCompletion_policyDenyAllowList(t *testing.T) {
 			Instructions: manifest.InstructionsSpec{Text: "System."},
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
 			Tools: []manifest.ToolBinding{{
-				Ref:  "routing.assign-queue",
-				As: toolName,
+				Ref: "routing.assign-queue",
+				As:  toolName,
 			}},
 			Policies: []manifest.PolicySpec{{
 				Name:  "route-only-known-queues",
@@ -66,8 +66,8 @@ func TestStreamCompletion_requireApproval(t *testing.T) {
 			Instructions: manifest.InstructionsSpec{Text: "System."},
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
 			Tools: []manifest.ToolBinding{{
-				Ref:  "routing.assign-queue",
-				As: toolName,
+				Ref: "routing.assign-queue",
+				As:  toolName,
 			}},
 			Policies: []manifest.PolicySpec{{
 				Name:   "severity-approval",
@@ -133,7 +133,7 @@ func TestStreamCompletion_dispatchNoHandlerEscalate(t *testing.T) {
 		Spec: manifest.AgentSpec{
 			Instructions: manifest.InstructionsSpec{Text: "System."},
 			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
-			Tools: []manifest.ToolBinding{{Ref: "weather.get-forecast", As: toolName}},
+			Tools:        []manifest.ToolBinding{{Ref: "weather.get-forecast", As: toolName}},
 			Policies: []manifest.PolicySpec{{
 				Name: "no-handler",
 				Conditions: map[string]any{
@@ -201,6 +201,46 @@ func TestStreamCompletion_dispatchIndeterminateReadOnly(t *testing.T) {
 	}, ch)
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
+	}
+}
+
+func TestStreamCompletion_chargesToolResultUsageAgainstTokenBudget(t *testing.T) {
+	max := 1000
+	toolName := "ask_billing"
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Instructions: manifest.InstructionsSpec{Text: "System."},
+			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "claude"},
+			Tools:        []manifest.ToolBinding{{Ref: "support.billing", As: toolName}},
+			Limits:       &manifest.Limits{MaxTokensPerRun: &max, OnLimit: "halt"},
+		},
+	}
+	call := provider.ToolCall{ID: "c1", Name: toolName, Args: json.RawMessage(`{"task":"x"}`)}
+	disp := &tooldispatch.FakeDispatcher{
+		DispatchFn: func(context.Context, tooldispatch.ToolCall) (tooldispatch.ToolResult, error) {
+			// A delegated agent run reports its aggregate usage; it must count
+			// against the parent run's token budget.
+			return tooldispatch.ToolResult{
+				Payload: json.RawMessage(`{"output":"done"}`),
+				Usage:   &tooldispatch.ToolUsage{InputTokens: 1500, OutputTokens: 600},
+			}, nil
+		},
+	}
+	v := NewVersionWithProvider("v", agent, providertest.Sequence(
+		providertest.ToolUseCompleted(call).Events,
+		providertest.DeltaCompleted().Events,
+	))
+
+	ch := make(chan Event, 16)
+	err := v.StreamCompletion(context.Background(), RunParams{
+		SessionID:  "sess",
+		Turn:       1,
+		Input:      json.RawMessage(`{"message":"go"}`),
+		Dispatcher: disp,
+		Policies:   policy.NewEvaluator(agent),
+	}, ch)
+	if !IsLimitError(err) {
+		t.Fatalf("StreamCompletion err = %v, want max_tokens_per_run limit error", err)
 	}
 }
 

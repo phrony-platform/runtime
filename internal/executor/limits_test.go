@@ -27,6 +27,33 @@ func TestLimitTracker_maxTokensPerRun(t *testing.T) {
 	}
 }
 
+func TestLimitTracker_addUsageTokens_chargesAgainstRunBudget(t *testing.T) {
+	max := 10
+	tracker := newLimitTracker(&manifest.Limits{MaxTokensPerRun: &max, OnLimit: "halt"})
+	if err := tracker.addUsageTokens(6); err != nil {
+		t.Fatalf("addUsageTokens(6): %v", err)
+	}
+	// 6 + 6 = 12 > 10 so the delegated usage tips the run over its token budget.
+	err := tracker.addUsageTokens(6)
+	if err == nil {
+		t.Fatal("addUsageTokens() = nil, want limit error")
+	}
+	var lim *LimitError
+	if !errors.As(err, &lim) || lim.Kind != LimitMaxTokensPerRun {
+		t.Fatalf("err = %v, want max_tokens_per_run limit", err)
+	}
+}
+
+func TestLimitTracker_addUsageTokens_noopWithoutLimit(t *testing.T) {
+	if err := newLimitTracker(nil).addUsageTokens(1_000_000); err != nil {
+		t.Fatalf("addUsageTokens without limits: %v", err)
+	}
+	var tracker *limitTracker
+	if err := tracker.addUsageTokens(5); err != nil {
+		t.Fatalf("addUsageTokens on nil tracker: %v", err)
+	}
+}
+
 func TestLimitTracker_maxLoopIterations(t *testing.T) {
 	max := 1
 	tracker := newLimitTracker(&manifest.Limits{MaxLoopIterations: &max})
