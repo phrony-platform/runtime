@@ -283,6 +283,8 @@ message PublishBundleRequest {
   repeated BundleMemberPackage members = 2;
   // Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
   string actor = 3;
+  // Canonical bundle.lock.json body committed beside the bundle manifest.
+  bytes committed_lock = 4;
 }
 
 message PublishBundleResponse {

@@ -18,6 +18,7 @@ func newBundlesCommand(runtimeAddr *string) *cobra.Command {
 	}
 
 	cmd.AddCommand(
+		newBundleLockCommand(),
 		newBundleValidateCommand(),
 		newBundlePublishCommand(runtimeAddr),
 		newBundleDeployCommand(runtimeAddr),
@@ -26,22 +27,36 @@ func newBundlesCommand(runtimeAddr *string) *cobra.Command {
 	return cmd
 }
 
-func newBundleValidateCommand() *cobra.Command {
+func newBundleLockCommand() *cobra.Command {
 	return &cobra.Command{
+		Use:   "lock BUNDLE",
+		Short: "Write bundle.lock.json from the current closure",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runBundleLock(cmd, args[0])
+		},
+	}
+}
+
+func newBundleValidateCommand() *cobra.Command {
+	var requireLock bool
+	cmd := &cobra.Command{
 		Use:   "validate BUNDLE",
 		Short: "Validate a bundle manifest and closure locally (no publish)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBundleValidate(cmd, args[0])
+			return runBundleValidate(cmd, args[0], requireLock)
 		},
 	}
+	cmd.Flags().BoolVar(&requireLock, "require-lock", false, "fail when bundle.lock.json is missing (CI gate)")
+	return cmd
 }
 
 func newBundlePublishCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "publish BUNDLE",
 		Short: "Publish an immutable bundle version to the runtime",
-		Long:  "Walk the bundle closure, build the lockfile, and publish all vendored members. Use bundle deploy to activate a published lock hash for sessions.",
+		Long:  "Verify bundle.lock.json against the closure and publish all vendored members. Use bundle deploy to activate a published lock hash for sessions.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBundlePublish(cmd, runtimeAddr, args[0])
@@ -80,12 +95,41 @@ func newBundleRunCommand(runtimeAddr *string) *cobra.Command {
 	return cmd
 }
 
-func runBundleValidate(cmd *cobra.Command, bundlePath string) error {
+func runBundleLock(cmd *cobra.Command, bundlePath string) error {
 	resolved, err := loadResolvedBundle(bundlePath)
 	if err != nil {
 		return err
 	}
+	lock := manifest.LockfileFromClosure(resolved.Closure)
+	lockPath := manifest.LockfilePath(resolved.Path)
+	if err := manifest.WriteLockfile(lockPath, lock); err != nil {
+		return err
+	}
+	bundle := resolved.Bundle
+	fmt.Fprintf(cmd.OutOrStdout(), "locked: %s %s\n",
+		agentref.Format(bundle.Metadata.Namespace, bundle.Metadata.Name),
+		resolved.Closure.Version,
+	)
+	fmt.Fprintf(cmd.OutOrStdout(), "members: %d (root: %s)\n",
+		len(resolved.Closure.Members),
+		resolved.Closure.RootChildName,
+	)
+	return nil
+}
 
+func runBundleValidate(cmd *cobra.Command, bundlePath string, requireLock bool) error {
+	state, err := loadBundleWithLock(bundlePath)
+	if err != nil {
+		return err
+	}
+	if requireLock && state.lock == nil {
+		return fmt.Errorf("no committed lock; run phrony bundle lock")
+	}
+	if err := state.compareLockIfPresent(); err != nil {
+		return err
+	}
+
+	resolved := state.resolved
 	bundle := resolved.Bundle
 	for _, member := range resolved.Closure.Members {
 		if member.Origin != manifest.ClosureMemberOriginVendored || member.Resolved == nil {
@@ -109,10 +153,18 @@ func runBundleValidate(cmd *cobra.Command, bundlePath string) error {
 }
 
 func runBundlePublish(cmd *cobra.Command, runtimeAddr *string, bundlePath string) error {
-	resolved, err := loadResolvedBundle(bundlePath)
+	state, err := loadBundleWithLock(bundlePath)
 	if err != nil {
 		return err
 	}
+	if state.lock == nil {
+		return fmt.Errorf("no committed lock; run phrony bundle lock")
+	}
+	if err := state.compareLockIfPresent(); err != nil {
+		return err
+	}
+
+	resolved := state.resolved
 	bundleJSON, err := resolved.bundleManifestJSON()
 	if err != nil {
 		return err
@@ -132,6 +184,7 @@ func runBundlePublish(cmd *cobra.Command, runtimeAddr *string, bundlePath string
 		BundleManifest: bundleJSON,
 		Members:        members,
 		Actor:          cliActor(),
+		CommittedLock:  state.lockRaw,
 	})
 	if err != nil {
 		return clierr.WrapRPC("publish bundle", err)

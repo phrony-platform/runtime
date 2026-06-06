@@ -17,6 +17,12 @@ type resolvedBundle struct {
 	Closure *manifest.ClosurePackage
 }
 
+type bundleLockState struct {
+	resolved *resolvedBundle
+	lock     *manifest.Lockfile
+	lockRaw  []byte
+}
+
 func loadResolvedBundle(bundlePath string) (*resolvedBundle, error) {
 	absPath, err := filepath.Abs(bundlePath)
 	if err != nil {
@@ -41,6 +47,44 @@ func loadResolvedBundle(bundlePath string) (*resolvedBundle, error) {
 		Bundle:  bundle,
 		Closure: closure,
 	}, nil
+}
+
+func loadBundleWithLock(bundlePath string) (*bundleLockState, error) {
+	resolved, err := loadResolvedBundle(bundlePath)
+	if err != nil {
+		return nil, err
+	}
+	lockPath := manifest.LockfilePath(resolved.Path)
+	raw, err := os.ReadFile(lockPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &bundleLockState{resolved: resolved}, nil
+		}
+		return nil, fmt.Errorf("read lockfile: %w", err)
+	}
+	lock, err := manifest.ParseLockfileJSON(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse lockfile: %w", err)
+	}
+	if err := manifest.ValidateLockfileVersion(*lock); err != nil {
+		return nil, fmt.Errorf("bundle.lock.json: %w", err)
+	}
+	return &bundleLockState{
+		resolved: resolved,
+		lock:     lock,
+		lockRaw:  raw,
+	}, nil
+}
+
+func (s *bundleLockState) compareLockIfPresent() error {
+	if s == nil || s.lock == nil {
+		return nil
+	}
+	recomputed := manifest.LockfileFromClosure(s.resolved.Closure)
+	if err := manifest.CompareLockfiles(*s.lock, recomputed); err != nil {
+		return fmt.Errorf("bundle.lock.json drift: %w; run phrony bundle lock", err)
+	}
+	return nil
 }
 
 func (r *resolvedBundle) bundleManifestJSON() ([]byte, error) {

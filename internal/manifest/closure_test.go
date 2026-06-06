@@ -185,6 +185,44 @@ func TestWalkBundle_rejectsDuplicateChildName(t *testing.T) {
 	}
 }
 
+func TestWalkBundle_includesPinnedExternal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeClosureAgent(t, dir, "orchestrator", "orchestrator.yaml", "Route.", []SubagentBinding{{
+		Ref: "support.billing@1.2.0",
+	}})
+	bundle := writeBundleManifest(t, dir, "./orchestrator.yaml")
+
+	pkg, err := WalkBundle(dir, bundle)
+	if err != nil {
+		t.Fatalf("WalkBundle() error = %v", err)
+	}
+	if len(pkg.Members) != 2 {
+		t.Fatalf("len(members) = %d, want 2", len(pkg.Members))
+	}
+	if pkg.Members[0].ChildName != "orchestrator" || pkg.Members[0].Origin != ClosureMemberOriginVendored {
+		t.Fatalf("root member = %+v, want vendored orchestrator", pkg.Members[0])
+	}
+	ext := pkg.Members[1]
+	if ext.ChildName != "billing" || ext.Origin != ClosureMemberOriginExternal {
+		t.Fatalf("external member = %+v, want external billing", ext)
+	}
+	if ext.ContentHash != "" {
+		t.Fatalf("external content_hash = %q, want empty", ext.ContentHash)
+	}
+	if ext.Namespace != "support" || ext.Name != "billing" || ext.Version != "1.2.0" {
+		t.Fatalf("external identity = %s/%s@%s, want support/billing@1.2.0", ext.Namespace, ext.Name, ext.Version)
+	}
+	lockExt := pkg.Lockfile.Members[1]
+	if lockExt.ContentHash != "" {
+		t.Fatalf("lock external content_hash = %q, want empty", lockExt.ContentHash)
+	}
+	if lockExt.Namespace != "support" || lockExt.Name != "billing" || lockExt.Version != "1.2.0" {
+		t.Fatalf("lock external identity = %s/%s@%s, want support/billing@1.2.0",
+			lockExt.Namespace, lockExt.Name, lockExt.Version)
+	}
+}
+
 func TestWalkBundle_excludesLateBound(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -9,23 +9,26 @@ import (
 )
 
 func newValidateCommand() *cobra.Command {
-	return &cobra.Command{
+	var requireLock bool
+	cmd := &cobra.Command{
 		Use:   "validate MANIFEST",
 		Short: "Validate an agent manifest locally (no publish)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runValidate(cmd, args[0])
+			return runValidate(cmd, args[0], requireLock)
 		},
 	}
+	cmd.Flags().BoolVar(&requireLock, "require-lock", false, "for bundles: fail when bundle.lock.json is missing (CI gate)")
+	return cmd
 }
 
-func runValidate(cmd *cobra.Command, manifestPath string) error {
+func runValidate(cmd *cobra.Command, manifestPath string, requireLock bool) error {
 	isBundle, err := isBundleManifestPath(manifestPath)
 	if err != nil {
 		return err
 	}
 	if isBundle {
-		return runBundleValidate(cmd, manifestPath)
+		return runBundleValidate(cmd, manifestPath, requireLock)
 	}
 
 	resolved, err := loadResolvedManifest(manifestPath)

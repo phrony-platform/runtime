@@ -100,7 +100,7 @@ func (q *Queries) UpdateBundleVersionRootMember(ctx context.Context, bundleVersi
 }
 
 const bundleVersionByLockHash = `
-SELECT bv.id, bv.lock::text
+SELECT bv.id, bv.lock
 FROM bundle_versions bv
 WHERE bv.bundle_id = $1 AND bv.lock_hash = $2
 `

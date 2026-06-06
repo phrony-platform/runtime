@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/version"
 )
 
@@ -935,6 +936,190 @@ func TestValidateCommand_bundleKind(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "valid: support/helpdesk sha256:") {
 		t.Fatalf("output = %q, want bundle validation via top-level validate", out.String())
+	}
+}
+
+func TestBundleLockCommand_writesLockfile(t *testing.T) {
+	bundle := writeTestSupportBundle(t, t.TempDir())
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle", "lock", bundle})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	lockPath := manifest.LockfilePath(bundle)
+	committed, err := manifest.ReadLockfile(lockPath)
+	if err != nil {
+		t.Fatalf("ReadLockfile: %v", err)
+	}
+	resolved, err := loadResolvedBundle(bundle)
+	if err != nil {
+		t.Fatalf("loadResolvedBundle: %v", err)
+	}
+	recomputed := manifest.LockfileFromClosure(resolved.Closure)
+	if err := manifest.CompareLockfiles(*committed, recomputed); err != nil {
+		t.Fatalf("committed lock does not match closure: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "locked: support/helpdesk "+committed.Version) {
+		t.Fatalf("output = %q, want locked line with %s", got, committed.Version)
+	}
+	if !strings.Contains(got, "members: 2 (root: orchestrator)") {
+		t.Fatalf("output = %q, want member summary", got)
+	}
+}
+
+func TestBundleValidateCommand_withLockInSync(t *testing.T) {
+	bundle := writeTestSupportBundle(t, t.TempDir())
+	lockBundle(t, bundle)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle", "validate", bundle})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "valid: support/helpdesk sha256:") {
+		t.Fatalf("output = %q, want valid bundle line", out.String())
+	}
+}
+
+func TestBundleValidateCommand_lockDrift(t *testing.T) {
+	dir := t.TempDir()
+	bundle := writeTestSupportBundle(t, dir)
+	lockBundle(t, bundle)
+
+	if err := mutateTestBundleBillingInstructions(t, dir); err != nil {
+		t.Fatalf("mutate billing: %v", err)
+	}
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle", "validate", bundle})
+
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected drift error, got nil")
+	} else if !strings.Contains(err.Error(), "drift") {
+		t.Fatalf("error = %v, want drift", err)
+	}
+}
+
+func TestBundleValidateCommand_requireLock(t *testing.T) {
+	bundle := writeTestSupportBundle(t, t.TempDir())
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle", "validate", bundle, "--require-lock"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "phrony bundle lock") {
+		t.Fatalf("error = %v, want bundle lock hint", err)
+	}
+}
+
+func TestBundlePublishCommand_requiresLock(t *testing.T) {
+	bundle := writeTestSupportBundle(t, t.TempDir())
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle", "publish", bundle})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "phrony bundle lock") {
+		t.Fatalf("error = %v, want bundle lock hint", err)
+	}
+}
+
+func TestPublishCommand_bundleRequiresLock(t *testing.T) {
+	bundle := writeTestSupportBundle(t, t.TempDir())
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"publish", bundle})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "phrony bundle lock") {
+		t.Fatalf("error = %v, want bundle lock hint", err)
+	}
+}
+
+func TestValidateCommand_bundleRequireLock(t *testing.T) {
+	bundle := writeTestSupportBundle(t, t.TempDir())
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"validate", bundle, "--require-lock"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "phrony bundle lock") {
+		t.Fatalf("error = %v, want bundle lock hint", err)
+	}
+}
+
+func TestBundlePublishCommand_rejectsLockDrift(t *testing.T) {
+	dir := t.TempDir()
+	bundle := writeTestSupportBundle(t, dir)
+	lockBundle(t, bundle)
+
+	if err := mutateTestBundleBillingInstructions(t, dir); err != nil {
+		t.Fatalf("mutate billing: %v", err)
+	}
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle", "publish", bundle})
+
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected drift error, got nil")
+	} else if !strings.Contains(err.Error(), "drift") {
+		t.Fatalf("error = %v, want drift", err)
+	}
+}
+
+func mutateTestBundleBillingInstructions(t *testing.T, dir string) error {
+	t.Helper()
+	billingPath := filepath.Join(dir, "specialists", "billing.yaml")
+	data, err := os.ReadFile(billingPath)
+	if err != nil {
+		return err
+	}
+	updated := strings.Replace(string(data), "Answer billing questions.", "Answer billing questions with updated guidance.", 1)
+	return os.WriteFile(billingPath, []byte(updated), 0o600)
+}
+
+func lockBundle(t *testing.T, bundlePath string) {
+	t.Helper()
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle", "lock", bundlePath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("bundle lock: %v", err)
 	}
 }
 

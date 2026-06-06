@@ -22,6 +22,7 @@ services:
       RUNTIME_GRPC_ADDR: 0.0.0.0:7777
       # Dev-only placeholder; replace per environment (openssl rand -base64 32)
       RUNTIME_SECRETS_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      RUNTIME_DISPATCH_QUEUE_WAIT: "5s"
     depends_on:
       postgres:
         condition: service_healthy

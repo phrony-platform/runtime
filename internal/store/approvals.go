@@ -328,12 +328,12 @@ SELECT
 FROM approvals a
 JOIN sessions s ON s.id = a.session_id
 JOIN agent_versions av ON av.id = s.agent_version_id
-JOIN agents ag ON ag.id = av.agent_id
+LEFT JOIN agents ag ON ag.id = av.agent_id
 WHERE ($1::text = '' OR a.status = $1)
 	AND ($2::text = '' OR a.route = $2)
 	AND ($3::text = '' OR a.session_id = $3)
-	AND ($4::text = '' OR ag.namespace = $4)
-	AND ($5::text = '' OR ag.name = $5)
+	AND ($4::text = '' OR COALESCE(ag.namespace, av.manifest->'metadata'->>'namespace') = $4)
+	AND ($5::text = '' OR COALESCE(ag.name, av.manifest->'metadata'->>'name') = $5)
 ORDER BY a.created_at DESC
 `
 

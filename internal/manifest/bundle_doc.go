@@ -11,7 +11,7 @@ import (
 const KindBundle = "Bundle"
 
 // BundleManifest is the v1 Bundle packaging document (kind: Bundle). It declares
-// the root agent for a multi-agent closure; the lockfile is generated at publish.
+// the root agent for a multi-agent closure; bundle.lock.json is a committed sidecar.
 type BundleManifest struct {
 	APIVersion string              `yaml:"apiVersion" json:"apiVersion"`
 	Kind       string              `yaml:"kind" json:"kind"`

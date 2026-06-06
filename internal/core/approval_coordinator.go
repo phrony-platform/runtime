@@ -81,6 +81,43 @@ func (c *approvalCoordinator) gateForSession(sessionID string) *sessionApprovalG
 	return c.sessionGates[sessionID]
 }
 
+// sessionApprovalGate returns the in-process gate for a session, consulting the
+// active-session registry when the coordinator map has not been populated yet.
+func (c *approvalCoordinator) sessionApprovalGate(sessionID string) *sessionApprovalGate {
+	gate := c.gateForSession(sessionID)
+	if gate != nil || c.server == nil {
+		return gate
+	}
+	gate = c.server.activeSessionGate(sessionID)
+	if gate != nil {
+		c.registerGate(sessionID, gate)
+	}
+	return gate
+}
+
+// deliverToWaitingGate unblocks a session driver blocked in WaitApproval. Nested
+// child sessions driven during agent delegation must receive the decision on the
+// in-process gate; spawning resumeAfterApproval concurrently would complete the
+// child in the database while the parent stays blocked in Dispatch.
+func (c *approvalCoordinator) deliverToWaitingGate(
+	row store.Approval,
+	approved bool,
+	args json.RawMessage,
+	failErr error,
+) error {
+	gate := c.sessionApprovalGate(row.SessionID)
+	if gate == nil || !gate.isWaiting() {
+		return nil
+	}
+	if err := gate.deliverDecision(approved, args, failErr); err != nil {
+		if strings.Contains(err.Error(), "already received") {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func (c *approvalCoordinator) lockApproval(approvalID string) func() {
 	c.mu.Lock()
 	mu, ok := c.approvalMu[approvalID]
@@ -285,8 +322,11 @@ func (c *approvalCoordinator) finalizeDecision(
 			ApprovalsReceived: received,
 			Terminal:          true,
 		}
-		if gate := c.gateForSession(row.SessionID); gate != nil && gate.isWaiting() {
-			return result, gate.deliverDecision(false, args, failErr)
+		if err := c.deliverToWaitingGate(row, false, args, failErr); err != nil {
+			return result, err
+		}
+		if c.server != nil && c.server.sessionIsActive(row.SessionID) {
+			return result, nil
 		}
 		if c.server != nil {
 			go func() {
@@ -326,13 +366,14 @@ func (c *approvalCoordinator) finalizeDecision(
 		ApprovalsReceived: received,
 		Terminal:          true,
 	}
-	if gate := c.gateForSession(row.SessionID); gate != nil && gate.isWaiting() {
-		if err := gate.deliverDecision(approved, args, nil); err != nil {
-			return result, err
-		}
+	if err := c.deliverToWaitingGate(row, approved, args, nil); err != nil {
+		return result, err
+	}
+	if c.server != nil && c.server.sessionIsActive(row.SessionID) {
 		return result, nil
 	}
-	if c.server != nil {
+	// Detached sessions with no in-process driver resume asynchronously.
+	if c.server != nil && !c.server.sessionIsActive(row.SessionID) {
 		resumeRow := row
 		go func() {
 			if err := c.server.resumeAfterApproval(context.Background(), resumeRow, approved, args, comment); err != nil {

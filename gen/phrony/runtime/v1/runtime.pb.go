@@ -2199,7 +2199,9 @@ type PublishBundleRequest struct {
 	BundleManifest []byte                 `protobuf:"bytes,1,opt,name=bundle_manifest,json=bundleManifest,proto3" json:"bundle_manifest,omitempty"`
 	Members        []*BundleMemberPackage `protobuf:"bytes,2,rep,name=members,proto3" json:"members,omitempty"`
 	// Audit actor; when empty the server uses PHRONY_ACTOR or the OS user.
-	Actor         string `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	Actor string `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	// Canonical bundle.lock.json body committed beside the bundle manifest.
+	CommittedLock []byte `protobuf:"bytes,4,opt,name=committed_lock,json=committedLock,proto3" json:"committed_lock,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2253,6 +2255,13 @@ func (x *PublishBundleRequest) GetActor() string {
 		return x.Actor
 	}
 	return ""
+}
+
+func (x *PublishBundleRequest) GetCommittedLock() []byte {
+	if x != nil {
+		return x.CommittedLock
+	}
+	return nil
 }
 
 type PublishBundleResponse struct {
@@ -5873,11 +5882,12 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\rauthoring_ref\x18\x03 \x01(\tR\fauthoringRef\x12+\n" +
 	"\x11resolved_manifest\x18\x04 \x01(\fR\x10resolvedManifest\x12\x17\n" +
 	"\ais_root\x18\x05 \x01(\bR\x06isRoot\x12*\n" +
-	"\x11member_version_id\x18\x06 \x01(\tR\x0fmemberVersionId\"\x97\x01\n" +
+	"\x11member_version_id\x18\x06 \x01(\tR\x0fmemberVersionId\"\xbe\x01\n" +
 	"\x14PublishBundleRequest\x12'\n" +
 	"\x0fbundle_manifest\x18\x01 \x01(\fR\x0ebundleManifest\x12@\n" +
 	"\amembers\x18\x02 \x03(\v2&.phrony.runtime.v1.BundleMemberPackageR\amembers\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\"\xc3\x01\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\x12%\n" +
+	"\x0ecommitted_lock\x18\x04 \x01(\fR\rcommittedLock\"\xc3\x01\n" +
 	"\x15PublishBundleResponse\x12\x1b\n" +
 	"\tbundle_id\x18\x01 \x01(\tR\bbundleId\x12*\n" +
 	"\x11bundle_version_id\x18\x02 \x01(\tR\x0fbundleVersionId\x12\x1b\n" +

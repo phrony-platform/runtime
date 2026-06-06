@@ -143,7 +143,8 @@ func TestCompile_subagentBindings(t *testing.T) {
 					Result:      manifest.SubagentResultFull,
 				},
 				{
-					Ref: "support.refund-specialist",
+					Ref:       "support.refund-specialist",
+					LateBound: true,
 				},
 			},
 		},
@@ -188,8 +189,14 @@ func TestCompile_subagentBindings(t *testing.T) {
 	if !refund.IsAgent() {
 		t.Fatal("refund binding should be agent-backed")
 	}
+	if !refund.Agent.LateBound {
+		t.Fatal("refund binding should be late_bound")
+	}
 	if refund.Agent.Version != "" {
-		t.Fatalf("refund version = %q, want empty (active deployment)", refund.Agent.Version)
+		t.Fatalf("refund version = %q, want empty for late_bound", refund.Agent.Version)
+	}
+	if refund.Agent.AgentVersionID != "" {
+		t.Fatalf("refund agent_version_id = %q, want empty before bundle publish", refund.Agent.AgentVersionID)
 	}
 	if refund.Agent.ResolvedResult() != manifest.SubagentResultSummary {
 		t.Fatalf("result = %q, want default summary", refund.Agent.ResolvedResult())

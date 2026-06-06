@@ -141,8 +141,11 @@ func hashManifest(raw []byte) string {
 }
 
 // manifestForStorage returns ref-only manifest JSON (no resolved secret values).
+// When raw is nil the in-memory agent is marshaled (e.g. after bundle closure
+// pinning). Otherwise standalone publish stores the input bytes verbatim when
+// the agent declares no secrets.
 func manifestForStorage(agent *manifest.Agent, raw []byte) (json.RawMessage, error) {
-	if len(agent.Secrets) == 0 {
+	if len(raw) > 0 && len(agent.Secrets) == 0 {
 		return json.RawMessage(raw), nil
 	}
 	stored, err := json.Marshal(agent)

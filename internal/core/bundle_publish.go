@@ -33,9 +33,6 @@ type bundleMemberPlan struct {
 }
 
 func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.PublishBundleRequest) (*runtimev1.PublishBundleResponse, error) {
-	if _, err := s.queries(); err != nil {
-		return nil, err
-	}
 	rawBundle := req.GetBundleManifest()
 	if len(rawBundle) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "bundle_manifest is required")
@@ -43,6 +40,18 @@ func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.Publis
 	members := req.GetMembers()
 	if len(members) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "members is required")
+	}
+
+	committedLockRaw := bytes.TrimSpace(req.GetCommittedLock())
+	if len(committedLockRaw) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "committed_lock is required; run phrony bundle lock")
+	}
+	committedLock, err := manifest.ParseLockfileJSON(committedLockRaw)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "committed_lock: %v", err)
+	}
+	if err := manifest.ValidateLockfileVersion(*committedLock); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "committed_lock: %v", err)
 	}
 
 	bundle, err := parseBundleManifest(rawBundle)
@@ -66,14 +75,16 @@ func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.Publis
 		return nil, status.Error(codes.InvalidArgument, "members must include exactly one root member")
 	}
 
-	lockfile, lockHash, err := buildLockfileFromPlans(rootChildName, plans)
+	verificationLock, err := buildVerificationLockFromPlans(rootChildName, plans)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "build lockfile: %v", err)
+		return nil, status.Errorf(codes.Internal, "build verification lockfile: %v", err)
 	}
-	lockJSON, err := json.Marshal(lockfile)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "encode lockfile: %v", err)
+	if err := manifest.CompareLockfiles(*committedLock, verificationLock); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "committed_lock drift: %v", err)
 	}
+
+	lockHash := committedLock.Version
+	lockJSON := json.RawMessage(committedLockRaw)
 
 	labelsJSON, err := marshalLabels(bundle.Metadata.Labels)
 	if err != nil {
@@ -129,7 +140,7 @@ func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.Publis
 			if err := manifest.Validate(plan.agent); err != nil {
 				return nil, deployValidationStatus(err)
 			}
-			stored, err := manifestForStorage(plan.agent, plan.storedManifest)
+			stored, err := manifestForStorage(plan.agent, nil)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "encode member manifest: %v", err)
 			}
@@ -328,16 +339,18 @@ func planExternalMember(ctx context.Context, q *store.Queries, plan *bundleMembe
 	return nil
 }
 
-func buildLockfileFromPlans(rootChildName string, plans []bundleMemberPlan) (manifest.Lockfile, string, error) {
+func buildVerificationLockFromPlans(rootChildName string, plans []bundleMemberPlan) (manifest.Lockfile, error) {
 	members := make([]manifest.LockfileMember, 0, len(plans))
 	for _, plan := range plans {
 		entry := manifest.LockfileMember{
-			ChildName:   plan.childName,
-			Origin:      plan.origin,
-			ContentHash: plan.contentHash,
-			Ref:         plan.authoringRef,
+			ChildName: plan.childName,
+			Origin:    plan.origin,
+			Ref:       plan.authoringRef,
 		}
-		if plan.origin == manifest.ClosureMemberOriginExternal {
+		switch plan.origin {
+		case manifest.ClosureMemberOriginVendored:
+			entry.ContentHash = plan.contentHash
+		case manifest.ClosureMemberOriginExternal:
 			entry.Namespace = plan.namespace
 			entry.Name = plan.name
 			entry.Version = plan.version
@@ -346,13 +359,13 @@ func buildLockfileFromPlans(rootChildName string, plans []bundleMemberPlan) (man
 	}
 	version, err := manifest.LockfileVersion(rootChildName, members)
 	if err != nil {
-		return manifest.Lockfile{}, "", err
+		return manifest.Lockfile{}, err
 	}
 	return manifest.Lockfile{
 		Version:       version,
 		RootChildName: rootChildName,
 		Members:       members,
-	}, version, nil
+	}, nil
 }
 
 func closurePackageFromPlans(rootChildName string, plans []bundleMemberPlan) *manifest.ClosurePackage {

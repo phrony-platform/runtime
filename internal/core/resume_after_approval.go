@@ -22,9 +22,19 @@ func (s *runtimeServer) resumeAfterApproval(
 	args []byte,
 	comment string,
 ) error {
+	// A nested child session may become active between finalizeDecision checking
+	// sessionIsActive and this goroutine starting. Never start a second driver for
+	// an active session; only unblock the in-process WaitApproval.
+	if s.sessionIsActive(row.SessionID) {
+		return s.approvalCoord().deliverToWaitingGate(row, approved, args, nil)
+	}
+
 	gate := s.activeSessionGate(row.SessionID)
+	if gate == nil {
+		gate = s.approvalCoord().gateForSession(row.SessionID)
+	}
 	if gate != nil && gate.isWaiting() {
-		return nil
+		return gate.deliverDecision(approved, args, nil)
 	}
 
 	q, err := s.queries()
