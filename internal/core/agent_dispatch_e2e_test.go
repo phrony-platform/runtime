@@ -143,7 +143,7 @@ func driveStubSessionToCompletion(t *testing.T, srv *runtimeServer, agentVersion
 	if err != nil {
 		t.Fatalf("queries: %v", err)
 	}
-	sessionID, err := srv.createRunSession(ctx, agentVersionID, input, nil)
+	sessionID, err := srv.createRunSession(ctx, agentVersionID, nil, input, nil)
 	if err != nil {
 		t.Fatalf("createRunSession: %v", err)
 	}

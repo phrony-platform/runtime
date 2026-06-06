@@ -20,6 +20,14 @@ func newValidateCommand() *cobra.Command {
 }
 
 func runValidate(cmd *cobra.Command, manifestPath string) error {
+	isBundle, err := isBundleManifestPath(manifestPath)
+	if err != nil {
+		return err
+	}
+	if isBundle {
+		return runBundleValidate(cmd, manifestPath)
+	}
+
 	resolved, err := loadResolvedManifest(manifestPath)
 	if err != nil {
 		return err

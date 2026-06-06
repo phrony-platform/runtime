@@ -24,12 +24,32 @@ func (s *runtimeServer) RunSession(ctx context.Context, req *runtimev1.RunSessio
 		return nil, err
 	}
 
-	agentVersionID, err := resolveAgentVersionID(ctx, s.db.DB, req.GetAgentRef())
-	if err != nil {
-		return nil, err
+	hasAgent := req.GetAgentRef() != nil && req.GetAgentRef().GetNamespace() != "" && req.GetAgentRef().GetName() != ""
+	hasBundle := req.GetBundleRef() != nil && req.GetBundleRef().GetNamespace() != "" && req.GetBundleRef().GetName() != ""
+	switch {
+	case hasAgent && hasBundle:
+		return nil, status.Error(codes.InvalidArgument, "exactly one of agent_ref or bundle_ref is required")
+	case !hasAgent && !hasBundle:
+		return nil, status.Error(codes.InvalidArgument, "agent_ref or bundle_ref is required")
 	}
 
-	sessionID, err := s.createRunSession(ctx, agentVersionID, inputJSON, req.GetResolvedSecrets())
+	var agentVersionID string
+	var bundleVersionID *string
+	if hasBundle {
+		target, err := resolveBundleSessionTarget(ctx, s.db.DB, req.GetBundleRef())
+		if err != nil {
+			return nil, err
+		}
+		agentVersionID = target.agentVersionID
+		bundleVersionID = &target.bundleVersionID
+	} else {
+		agentVersionID, err = resolveAgentVersionID(ctx, s.db.DB, req.GetAgentRef())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	sessionID, err := s.createRunSession(ctx, agentVersionID, bundleVersionID, inputJSON, req.GetResolvedSecrets())
 	if err != nil {
 		return nil, err
 	}

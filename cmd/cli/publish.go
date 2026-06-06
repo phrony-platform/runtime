@@ -22,6 +22,14 @@ func newPublishCommand(runtimeAddr *string) *cobra.Command {
 }
 
 func runPublish(cmd *cobra.Command, runtimeAddr *string, manifestPath string) error {
+	isBundle, err := isBundleManifestPath(manifestPath)
+	if err != nil {
+		return err
+	}
+	if isBundle {
+		return runBundlePublish(cmd, runtimeAddr, manifestPath)
+	}
+
 	resolved, err := loadResolvedManifest(manifestPath)
 	if err != nil {
 		return err

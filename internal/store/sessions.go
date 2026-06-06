@@ -9,8 +9,8 @@ import (
 )
 
 const insertSession = `
-INSERT INTO sessions (id, agent_version_id, input, status, parent_session_id, depth)
-VALUES ($1, $2, $3::jsonb, $4, $5, $6)
+INSERT INTO sessions (id, agent_version_id, input, status, parent_session_id, depth, bundle_version_id)
+VALUES ($1, $2, $3::jsonb, $4, $5, $6, NULLIF($7, '')::uuid)
 RETURNING id
 `
 
@@ -24,12 +24,18 @@ type InsertSessionParams struct {
 	ParentSessionID *string `json:"parent_session_id"`
 	// Depth is the delegation depth of the session (0 for a top-level run).
 	Depth int `json:"depth"`
+	// BundleVersionID is set for top-level sessions started from a deployed bundle.
+	BundleVersionID *string `json:"bundle_version_id"`
 }
 
 func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (string, error) {
 	var parent any
 	if arg.ParentSessionID != nil {
 		parent = *arg.ParentSessionID
+	}
+	var bundleVersionID string
+	if arg.BundleVersionID != nil {
+		bundleVersionID = *arg.BundleVersionID
 	}
 	row := q.db.QueryRowContext(ctx, insertSession,
 		arg.ID,
@@ -38,6 +44,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (s
 		arg.Status,
 		parent,
 		arg.Depth,
+		bundleVersionID,
 	)
 	var id string
 	err := row.Scan(&id)

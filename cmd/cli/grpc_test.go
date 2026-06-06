@@ -279,7 +279,7 @@ func expectInteractiveRunSessionMocks(mock sqlmock.Sqlmock, versionID string, in
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0).
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0, "").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
 	mock.ExpectCommit()
 	mock.ExpectQuery(`SELECT manifest`).

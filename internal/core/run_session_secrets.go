@@ -17,12 +17,13 @@ import (
 // newSessionRow describes a session to persist, including optional nested-child
 // linkage (parent session and delegation depth) for agent delegation.
 type newSessionRow struct {
-	sessionID       string
-	agentVersionID  string
-	input           []byte
-	resolved        map[string][]byte
-	parentSessionID *string
-	depth           int
+	sessionID        string
+	agentVersionID   string
+	bundleVersionID  *string
+	input            []byte
+	resolved         map[string][]byte
+	parentSessionID  *string
+	depth            int
 }
 
 // createRunSession validates resolved secrets, inserts a top-level session row,
@@ -30,14 +31,16 @@ type newSessionRow struct {
 func (s *runtimeServer) createRunSession(
 	ctx context.Context,
 	agentVersionID string,
+	bundleVersionID *string,
 	inputJSON []byte,
 	resolved map[string][]byte,
 ) (string, error) {
 	return s.persistNewSession(ctx, newSessionRow{
-		sessionID:      newRunSessionID(),
-		agentVersionID: agentVersionID,
-		input:          inputJSON,
-		resolved:       resolved,
+		sessionID:       newRunSessionID(),
+		agentVersionID:  agentVersionID,
+		bundleVersionID: bundleVersionID,
+		input:           inputJSON,
+		resolved:        resolved,
 	})
 }
 
@@ -86,6 +89,7 @@ func (s *runtimeServer) persistNewSession(ctx context.Context, row newSessionRow
 	if _, err := txQ.InsertSession(ctx, store.InsertSessionParams{
 		ID:              row.sessionID,
 		AgentVersionID:  row.agentVersionID,
+		BundleVersionID: row.bundleVersionID,
 		Input:           row.input,
 		Status:          model.SessionStatusRunning,
 		ParentSessionID: row.parentSessionID,

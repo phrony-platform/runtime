@@ -71,7 +71,7 @@ func (s *runtimeServer) runSessionInteractiveStartWithAgentRef(
 		return err
 	}
 
-	sessionID, err := s.createRunSession(ctx, agentVersionID, inputJSON, resolvedSecrets)
+	sessionID, err := s.createRunSession(ctx, agentVersionID, nil, inputJSON, resolvedSecrets)
 	if err != nil {
 		return err
 	}

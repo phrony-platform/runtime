@@ -841,3 +841,114 @@ func TestPublishCommand_readManifestFailed(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func writeTestSupportBundle(t *testing.T, dir string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "specialists"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	billing := `apiVersion: phrony.com/v1
+kind: Agent
+metadata:
+  name: billing
+  namespace: support
+  version: 1.0.0
+spec:
+  purpose: Handle billing.
+  instructions:
+    text: Answer billing questions.
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-5
+`
+	orchestrator := `apiVersion: phrony.com/v1
+kind: Agent
+metadata:
+  name: orchestrator
+  namespace: support
+  version: 1.0.0
+spec:
+  purpose: Route billing tasks.
+  instructions:
+    text: Delegate billing questions.
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-5
+  agents:
+    - ref: ./specialists/billing.yaml
+      as: ask_billing
+      description: Billing specialist
+      result: summary
+`
+	bundleYAML := `apiVersion: phrony.com/v1
+kind: Bundle
+metadata:
+  name: helpdesk
+  namespace: support
+spec:
+  root: ./orchestrator.yaml
+`
+	for path, content := range map[string]string{
+		"specialists/billing.yaml": billing,
+		"orchestrator.yaml":        orchestrator,
+		"bundle.yaml":              bundleYAML,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, path), []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile %s: %v", path, err)
+		}
+	}
+	return filepath.Join(dir, "bundle.yaml")
+}
+
+func TestBundleValidateCommand_success(t *testing.T) {
+	bundle := writeTestSupportBundle(t, t.TempDir())
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle", "validate", bundle})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "valid: support/helpdesk sha256:") {
+		t.Fatalf("output = %q, want valid bundle line", got)
+	}
+	if !strings.Contains(got, "members: 2 (root: orchestrator)") {
+		t.Fatalf("output = %q, want member summary", got)
+	}
+}
+
+func TestValidateCommand_bundleKind(t *testing.T) {
+	bundle := writeTestSupportBundle(t, t.TempDir())
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"validate", bundle})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "valid: support/helpdesk sha256:") {
+		t.Fatalf("output = %q, want bundle validation via top-level validate", out.String())
+	}
+}
+
+func TestBundleDeployCommand_requiresVersionedRef(t *testing.T) {
+	root := NewRootCommand()
+	root.SetArgs([]string{"bundle", "deploy", "support/helpdesk"})
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "@version") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

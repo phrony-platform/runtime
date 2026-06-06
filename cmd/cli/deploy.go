@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/agentref"
@@ -25,6 +26,9 @@ func runDeployActivate(cmd *cobra.Command, runtimeAddr *string, agentRef string)
 	ref, err := parseAgentRefVersionRequired(agentRef)
 	if err != nil {
 		return err
+	}
+	if strings.HasPrefix(ref.GetVersion(), "sha256:") {
+		return runBundleDeploy(cmd, runtimeAddr, agentRef)
 	}
 
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
