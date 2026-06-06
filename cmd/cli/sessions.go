@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/phrony-platform/runtime/internal/cliout"
 	"github.com/phrony-platform/runtime/internal/model"
@@ -18,20 +19,22 @@ func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 	}
 
 	ls := &cobra.Command{
-		Use:   "ls [AGENT]",
-		Short: "List sessions (optionally filter by agent)",
+		Use:   "ls [TARGET]",
+		Short: "List sessions (optionally filter by agent or bundle)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var agentName string
+			var target string
 			if len(args) > 0 {
-				agentName = args[0]
+				target = args[0]
 			}
 			status, _ := cmd.Flags().GetString("status")
 			includeChildren, _ := cmd.Flags().GetBool("include-children")
-			return runSessionsList(cmd, runtimeAddr, agentName, status, includeChildren)
+			kind, _ := cmd.Flags().GetString("kind")
+			return runSessionsList(cmd, runtimeAddr, target, status, kind, includeChildren)
 		},
 	}
 	ls.Flags().String("status", "", "filter by session status (pending, running, awaiting_input, completed, failed, cancelled)")
 	ls.Flags().Bool("include-children", false, "include delegated child sessions in the listing")
+	ls.Flags().String("kind", "", "filter by session kind (agent or bundle); when bundle, TARGET is parsed as a bundle reference")
 
 	inspect := &cobra.Command{
 		Use:   "inspect SESSION_ID",
@@ -81,27 +84,35 @@ func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 	return cmd
 }
 
-func runSessionsList(cmd *cobra.Command, runtimeAddr *string, agentName, status string, includeChildren bool) error {
-	var ref *runtimev1.AgentRef
-	if agentName != "" {
-		var err error
-		ref, err = parseAgentRef(agentName)
-		if err != nil {
-			return err
+func runSessionsList(cmd *cobra.Command, runtimeAddr *string, target, status, kind string, includeChildren bool) error {
+	req := &runtimev1.ListSessionsRequest{
+		Status:          status,
+		IncludeChildren: includeChildren,
+		Kind:            kind,
+	}
+	if target != "" {
+		if kind == "bundle" {
+			bundleRef, err := parseBundleRef(target)
+			if err != nil {
+				return err
+			}
+			req.BundleRef = bundleRef
+		} else {
+			agentRef, err := parseAgentRef(target)
+			if err != nil {
+				return err
+			}
+			req.AgentRef = agentRef
 		}
 	}
 
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
-		resp, err := rt.ListSessions(cmd.Context(), &runtimev1.ListSessionsRequest{
-			AgentRef:        ref,
-			Status:          status,
-			IncludeChildren: includeChildren,
-		})
+		resp, err := rt.ListSessions(cmd.Context(), req)
 		if err != nil {
 			return clierr.WrapRPC("list sessions", err)
 		}
 
-		headers := []string{"ID", "STATUS", "UPDATED_AT", "RESUMABLE"}
+		headers := []string{"ID", "KIND", "TARGET", "STATUS", "UPDATED_AT", "RESUMABLE"}
 		rows := make([][]string, 0, len(resp.GetSessions()))
 		for _, s := range resp.GetSessions() {
 			resumable := ""
@@ -110,6 +121,8 @@ func runSessionsList(cmd *cobra.Command, runtimeAddr *string, agentName, status 
 			}
 			rows = append(rows, []string{
 				s.GetId(),
+				s.GetKind(),
+				formatSessionListTarget(s),
 				s.GetStatus(),
 				s.GetUpdatedAt(),
 				resumable,
@@ -117,6 +130,18 @@ func runSessionsList(cmd *cobra.Command, runtimeAddr *string, agentName, status 
 		}
 		return cliout.WriteTable(cmd.OutOrStdout(), headers, rows)
 	})
+}
+
+func formatSessionListTarget(s *runtimev1.SessionSummary) string {
+	if s.GetKind() == "bundle" {
+		if br := s.GetBundleRef(); br != nil && br.GetNamespace() != "" && br.GetName() != "" {
+			return agentref.FormatVersioned(br.GetNamespace(), br.GetName(), br.GetVersion())
+		}
+	}
+	if ar := s.GetAgentRef(); ar != nil && ar.GetNamespace() != "" && ar.GetName() != "" {
+		return agentref.FormatVersioned(ar.GetNamespace(), ar.GetName(), ar.GetVersion())
+	}
+	return ""
 }
 
 func runSessionsInspect(cmd *cobra.Command, runtimeAddr *string, sessionID string, asJSON bool) error {

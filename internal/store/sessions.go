@@ -172,11 +172,18 @@ func (q *Queries) UpdateSession(ctx context.Context, arg UpdateSessionParams) (t
 }
 
 type SessionListRow struct {
-	ID             string
-	AgentVersionID string
-	Status         string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID              string
+	AgentVersionID  string
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	BundleVersionID sql.NullString
+	AgentNamespace  string
+	AgentName       string
+	AgentVersion    string
+	BundleNamespace sql.NullString
+	BundleName      sql.NullString
+	BundleVersion   sql.NullString
 }
 
 const cancelSession = `
@@ -215,21 +222,40 @@ func (q *Queries) CompleteSession(ctx context.Context, sessionID string) (string
 	return id, err
 }
 
-const listSessionsByAgentVersionID = `
-SELECT id, agent_version_id, status, created_at, updated_at
-FROM sessions
-WHERE (NULLIF($1, '') IS NULL OR agent_version_id = NULLIF($1, '')::uuid)
-  AND ($2 = '' OR status = $2)
-  AND ($3::boolean OR parent_session_id IS NULL)
-ORDER BY updated_at DESC
+const listSessions = `
+SELECT
+  s.id, s.agent_version_id, s.status, s.created_at, s.updated_at, s.bundle_version_id,
+  COALESCE(ag.namespace, av.manifest->'metadata'->>'namespace', '') AS agent_namespace,
+  COALESCE(ag.name, av.manifest->'metadata'->>'name', '') AS agent_name,
+  av.version AS agent_version,
+  b.namespace AS bundle_namespace,
+  b.name AS bundle_name,
+  bv.version AS bundle_version
+FROM sessions s
+JOIN agent_versions av ON av.id = s.agent_version_id
+LEFT JOIN agents ag ON ag.id = av.agent_id
+LEFT JOIN bundle_versions bv ON bv.id = s.bundle_version_id
+LEFT JOIN bundles b ON b.id = bv.bundle_id
+WHERE (NULLIF($1, '') IS NULL OR s.agent_version_id = NULLIF($1, '')::uuid)
+  AND ($2 = '' OR s.status = $2)
+  AND ($3::boolean OR s.parent_session_id IS NULL)
+  AND (NULLIF($4, '') IS NULL OR s.bundle_version_id IN
+       (SELECT id FROM bundle_versions WHERE bundle_id = NULLIF($4, '')::uuid))
+  AND ($5 = '' OR ($5 = 'bundle' AND s.bundle_version_id IS NOT NULL)
+                OR ($5 = 'agent'  AND s.bundle_version_id IS NULL))
+ORDER BY s.updated_at DESC
 `
 
-type ListSessionsByAgentVersionIDParams struct {
+type ListSessionsParams struct {
 	AgentVersionID string
 	// Status filter; empty means all statuses.
 	Status string
 	// IncludeChildren includes delegated child sessions when true.
 	IncludeChildren bool
+	// BundleID filters to sessions originating from the given bundle; empty means no filter.
+	BundleID string
+	// Kind filters by session kind: empty (all), "agent", or "bundle".
+	Kind string
 }
 
 const listDescendantSessionIDs = `
@@ -265,8 +291,8 @@ func (q *Queries) ListDescendantSessionIDs(ctx context.Context, rootSessionID st
 	return out, rows.Err()
 }
 
-func (q *Queries) ListSessionsByAgentVersionID(ctx context.Context, arg ListSessionsByAgentVersionIDParams) ([]SessionListRow, error) {
-	rows, err := q.db.QueryContext(ctx, listSessionsByAgentVersionID, arg.AgentVersionID, arg.Status, arg.IncludeChildren)
+func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]SessionListRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessions, arg.AgentVersionID, arg.Status, arg.IncludeChildren, arg.BundleID, arg.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +301,11 @@ func (q *Queries) ListSessionsByAgentVersionID(ctx context.Context, arg ListSess
 	var out []SessionListRow
 	for rows.Next() {
 		var row SessionListRow
-		if err := rows.Scan(&row.ID, &row.AgentVersionID, &row.Status, &row.CreatedAt, &row.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&row.ID, &row.AgentVersionID, &row.Status, &row.CreatedAt, &row.UpdatedAt, &row.BundleVersionID,
+			&row.AgentNamespace, &row.AgentName, &row.AgentVersion,
+			&row.BundleNamespace, &row.BundleName, &row.BundleVersion,
+		); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

@@ -17,9 +17,13 @@ func TestRuntime_ListSessions_success(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("version-uuid", "", false).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
-			AddRow("sess-1", "version-uuid", model.SessionStatusAwaitingInput, now, now))
+		WithArgs("version-uuid", "", false, "", "").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "status", "created_at", "updated_at", "bundle_version_id",
+			"agent_namespace", "agent_name", "agent_version",
+			"bundle_namespace", "bundle_name", "bundle_version",
+		}).AddRow("sess-1", "version-uuid", model.SessionStatusAwaitingInput, now, now, nil,
+			"demo", "echo-agent", "1.2.0", nil, nil, nil))
 
 	srv := &runtimeServer{db: db}
 	resp, err := srv.ListSessions(context.Background(), &runtimev1.ListSessionsRequest{
@@ -37,6 +41,9 @@ func TestRuntime_ListSessions_success(t *testing.T) {
 	}
 	if summary.GetStatus() != model.SessionStatusAwaitingInput {
 		t.Fatalf("status = %q", summary.GetStatus())
+	}
+	if ar := summary.GetAgentRef(); ar == nil || ar.GetNamespace() != "demo" || ar.GetName() != "echo-agent" {
+		t.Fatalf("agent_ref = %+v, want demo/echo-agent", summary.GetAgentRef())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -72,9 +79,13 @@ func TestRuntime_ListSessions_statusFilter(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("version-uuid", model.SessionStatusAwaitingInput, false).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
-			AddRow("sess-await", "version-uuid", model.SessionStatusAwaitingInput, now, now))
+		WithArgs("version-uuid", model.SessionStatusAwaitingInput, false, "", "").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "status", "created_at", "updated_at", "bundle_version_id",
+			"agent_namespace", "agent_name", "agent_version",
+			"bundle_namespace", "bundle_name", "bundle_version",
+		}).AddRow("sess-await", "version-uuid", model.SessionStatusAwaitingInput, now, now, nil,
+			"demo", "echo-agent", "1.2.0", nil, nil, nil))
 
 	srv := &runtimeServer{db: db}
 	resp, err := srv.ListSessions(context.Background(), &runtimev1.ListSessionsRequest{

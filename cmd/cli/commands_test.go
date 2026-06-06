@@ -128,7 +128,7 @@ func TestRunsLsCommand_success(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"sess-await", "sess-done", "awaiting_input", "completed", "RESUMABLE", "yes"} {
+	for _, want := range []string{"sess-await", "sess-done", "awaiting_input", "completed", "RESUMABLE", "yes", "demo/echo-agent@1.2.0", "TARGET"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output = %q, want %q", got, want)
 		}

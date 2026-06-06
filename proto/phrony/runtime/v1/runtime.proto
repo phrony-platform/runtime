@@ -526,6 +526,10 @@ message ListSessionsRequest {
   string status = 2;
   // When false (default), delegated child sessions (parent_session_id set) are omitted.
   bool include_children = 3;
+  // Filter sessions to one bundle's runs. Mutually exclusive with agent_ref.
+  BundleRef bundle_ref = 4;
+  // Filter by session kind: empty (all), "agent" (no bundle_version_id), or "bundle".
+  string kind = 5;
 }
 
 message SessionSummary {
@@ -534,6 +538,14 @@ message SessionSummary {
   string status = 3;
   string created_at = 4;  // RFC3339
   string updated_at = 5;
+  // "bundle" when the session was started from a deployed bundle, else "agent".
+  string kind = 6;
+  // Set when the session originated from a bundle run; empty otherwise.
+  string bundle_version_id = 7;
+  // Agent that executed this session (namespace/name@version).
+  AgentRef agent_ref = 8;
+  // Bundle that started this session; set only for bundle-originated root sessions.
+  BundleRef bundle_ref = 9;
 }
 
 message ListSessionsResponse {
