@@ -345,9 +345,11 @@ func (s *runtimeServer) runChildSessionToCompletion(
 	}
 	defer s.unregisterActiveSession(childSessionID)
 
+	// Autonomous child: waitForUser=false so a closed input stream (EOF) does not
+	// end the driver while a turn is blocked on HITL approval inside delegation.
 	if err := s.driveSessionToCompletion(
 		childCtx, q, childSessionID, agentVersionID, ver,
-		eventHub, inputMux, inputJSON, true, depth,
+		eventHub, inputMux, inputJSON, false, depth,
 	); err != nil {
 		return err
 	}

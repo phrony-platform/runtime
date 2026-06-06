@@ -50,7 +50,29 @@ func (s *runtimeServer) InspectSession(ctx context.Context, req *runtimev1.Inspe
 	}
 
 	root := assembleInspectTree(sessionID, nodes)
-	return &runtimev1.InspectSessionResponse{Session: root}, nil
+
+	depthBySession := make(map[string]int32, len(nodes))
+	var collectDepth func(*runtimev1.SessionInspect)
+	collectDepth = func(n *runtimev1.SessionInspect) {
+		if n == nil {
+			return
+		}
+		depthBySession[n.GetId()] = n.GetDepth()
+		for _, child := range n.GetChildren() {
+			collectDepth(child)
+		}
+	}
+	collectDepth(root)
+
+	rootEvents, err := q.ListEventsByRoot(ctx, sessionID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list root session events: %v", err)
+	}
+
+	return &runtimev1.InspectSessionResponse{
+		Session:         root,
+		MergedTimeline:  buildMergedInspectTimeline(rootEvents, depthBySession),
+	}, nil
 }
 
 func (s *runtimeServer) buildSessionInspect(ctx context.Context, q *store.Queries, sessionID string) (*runtimev1.SessionInspect, error) {
@@ -243,14 +265,32 @@ func sessionOutputToProto(output json.RawMessage) *runtimev1.SessionOutputInspec
 func sessionEventsToProto(events []store.Event) []*runtimev1.SessionEventEntry {
 	out := make([]*runtimev1.SessionEventEntry, 0, len(events))
 	for _, ev := range events {
-		out = append(out, &runtimev1.SessionEventEntry{
-			Id:        ev.ID,
-			Type:      ev.Type,
-			Payload:   ev.Payload,
-			CreatedAt: formatTime(ev.TS),
-		})
+		out = append(out, eventToProto(ev))
 	}
 	return out
+}
+
+func eventToProto(ev store.Event) *runtimev1.SessionEventEntry {
+	entry := &runtimev1.SessionEventEntry{
+		Id:         ev.ID,
+		Type:       ev.Type,
+		Payload:    ev.Payload,
+		CreatedAt:  formatTime(ev.TS),
+		Seq:        int32(ev.Seq),
+		TsUnixMs:   ev.TS.UnixMilli(),
+		SessionId:  ev.SessionID,
+		Actor:      ev.Actor,
+	}
+	if ev.Turn != nil {
+		entry.Turn = int32(*ev.Turn)
+	}
+	if ev.CallID != nil {
+		entry.CallId = *ev.CallID
+	}
+	if ev.ChildSessionID != nil {
+		entry.ChildSessionId = *ev.ChildSessionID
+	}
+	return entry
 }
 
 func toolInvocationsToProto(invocations []store.ToolInvocation) []*runtimev1.ToolInvocationEntry {
@@ -310,7 +350,31 @@ func toolInvocationToProto(inv store.ToolInvocation) *runtimev1.ToolInvocationEn
 
 type inspectTimelineItem struct {
 	timestamp time.Time
+	sortKey   int64
 	entry     *runtimev1.InspectTimelineEntry
+}
+
+func buildMergedInspectTimeline(events []store.Event, depthBySession map[string]int32) []*runtimev1.InspectTimelineEntry {
+	protoEvents := sessionEventsToProto(events)
+	items := make([]inspectTimelineItem, 0, len(events))
+	for i, ev := range events {
+		items = append(items, inspectTimelineItem{
+			timestamp: ev.TS,
+			sortKey:   ev.ID,
+			entry: &runtimev1.InspectTimelineEntry{
+				Timestamp:  formatTime(ev.TS),
+				TsUnixMs:   ev.TS.UnixMilli(),
+				Seq:        int32(ev.Seq),
+				SessionId:  ev.SessionID,
+				Depth:      depthBySession[ev.SessionID],
+				Source:     "event",
+				Kind:       ev.Type,
+				Summary:    sessionEventSummary(ev.Type, ev.Payload),
+				Event:      protoEvents[i],
+			},
+		})
+	}
+	return finalizeInspectTimeline(items)
 }
 
 func buildInspectTimeline(
@@ -320,19 +384,22 @@ func buildInspectTimeline(
 ) []*runtimev1.InspectTimelineEntry {
 	var items []inspectTimelineItem
 
+	var seq int64
 	for _, ev := range events {
-		ts, err := time.Parse(time.RFC3339Nano, ev.GetCreatedAt())
-		if err != nil {
-			ts, _ = time.Parse(time.RFC3339, ev.GetCreatedAt())
-		}
+		ts := eventTimestamp(ev)
+		seq++
 		items = append(items, inspectTimelineItem{
 			timestamp: ts,
+			sortKey:   ev.GetId(),
 			entry: &runtimev1.InspectTimelineEntry{
-				Timestamp: ev.GetCreatedAt(),
-				Source:    "event",
-				Kind:      ev.GetType(),
-				Summary:   sessionEventSummary(ev.GetType(), ev.GetPayload()),
-				Event:     ev,
+				Timestamp:  formatInspectTimestamp(ev),
+				TsUnixMs:   ev.GetTsUnixMs(),
+				Seq:        ev.GetSeq(),
+				SessionId:  ev.GetSessionId(),
+				Source:     "event",
+				Kind:       ev.GetType(),
+				Summary:    sessionEventSummary(ev.GetType(), ev.GetPayload()),
+				Event:      ev,
 			},
 		})
 	}
@@ -340,10 +407,13 @@ func buildInspectTimeline(
 	for _, inv := range invocations {
 		if inv.GetDispatchedAt() != "" {
 			ts := parseRFC3339(inv.GetDispatchedAt())
+			seq++
 			items = append(items, inspectTimelineItem{
 				timestamp: ts,
+				sortKey:   seq,
 				entry: &runtimev1.InspectTimelineEntry{
 					Timestamp:  inv.GetDispatchedAt(),
+					TsUnixMs:   ts.UnixMilli(),
 					Source:     "invocation",
 					Kind:       "invocation_dispatched",
 					Summary:    fmt.Sprintf("dispatched %s@%s call_id=%s queue_delay_ms=%d", inv.GetTool(), inv.GetVersion(), inv.GetCallId(), inv.GetQueueDelayMs()),
@@ -353,10 +423,13 @@ func buildInspectTimeline(
 		}
 		if inv.GetCompletedAt() != "" {
 			ts := parseRFC3339(inv.GetCompletedAt())
+			seq++
 			items = append(items, inspectTimelineItem{
 				timestamp: ts,
+				sortKey:   seq,
 				entry: &runtimev1.InspectTimelineEntry{
 					Timestamp:  inv.GetCompletedAt(),
+					TsUnixMs:   ts.UnixMilli(),
 					Source:     "invocation",
 					Kind:       "invocation_completed",
 					Summary:    fmt.Sprintf("completed %s@%s call_id=%s status=%s exec_ms=%d", inv.GetTool(), inv.GetVersion(), inv.GetCallId(), inv.GetStatus(), inv.GetExecutionDurationMs()),
@@ -369,10 +442,13 @@ func buildInspectTimeline(
 	for _, appr := range approvals {
 		if appr.GetCreatedAt() != "" {
 			ts := parseRFC3339(appr.GetCreatedAt())
+			seq++
 			items = append(items, inspectTimelineItem{
 				timestamp: ts,
+				sortKey:   seq,
 				entry: &runtimev1.InspectTimelineEntry{
 					Timestamp: appr.GetCreatedAt(),
+					TsUnixMs:   ts.UnixMilli(),
 					Source:    "approval",
 					Kind:      "approval_created",
 					Summary:   fmt.Sprintf("approval %s tool=%s@%s status=%s", appr.GetId(), appr.GetTool(), appr.GetVersion(), appr.GetStatus()),
@@ -382,10 +458,13 @@ func buildInspectTimeline(
 		}
 		if appr.GetDecidedAt() != "" {
 			ts := parseRFC3339(appr.GetDecidedAt())
+			seq++
 			items = append(items, inspectTimelineItem{
 				timestamp: ts,
+				sortKey:   seq,
 				entry: &runtimev1.InspectTimelineEntry{
 					Timestamp: appr.GetDecidedAt(),
+					TsUnixMs:   ts.UnixMilli(),
 					Source:    "approval",
 					Kind:      "approval_decided",
 					Summary:   fmt.Sprintf("approval %s decided status=%s by=%s", appr.GetId(), appr.GetStatus(), appr.GetDecidedBy()),
@@ -395,9 +474,27 @@ func buildInspectTimeline(
 		}
 	}
 
+	return finalizeInspectTimeline(items)
+}
+
+func eventTimestamp(ev *runtimev1.SessionEventEntry) time.Time {
+	if ev.GetTsUnixMs() > 0 {
+		return time.UnixMilli(ev.GetTsUnixMs())
+	}
+	return parseRFC3339(ev.GetCreatedAt())
+}
+
+func formatInspectTimestamp(ev *runtimev1.SessionEventEntry) string {
+	if ev.GetTsUnixMs() > 0 {
+		return fmt.Sprintf("%d", ev.GetTsUnixMs())
+	}
+	return ev.GetCreatedAt()
+}
+
+func finalizeInspectTimeline(items []inspectTimelineItem) []*runtimev1.InspectTimelineEntry {
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].timestamp.Equal(items[j].timestamp) {
-			return items[i].entry.GetKind() < items[j].entry.GetKind()
+			return items[i].sortKey < items[j].sortKey
 		}
 		return items[i].timestamp.Before(items[j].timestamp)
 	})
@@ -429,6 +526,7 @@ func parseRFC3339(s string) time.Time {
 }
 
 func sessionEventSummary(typ string, payload json.RawMessage) string {
+	typ = legacyInspectEventType(typ)
 	switch model.SessionEventType(typ) {
 	case model.SessionEventUserMessage:
 		if msg, err := conversationMessageFromSessionEvent(payload); err == nil {
@@ -496,6 +594,33 @@ func sessionEventSummary(typ string, payload json.RawMessage) string {
 		return "session_cancelled"
 	}
 	return typ
+}
+
+func legacyInspectEventType(typ string) string {
+	switch typ {
+	case EventMessageUser:
+		return string(model.SessionEventUserMessage)
+	case EventMessageAssistant:
+		return string(model.SessionEventAssistantMessage)
+	case EventToolRequested:
+		return string(model.SessionEventToolCall)
+	case EventToolCompleted:
+		return string(model.SessionEventToolResult)
+	case EventToolPolicyDenied:
+		return string(model.SessionEventPolicyDenied)
+	case EventApprovalRequired:
+		return string(model.SessionEventApprovalRequired)
+	case EventApprovalDecided:
+		return string(model.SessionEventApprovalDecided)
+	case EventSessionCompleted:
+		return string(model.SessionEventSessionCompleted)
+	case EventSessionFailed:
+		return string(model.SessionEventSessionFailed)
+	case EventSessionCancelled:
+		return string(model.SessionEventSessionCancelled)
+	default:
+		return typ
+	}
 }
 
 func summarizeText(s string) string {

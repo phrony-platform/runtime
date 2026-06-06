@@ -10,7 +10,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/cliout"
 )
 
-func formatSessionInspectHuman(w io.Writer, sess *runtimev1.SessionInspect, depth int) error {
+func formatSessionInspectHuman(w io.Writer, sess *runtimev1.SessionInspect, mergedTimeline []*runtimev1.InspectTimelineEntry, depth int) error {
 	indent := strings.Repeat("  ", depth)
 	header := fmt.Sprintf("%s=== Session %s ===", indent, sess.GetId())
 	if depth > 0 {
@@ -95,35 +95,14 @@ func formatSessionInspectHuman(w io.Writer, sess *runtimev1.SessionInspect, dept
 		}
 	}
 
+	if depth == 0 && len(mergedTimeline) > 0 {
+		fmt.Fprintf(w, "\n%smerged timeline:\n", indent)
+		formatInspectTimeline(w, mergedTimeline)
+	}
+
 	if len(sess.GetTimeline()) > 0 {
 		fmt.Fprintf(w, "\n%stimeline:\n", indent)
-		for _, entry := range sess.GetTimeline() {
-			gap := ""
-			if entry.GetGapMs() > 0 {
-				gap = fmt.Sprintf(" (+%dms)", entry.GetGapMs())
-			}
-			fmt.Fprintf(w, "%s  %s%s [%s/%s] %s\n", indent, entry.GetTimestamp(), gap, entry.GetSource(), entry.GetKind(), entry.GetSummary())
-			if ev := entry.GetEvent(); ev != nil && len(ev.GetPayload()) > 0 {
-				fmt.Fprintf(w, "%s    event_payload: %s\n", indent, string(ev.GetPayload()))
-			}
-			if inv := entry.GetInvocation(); inv != nil && (entry.GetKind() == "invocation_dispatched" || entry.GetKind() == "invocation_completed") {
-				fmt.Fprintf(w, "%s    worker: %s attempt=%d queue_ms=%d exec_ms=%d total_ms=%d\n",
-					indent, inv.GetWorkerIdentity(), inv.GetAttempt(),
-					inv.GetQueueDelayMs(), inv.GetExecutionDurationMs(), inv.GetTotalDurationMs())
-				if len(inv.GetArgs()) > 0 {
-					fmt.Fprintf(w, "%s    args: %s\n", indent, string(inv.GetArgs()))
-				}
-				if len(inv.GetResult()) > 0 {
-					fmt.Fprintf(w, "%s    result: %s\n", indent, string(inv.GetResult()))
-				}
-				if u := inv.GetUsage(); u != nil {
-					fmt.Fprintf(w, "%s    usage: in=%d out=%d total=%d\n", indent, u.GetInputTokens(), u.GetOutputTokens(), u.GetTotalTokens())
-				}
-			}
-			if appr := entry.GetApproval(); appr != nil {
-				formatApprovalInspectDetail(w, indent+"    ", appr)
-			}
-		}
+		formatInspectTimeline(w, sess.GetTimeline())
 	}
 
 	if len(sess.GetInvocations()) > 0 {
@@ -164,11 +143,50 @@ func formatSessionInspectHuman(w io.Writer, sess *runtimev1.SessionInspect, dept
 
 	for _, child := range sess.GetChildren() {
 		fmt.Fprintln(w)
-		if err := formatSessionInspectHuman(w, child, depth+1); err != nil {
+		if err := formatSessionInspectHuman(w, child, nil, depth+1); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func formatInspectTimeline(w io.Writer, entries []*runtimev1.InspectTimelineEntry) {
+	for _, entry := range entries {
+		depthIndent := strings.Repeat("  ", int(entry.GetDepth()))
+		ts := entry.GetTimestamp()
+		if entry.GetTsUnixMs() > 0 {
+			ts = fmt.Sprintf("%d", entry.GetTsUnixMs())
+		}
+		gap := ""
+		if entry.GetGapMs() > 0 {
+			gap = fmt.Sprintf(" (+%dms)", entry.GetGapMs())
+		}
+		sessLabel := ""
+		if sid := entry.GetSessionId(); sid != "" {
+			sessLabel = fmt.Sprintf(" session=%s", sid)
+		}
+		fmt.Fprintf(w, "%s  %s%s [%s/%s]%s %s\n", depthIndent, ts, gap, entry.GetSource(), entry.GetKind(), sessLabel, entry.GetSummary())
+		if ev := entry.GetEvent(); ev != nil && len(ev.GetPayload()) > 0 {
+			fmt.Fprintf(w, "%s    event_payload: %s\n", depthIndent, string(ev.GetPayload()))
+		}
+		if inv := entry.GetInvocation(); inv != nil && (entry.GetKind() == "invocation_dispatched" || entry.GetKind() == "invocation_completed") {
+			fmt.Fprintf(w, "%s    worker: %s attempt=%d queue_ms=%d exec_ms=%d total_ms=%d\n",
+				depthIndent, inv.GetWorkerIdentity(), inv.GetAttempt(),
+				inv.GetQueueDelayMs(), inv.GetExecutionDurationMs(), inv.GetTotalDurationMs())
+			if len(inv.GetArgs()) > 0 {
+				fmt.Fprintf(w, "%s    args: %s\n", depthIndent, string(inv.GetArgs()))
+			}
+			if len(inv.GetResult()) > 0 {
+				fmt.Fprintf(w, "%s    result: %s\n", depthIndent, string(inv.GetResult()))
+			}
+			if u := inv.GetUsage(); u != nil {
+				fmt.Fprintf(w, "%s    usage: in=%d out=%d total=%d\n", depthIndent, u.GetInputTokens(), u.GetOutputTokens(), u.GetTotalTokens())
+			}
+		}
+		if appr := entry.GetApproval(); appr != nil {
+			formatApprovalInspectDetail(w, depthIndent+"    ", appr)
+		}
+	}
 }
 
 func formatApprovalInspectDetail(w io.Writer, indent string, a *runtimev1.Approval) {

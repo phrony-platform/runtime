@@ -186,12 +186,11 @@ func TestResolveMaxSubagentDepth(t *testing.T) {
 func TestAgentDispatcher_childResultSummaryCarriesUsage(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
-	output := []byte(`{"message":"child answer","session_usage":{"input_tokens":4,"output_tokens":6}}`)
+	events := foldEventsForCompletedOutput("child-sess", "child answer", "end_turn", provider.TokenUsage{InputTokens: 4, OutputTokens: 6}, 0)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("child-sess").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("child-sess", "child-ver", []byte(`{}`), model.SessionStatusCompleted, output, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("child-sess", "child-ver", model.SessionStatusCompleted, []byte(`{}`), nil, "child-sess", len(events), now, now))
+	expectListEventsBySession(mock, "child-sess", events, now)
 
 	d := &agentDispatcher{server: &runtimeServer{db: db}}
 	res, err := d.childResult(context.Background(), store.New(db), "call-1", "child-sess", manifest.SubagentResultSummary)
@@ -222,9 +221,7 @@ func TestAgentDispatcher_childResultFailedBecomesToolError(t *testing.T) {
 	errMsg := "model unavailable"
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("child-sess").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("child-sess", "child-ver", []byte(`{}`), model.SessionStatusFailed, nil, errMsg, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("child-sess", "child-ver", model.SessionStatusFailed, []byte(`{}`), &errMsg, "child-sess", 1, now, now))
 
 	d := &agentDispatcher{server: &runtimeServer{db: db}}
 	res, err := d.childResult(context.Background(), store.New(db), "call-1", "child-sess", manifest.SubagentResultSummary)
@@ -247,9 +244,7 @@ func TestAgentDispatcher_childResultNonTerminalBecomesToolError(t *testing.T) {
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("child-sess").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("child-sess", "child-ver", []byte(`{}`), model.SessionStatusAwaitingApproval, nil, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("child-sess", "child-ver", model.SessionStatusAwaitingApproval, []byte(`{}`), nil, "child-sess", 0, now, now))
 
 	d := &agentDispatcher{server: &runtimeServer{db: db}}
 	res, err := d.childResult(context.Background(), store.New(db), "call-1", "child-sess", manifest.SubagentResultSummary)
@@ -359,24 +354,15 @@ func TestRunChildSessionToCompletion_drivesChildToCompleted(t *testing.T) {
 	}
 	ver := executor.NewVersionWithProvider("child-ver", agent, providertest.DeltaCompleted())
 
-	// Turn records user_message + assistant_message; completion records session_completed.
-	for i := 0; i < 3; i++ {
-		mock.ExpectQuery(`INSERT INTO session_events`).
-			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(i + 1)))
-	}
-	// After the turn the delegated child completes directly (no awaiting_input park).
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("child-sess", model.SessionStatusCompleted, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	expectRecordTurnEvents(mock, "child-sess", 1, 2, false)
+	expectSyncFoldAfterTurn(mock, "child-sess", "hi", "Hi there", "end_turn", provider.TokenUsage{}, now)
+	expectAppendSessionCompletedTx(mock, "child-sess", 3)
 	mock.ExpectExec(`DELETE FROM session_secrets`).
 		WithArgs("child-sess").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("child-sess").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("child-sess", "child-ver", []byte(`{"message":"hi"}`), model.SessionStatusCompleted,
-			[]byte(`{"message":"done","stop_reason":"end_turn"}`), nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("child-sess", "child-ver", model.SessionStatusCompleted, []byte(`{"message":"hi"}`), nil, "child-sess", 3, now, now))
 
 	if err := srv.runChildSessionToCompletion(
 		context.Background(), store.New(db), "child-sess", "child-ver", ver, []byte(`{"message":"hi"}`), 1,

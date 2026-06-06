@@ -130,6 +130,39 @@ func TestReplaySessionEventLog_skipsPendingApproval(t *testing.T) {
 	}
 }
 
+func TestReplaySessionEventLog_synthesizesJSONToolEvents(t *testing.T) {
+	callID := "call-json"
+	callPayload, _ := json.Marshal(map[string]any{
+		"tool": "weather.get-forecast", "version": "1.0.0", "args": json.RawMessage(`{}`),
+	})
+	resultPayload, _ := json.Marshal(map[string]any{
+		"result": json.RawMessage(`{"temp":72}`),
+	})
+	now := time.Now()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").WillReturnRows(sessionEventLogRows(now,
+		store.Event{ID: 1, SessionID: "sess-1", Seq: 1, Type: EventToolRequested, CallID: &callID, Payload: callPayload},
+		store.Event{ID: 2, SessionID: "sess-1", Seq: 2, Type: EventToolCompleted, CallID: &callID, Payload: resultPayload},
+	))
+	sink := &captureSessionEventSink{}
+	if err := replaySessionEventLog(context.Background(), store.New(sqlDB), sink, "sess-1", ""); err != nil {
+		t.Fatalf("replaySessionEventLog: %v", err)
+	}
+	if len(sink.msgs) != 2 {
+		t.Fatalf("replayed %d messages, want 2", len(sink.msgs))
+	}
+	if sink.msgs[0].GetToolCall().GetCallId() != callID {
+		t.Fatalf("tool_call = %+v", sink.msgs[0])
+	}
+	if sink.msgs[1].GetToolResult().GetCallId() != callID {
+		t.Fatalf("tool_result = %+v", sink.msgs[1])
+	}
+}
+
 func TestServerMsgFromSessionEvent_roundTrip(t *testing.T) {
 	orig := toolCallServerMsg(executor.ToolCallEvent{
 		CallID: "call-rt", Tool: "weather.get-forecast", Version: "1.0.0", Args: json.RawMessage(`{"city":"NYC"}`),

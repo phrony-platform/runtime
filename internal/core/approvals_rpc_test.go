@@ -158,10 +158,9 @@ func TestRuntime_DecideApproval_approveSuccess(t *testing.T) {
 	expectDecideFinalize(mock, "appr-1", model.ApprovalStatusApproved, "bob", 1)
 	expectUpdateToolInvocationStatus(mock, "call-1", model.ToolInvocationPending)
 	expectDecideGetApproval(mock, "appr-1", approvalRow("appr-1", "sess-1", "call-1", model.ApprovalStatusApproved, false, 1, 1, nil))
+	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "av-1", []byte(`{}`), model.SessionStatusAwaitingApproval, nil, nil, []byte(`[]`), time.Now(), time.Now()))
+		WillReturnRows(sessionMockRows("sess-1", "av-1", model.SessionStatusAwaitingApproval, []byte(`{}`), nil, "sess-1", 0, now, now))
 
 	resp, err := srv.DecideApproval(context.Background(), &runtimev1.DecideApprovalRequest{
 		ApprovalId: "appr-1",

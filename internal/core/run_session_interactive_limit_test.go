@@ -70,9 +70,10 @@ func TestRuntime_RunSessionInteractive_cumulativeTokenLimitBlocksInput(t *testin
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	expectCreateRunSessionMocks(mock, "version-uuid", []byte(`{"message":"one"}`))
 	expectGetRunningSessionForAttach(mock, "version-uuid", []byte(`{"message":"one"}`))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
+	turnNow := time.Now()
+	expectRecordTurnEventsAny(mock, 2, 3, true)
+	expectSyncFoldAfterTurnAny(mock, "one", "ok", "end_turn", provider.TokenUsage{InputTokens: 10, OutputTokens: 5}, turnNow)
+	expectParkAwaitingInputAny(mock, turnNow)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{
@@ -135,9 +136,10 @@ func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	expectCreateRunSessionMocks(mock, "version-uuid", []byte(`{"message":"one"}`))
 	expectGetRunningSessionForAttach(mock, "version-uuid", []byte(`{"message":"one"}`))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
+	turnNow := time.Now()
+	expectRecordTurnEventsAny(mock, 2, 3, true)
+	expectSyncFoldAfterTurnAny(mock, "one", "ok", "end_turn", provider.TokenUsage{}, turnNow)
+	expectParkAwaitingInputAny(mock, turnNow)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{
@@ -196,15 +198,15 @@ func TestRuntime_RunSessionInteractive_loopIterationLimitBlocksInput(t *testing.
 func TestRuntime_RunSessionInteractive_attachOverTokenLimitBlocksInput(t *testing.T) {
 	max := 10
 	now := time.Now()
-	output := []byte(`{"message":"hi","stop_reason":"end_turn","turn_usage":{"input_tokens":8,"output_tokens":4,"total_tokens":12},"session_usage":{"input_tokens":8,"output_tokens":4,"total_tokens":12}}`)
-	history := []byte(`[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`)
+	events := foldEventsWithMessages("sess-1", "hello", "hi", "end_turn", provider.TokenUsage{InputTokens: 8, OutputTokens: 4})
 
 	db, mock := testSQLxDB(t)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hello"}`), model.SessionStatusAwaitingInput, output, nil, history, now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusAwaitingInput, []byte(`{"message":"hello"}`), nil, "sess-1", len(events), now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", events, now)
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").
+		WillReturnRows(sessionEventLogRows(now, events...))
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{
@@ -256,17 +258,18 @@ func TestRuntime_RunSessionInteractive_attachOverTokenLimitBlocksInput(t *testin
 func TestRuntime_RunSessionInteractive_attachFailedRunLimitBlocked(t *testing.T) {
 	now := time.Now()
 	limitErr := "run limit max_tokens_per_run exceeded (on_limit=halt)"
-	output := []byte(`{"message":"hi","stop_reason":"end_turn","turn_usage":{"input_tokens":8,"output_tokens":4},"session_usage":{"input_tokens":8,"output_tokens":4}}`)
-	history := []byte(`[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`)
+	events := foldEventsWithMessages("sess-1", "hello", "hi", "end_turn", provider.TokenUsage{InputTokens: 8, OutputTokens: 4})
 
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hello"}`), model.SessionStatusFailed, output, &limitErr, history, now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusFailed, []byte(`{"message":"hello"}`), &limitErr, "sess-1", len(events), now, now))
+	for i := 0; i < 3; i++ {
+		expectListEventsBySession(mock, "sess-1", events, now)
+	}
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusAwaitingInput, nil, "", nil).
+		WithArgs("sess-1", model.SessionStatusAwaitingInput, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	agent := &manifest.Agent{
@@ -322,19 +325,17 @@ func intPtr(n int) *int { return &n }
 func TestRuntime_RunSessionInteractive_wallClockExpiredAttachIsTerminal(t *testing.T) {
 	max := 30
 	now := time.Now()
-	output := []byte(`{"message":"hi","stop_reason":"end_turn","turn_usage":{"input_tokens":1,"output_tokens":1},"session_usage":{"input_tokens":1,"output_tokens":1}}`)
-	history := []byte(`[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`)
+	events := foldEventsWithMessages("sess-1", "hello", "hi", "end_turn", provider.TokenUsage{InputTokens: 1, OutputTokens: 1})
 
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hello"}`), model.SessionStatusAwaitingInput, output, nil, history, now.Add(-time.Minute), now))
-	// Attach persists the terminal failure so ls reflects it.
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusFailed, nil, sqlmock.AnyArg(), nil).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusAwaitingInput, []byte(`{"message":"hello"}`), nil, "sess-1", len(events), now.Add(-time.Minute), now))
+	for i := 0; i < 2; i++ {
+		expectListEventsBySession(mock, "sess-1", events, now)
+	}
+	expectAppendSessionFailedTxWithBegin(mock, "sess-1", len(events)+1, "run limit max_wall_clock_seconds exceeded (on_limit=halt)")
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{

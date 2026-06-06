@@ -29,9 +29,8 @@ func expectGetRunningSessionForAttach(mock sqlmock.Sqlmock, agentVersionID strin
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs(sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("run_attach", agentVersionID, input, model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("run_attach", agentVersionID, model.SessionStatusRunning, input, nil, "run_attach", 1, now, now))
+	expectAttachSessionFoldQueriesAny(mock, nil, now)
 }
 
 func TestRuntime_RunSessionInteractive_firstMessageMustBeStart(t *testing.T) {
@@ -81,8 +80,7 @@ func TestRuntime_RunSessionInteractive_sessionStartedThenFailedOnLoad(t *testing
 	mock.ExpectQuery(`SELECT manifest`).
 		WithArgs("version-uuid").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(`UPDATE sessions`).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
+	expectAppendSessionFailedTxAny(mock, 2)
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -229,11 +227,8 @@ func TestInteractiveSessionState_runTurn_providerFailure(t *testing.T) {
 
 func TestRuntime_completeInteractiveSession(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	now := time.Now()
 	output := json.RawMessage(`{"message":"ok","stop_reason":"end_turn"}`)
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusCompleted, output, nil, nil).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	expectAppendSessionCompletedTx(mock, "sess-1", 1)
 	mock.ExpectExec(`DELETE FROM session_secrets`).
 		WithArgs("sess-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -254,11 +249,8 @@ func TestRuntime_completeInteractiveSession(t *testing.T) {
 
 func TestRuntime_failInteractiveSession(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	now := time.Now()
 	errMsg := "load failed"
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusFailed, nil, errMsg, nil).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	expectAppendSessionFailedTx(mock, "sess-1", 1, errMsg)
 	mock.ExpectExec(`DELETE FROM session_secrets`).
 		WithArgs("sess-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -372,11 +364,11 @@ func TestRuntime_RunSessionInteractive_attachCompleted(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
 	output := []byte(`{"message":"done","stop_reason":"end_turn","turn_usage":{"input_tokens":10,"output_tokens":5},"session_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`)
+	events := foldEventsFromOutputJSON("sess-1", output)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusCompleted, output, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusCompleted, []byte(`{}`), nil, "sess-1", len(events), now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", events, now)
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -406,8 +398,9 @@ func TestRuntime_RunSessionInteractive_attachCompleted(t *testing.T) {
 		}
 		if msg.GetCompleted() != nil {
 			completed = true
-			if string(msg.GetCompleted().GetOutput()) != string(output) {
-				t.Fatalf("output = %s", msg.GetCompleted().GetOutput())
+			expectedOutput := buildSessionOutput(events)
+			if string(msg.GetCompleted().GetOutput()) != string(expectedOutput) {
+				t.Fatalf("output = %s, want %s", msg.GetCompleted().GetOutput(), expectedOutput)
 			}
 			stats := msg.GetCompleted().GetStats()
 			if stats == nil || stats.GetSessionUsage() == nil {
@@ -430,11 +423,11 @@ func TestRuntime_RunSessionInteractive_attachCompletedRejectsUserMessage(t *test
 	db, mock := testSQLxDB(t)
 	now := time.Now()
 	output := []byte(`{"message":"done","stop_reason":"end_turn"}`)
+	events := foldEventsFromOutputJSON("sess-1", output)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusCompleted, output, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusCompleted, []byte(`{}`), nil, "sess-1", len(events), now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", events, now)
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -462,23 +455,30 @@ func TestRuntime_RunSessionInteractive_attachCompletedRejectsUserMessage(t *test
 
 func TestRuntime_RunSessionInteractive_attachAwaitingInputContinues(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
-	output := []byte(`{"message":"hi","stop_reason":"end_turn","turn_usage":{"input_tokens":10,"output_tokens":5},"session_usage":{"input_tokens":10,"output_tokens":5}}`)
-	history := []byte(`[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`)
+	events := foldEventsWithMessages("sess-1", "hello", "hi", "end_turn", provider.TokenUsage{InputTokens: 10, OutputTokens: 5})
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hello"}`), model.SessionStatusAwaitingInput, output, nil, history, now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusAwaitingInput, []byte(`{"message":"hello"}`), nil, "sess-1", len(events), now, now))
+	for i := 0; i < 3; i++ {
+		expectListEventsBySession(mock, "sess-1", events, now)
+	}
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusRunning, nil, nil, nil).
+		WithArgs("sess-1", model.SessionStatusRunning, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusCompleted, sqlmock.AnyArg(), nil, nil).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	expectRecordTurnEvents(mock, "sess-1", 3, 4, true)
+	turnEvents := append(events, store.Event{
+		ID: 3, SessionID: "sess-1", RootSessionID: "sess-1", Seq: 3, TS: now,
+		Type: EventMessageUser, Actor: ActorUser, Payload: userMessagePayload("follow-up"),
+	}, store.Event{
+		ID: 4, SessionID: "sess-1", RootSessionID: "sess-1", Seq: 4, TS: now,
+		Type: EventMessageAssistant, Actor: ActorAgent, Payload: assistantMessagePayload("Hi there", "end_turn", provider.TokenUsage{}, 0),
+	})
+	expectListEventsBySession(mock, "sess-1", turnEvents, now)
+	expectListEventsBySession(mock, "sess-1", turnEvents, now)
+	expectParkAwaitingInput(mock, "sess-1", now)
+	expectAppendSessionCompletedTxWithBegin(mock, "sess-1", 5)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{
@@ -567,9 +567,8 @@ func TestRuntime_RunSessionInteractive_attachActiveDriverMissingHub(t *testing.T
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusRunning, []byte(`{}`), nil, "sess-1", 0, now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", nil, now)
 
 	err := srv.RunSessionInteractive(stream)
 	assertGRPCCode(t, err, codes.Internal)
@@ -603,9 +602,7 @@ func TestRuntime_RunSessionInteractive_attachPendingRejected(t *testing.T) {
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusPending, nil, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusPending, []byte(`{}`), nil, "sess-1", 0, now, now))
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -626,9 +623,8 @@ func TestRuntime_RunSessionInteractive_attachInvalidHistory(t *testing.T) {
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusAwaitingInput, nil, nil, []byte(`not-json`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusAwaitingInput, []byte(`{}`), nil, "sess-1", 0, now, now))
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").WillReturnError(sql.ErrConnDone)
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -657,9 +653,8 @@ func TestRuntime_RunSessionInteractive_attachFailed(t *testing.T) {
 	errMsg := "model unavailable"
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusFailed, nil, &errMsg, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusFailed, []byte(`{}`), &errMsg, "sess-1", 1, now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", nil, now)
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -707,9 +702,8 @@ func TestRuntime_RunSessionInteractive_attachCancelled(t *testing.T) {
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusCancelled, nil, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusCancelled, []byte(`{}`), nil, "sess-1", 1, now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", nil, now)
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -761,9 +755,8 @@ func TestRuntime_RunSessionInteractive_attachFailedRejectsUserMessage(t *testing
 	errMsg := "model unavailable"
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusFailed, nil, &errMsg, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusFailed, []byte(`{}`), &errMsg, "sess-1", 1, now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", nil, now)
 
 	stream := &mockInteractiveStream{
 		ctx: context.Background(),
@@ -792,10 +785,11 @@ func TestRuntime_RunSessionInteractive_attachFailedRejectsUserMessage(t *testing
 func TestRuntime_RunSessionInteractive_attachRunningReplaysLiveAssistant(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
-	mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").WillReturnRows(sqlmock.NewRows([]string{
-		"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-	}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hi"}`), model.SessionStatusRunning, nil, nil,
-		[]byte(`[{"role":"user","content":"hi"}]`), now, now))
+	events := foldEventsWithMessages("sess-1", "hi", "", "end_turn", provider.TokenUsage{})
+	events = events[:1]
+	mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusRunning, []byte(`{"message":"hi"}`), nil, "sess-1", 1, now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", events, now)
 
 	hub := newSessionEventHub()
 	inputMux := newSessionInputMux(context.Background())
@@ -865,9 +859,8 @@ func TestRuntime_RunSessionInteractive_attachRunningSubscribesToActiveDriver(t *
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusRunning, []byte(`{}`), nil, "sess-1", 0, now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", nil, now)
 
 	driverCtx, driverCancel := context.WithCancel(context.Background())
 	defer driverCancel()
@@ -966,11 +959,12 @@ func TestRuntime_RunSessionInteractive_attachRunningSubscribesToActiveDriver(t *
 
 func TestRuntime_RunSessionInteractive_attachRunningFanOutToMultipleSubscribers(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
 	for range 2 {
-		mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+		mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").
+			WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusRunning, []byte(`{}`), nil, "sess-1", 0, now, now))
+		expectAttachSessionFoldQueries(mock, "sess-1", nil, now)
 	}
 
 	driverCtx, driverCancel := context.WithCancel(context.Background())
@@ -1058,11 +1052,12 @@ func TestRuntime_RunSessionInteractive_attachRunningFanOutToMultipleSubscribers(
 
 func TestRuntime_RunSessionInteractive_detachThenReattachReceivesHubEvents(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
 	for range 2 {
-		mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte("{}"), model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+		mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").
+			WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusRunning, []byte(`{}`), nil, "sess-1", 0, now, now))
+		expectAttachSessionFoldQueries(mock, "sess-1", nil, now)
 	}
 
 	driverCtx, driverCancel := context.WithCancel(context.Background())
@@ -1170,13 +1165,11 @@ func TestRuntime_RunSessionInteractive_detachThenReattachReceivesHubEvents(t *te
 func TestRuntime_RunSessionInteractive_attachDetachDeliversInboundToDriver(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
+	events := foldEventsWithMessages("sess-1", "hello", "hi", "end_turn", provider.TokenUsage{})
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "version-uuid", []byte(`{"message":"hello"}`), model.SessionStatusAwaitingInput,
-			[]byte(`{"message":"hi","stop_reason":"end_turn"}`), nil,
-			[]byte(`[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`), now, now))
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusAwaitingInput, []byte(`{"message":"hello"}`), nil, "sess-1", len(events), now, now))
+	expectAttachSessionFoldQueries(mock, "sess-1", events, now)
 
 	driverCtx, driverCancel := context.WithCancel(context.Background())
 	defer driverCancel()

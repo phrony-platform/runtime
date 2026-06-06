@@ -221,15 +221,10 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 		return nil
 	}
 
-	resultBlocks, err := s.buildToolResultBlocksFromLedger(ctx, q, invocations)
+	history, err = loadProviderContext(ctx, q, session.ID)
 	if err != nil {
 		return err
 	}
-	if len(resultBlocks) == 0 {
-		return nil
-	}
-
-	history = appendRecoveredToolResults(history, resultBlocks)
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 		ID:     session.ID,
 		Status: model.SessionStatusRunning,
@@ -303,14 +298,45 @@ func (s *runtimeServer) escalateRecoveredInvocation(
 	cause error,
 ) error {
 	approvalID := uuid.NewString()
-	_, _ = q.InsertApproval(ctx, store.InsertApprovalParams{
+	args := inv.Args
+	if len(args) == 0 {
+		args = json.RawMessage("{}")
+	}
+	openApproval := store.InsertApprovalParams{
 		ID:        approvalID,
 		SessionID: sessionID,
 		CallID:    inv.CallID,
 		Status:    model.ApprovalStatusPending,
 		Reason:    cause.Error(),
+		Tool:      inv.Tool,
+		Version:   inv.Version,
+		Args:      args,
+	}
+	callID := inv.CallID
+	_, _, err := appendEventAuto(ctx, q, EventInput{
+		SessionID: sessionID,
+		Type:      EventApprovalRequired,
+		CallID:    &callID,
+		Actor:     ActorPolicy,
+		Payload:   marshalSessionEventJSON(openApproval),
+		Approval: &EventApprovalProjection{
+			Open: &openApproval,
+			OpenInvocation: &store.InsertToolInvocationPendingParams{
+				CallID:         inv.CallID,
+				SessionID:      sessionID,
+				AgentVersionID: inv.AgentVersionID,
+				Turn:           inv.Turn,
+				Tool:           inv.Tool,
+				Version:        inv.Version,
+				Args:           args,
+				Status:         model.ToolInvocationAwaitingApproval,
+			},
+		},
 	})
-	_, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+	if err != nil {
+		return err
+	}
+	_, err = q.UpdateSession(ctx, store.UpdateSessionParams{
 		ID:     sessionID,
 		Status: model.SessionStatusAwaitingApproval,
 	})
@@ -357,6 +383,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 
 	ch := make(chan executor.Event, 32)
 	runErrCh := make(chan error, 1)
+	recorder := newSessionEventRecorder(q)
 	go func() {
 		runErrCh <- ver.StreamCompletion(sessionCtx, executor.RunParams{
 			SessionID:           session.ID,
@@ -383,15 +410,11 @@ func (s *runtimeServer) continueRecoveredTurn(
 			if err := <-runErrCh; err != nil {
 				return s.failDetachedSession(ctx, q, session.ID, err)
 			}
-			outputJSON, err := marshalSessionOutput(assistantText, ev.StopReason, ev.Usage, ev.Usage, history)
-			if err != nil {
+			recorder.Record(ctx, session.ID, model.SessionEventAssistantMessage, assistantMessagePayload(assistantText, ev.StopReason, ev.Usage, 0))
+			if err := syncInteractiveStateFromFold(ctx, q, session.ID, state); err != nil {
 				return err
 			}
-			historyJSON, err := encodeHistory(appendTurnHistory(history, "", assistantText, ev.StopReason, ev.Usage, 0))
-			if err != nil {
-				return err
-			}
-			return s.persistDetachedSessionAfterTurn(ctx, q, session.ID, state, outputJSON, historyJSON)
+			return s.persistDetachedSessionAfterTurn(ctx, q, session.ID, state)
 		case executor.EventFailed, executor.EventEscalation:
 			if ev.Err != nil {
 				return s.failDetachedSession(ctx, q, session.ID, ev.Err)

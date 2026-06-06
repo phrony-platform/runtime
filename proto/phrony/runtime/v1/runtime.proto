@@ -588,6 +588,13 @@ message SessionEventEntry {
   string type = 2;
   bytes payload = 3;      // full JSON as stored (protojson for wire-backed events)
   string created_at = 4;  // RFC3339
+  int32 seq = 5;
+  int64 ts_unix_ms = 6;
+  string session_id = 7;
+  int32 turn = 8;
+  string call_id = 9;
+  string child_session_id = 10;
+  string actor = 11;
 }
 
 message ToolInvocationEntry {
@@ -628,6 +635,10 @@ message InspectTimelineEntry {
   SessionEventEntry event = 10;
   ToolInvocationEntry invocation = 11;
   Approval approval = 12;
+  string session_id = 13;
+  int32 depth = 14;
+  int32 seq = 15;
+  int64 ts_unix_ms = 16;
 }
 
 // Recursive tree node: one session and its delegated children.
@@ -670,6 +681,8 @@ message SessionInspect {
 
 message InspectSessionResponse {
   SessionInspect session = 1;
+  // Merged parent+child event log ordered by ts then global id.
+  repeated InspectTimelineEntry merged_timeline = 2;
 }
 
 message ApprovalVote {

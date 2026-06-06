@@ -24,8 +24,32 @@ func cancelledSessionRows(sessionID string, now time.Time) *sqlmock.Rows {
 	}).AddRow(sessionID, "version-uuid", []byte("{}"), model.SessionStatusCancelled, nil, sessionID, 1, now, now)
 }
 
+// blockRecvOnCancelStream blocks Recv after the start message until ctx is
+// cancelled, without returning EOF. That lets the driver loop observe
+// context cancellation and emit out-of-band completion instead of treating
+// stream close as a clean client detach.
+type blockRecvOnCancelStream struct {
+	*mockInteractiveStream
+}
+
+func (s *blockRecvOnCancelStream) Recv() (*runtimev1.RunSessionInteractiveClientMsg, error) {
+	if s.recvIdx < len(s.recv) {
+		return s.mockInteractiveStream.Recv()
+	}
+	<-s.ctx.Done()
+	select {}
+}
+
 func expectCompleteSessionRPC(mock sqlmock.Sqlmock, sessionID string) {
-	expectLifecycleEventTx(mock, sessionID)
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`FROM sessions`).WithArgs(sessionID).
+		WillReturnRows(sessionMockRows(sessionID, "version-uuid", model.SessionStatusRunning, []byte(`{}`), nil, sessionID, 0, now, now))
+	mock.ExpectQuery(`UPDATE sessions`).WithArgs(sessionID).
+		WillReturnRows(sqlmock.NewRows([]string{"event_seq"}).AddRow(1))
+	mock.ExpectQuery(`INSERT INTO events`).
+		WithArgs(sessionID, sessionID, 1, EventSessionCompleted, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs(sessionID).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(sessionID))
@@ -69,17 +93,16 @@ func TestRuntime_runSessionInteractiveLoop_emitsCompletedOnDriverCancel(t *testi
 	db, mock := testSQLxDB(t)
 	now := time.Now()
 	output := []byte(`{"message":"ok","stop_reason":"end_turn"}`)
-	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("sess-1").
-		WillReturnRows(completedSessionRows("sess-1", output, now))
+	for i := 0; i < 2; i++ {
+		mock.ExpectQuery(`FROM sessions`).
+			WithArgs("sess-1").
+			WillReturnRows(completedSessionRows("sess-1", output, now))
+	}
 	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").
 		WillReturnRows(sessionEventLogRows(now))
-	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("sess-1").
-		WillReturnRows(completedSessionRows("sess-1", output, now))
 
 	driverCtx, driverCancel := context.WithCancel(context.Background())
-	stream := &blockingAfterStartStream{mockInteractiveStream: &mockInteractiveStream{
+	stream := &blockRecvOnCancelStream{mockInteractiveStream: &mockInteractiveStream{
 		ctx:  driverCtx,
 		recv: []*runtimev1.RunSessionInteractiveClientMsg{},
 	}}
@@ -169,7 +192,7 @@ func TestRuntime_CompleteSession_emitsCompletedToAttachedClient(t *testing.T) {
 	output := []byte(`{"message":"ok","stop_reason":"end_turn"}`)
 
 	expectCompleteSessionRPC(mock, sessionID)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 2; i++ {
 		mock.ExpectQuery(`FROM sessions`).
 			WithArgs(sessionID).
 			WillReturnRows(completedSessionRows(sessionID, output, now))
@@ -183,7 +206,7 @@ func TestRuntime_CompleteSession_emitsCompletedToAttachedClient(t *testing.T) {
 	inputMux := newSessionInputMux(driverCtx)
 	// Driver recv uses a blocking stream so inputMux.close() during CompleteSession
 	// does not EOF the loop before it handles driver context cancellation.
-	driverStream := &blockingAfterStartStream{mockInteractiveStream: &mockInteractiveStream{
+	driverStream := &blockRecvOnCancelStream{mockInteractiveStream: &mockInteractiveStream{
 		ctx:  driverCtx,
 		recv: []*runtimev1.RunSessionInteractiveClientMsg{},
 	}}

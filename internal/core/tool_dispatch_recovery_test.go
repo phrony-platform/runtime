@@ -11,7 +11,6 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
-	"github.com/phrony-platform/runtime/internal/provider"
 	"github.com/phrony-platform/runtime/internal/providertest"
 	"github.com/phrony-platform/runtime/internal/store"
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
@@ -32,23 +31,10 @@ func TestToolDispatchE2E_fiveQueuedCallsRecoveryOnStartup(t *testing.T) {
 		callIDs[i] = tooldispatch.DeriveCallID(sessionID, agentVersionID, turn, i)
 	}
 
-	history, err := encodeHistory([]provider.Message{
-		{Role: provider.RoleUser, Content: "weather?"},
-		{
-			Role: provider.RoleAssistant,
-			Blocks: []provider.ContentBlock{
-				provider.ToolUseBlock(callIDs[0], "weather_get_forecast", json.RawMessage(`{"city":"NYC"}`)),
-			},
-			StopReason: provider.StopReasonToolUse,
-		},
-	})
-	if err != nil {
-		t.Fatalf("encodeHistory: %v", err)
-	}
 	if _, err := db.Exec(`
-		INSERT INTO sessions (id, agent_version_id, input, status, history)
-		VALUES ($1, $2, '{"message":"weather?"}'::jsonb, $3, $4::jsonb)
-	`, sessionID, agentVersionID, model.SessionStatusAwaitingTool, history); err != nil {
+		INSERT INTO sessions (id, agent_version_id, input, status, root_session_id)
+		VALUES ($1, $2, '{"message":"weather?"}'::jsonb, $3, $1)
+	`, sessionID, agentVersionID, model.SessionStatusAwaitingTool); err != nil {
 		t.Fatalf("insert session: %v", err)
 	}
 	for i, callID := range callIDs {

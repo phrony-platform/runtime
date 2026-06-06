@@ -68,46 +68,6 @@ func turnRecordsFromHistory(messages []provider.Message) []sessionTurnRecord {
 	return turns
 }
 
-// enrichHistoryFromSessionOutput fills missing assistant turn_usage from session output turns.
-func enrichHistoryFromSessionOutput(messages []provider.Message, output json.RawMessage) []provider.Message {
-	if len(messages) == 0 || len(output) == 0 {
-		return messages
-	}
-	var obj sessionOutput
-	if err := json.Unmarshal(output, &obj); err != nil {
-		return messages
-	}
-	assistantCount := 0
-	for _, m := range messages {
-		if m.Role == provider.RoleAssistant {
-			assistantCount++
-		}
-	}
-	turnIdx := 0
-	for i := range messages {
-		if messages[i].Role != provider.RoleAssistant {
-			continue
-		}
-		if turnIdx < len(obj.Turns) {
-			rec := obj.Turns[turnIdx]
-			if messages[i].TurnUsage.IsZero() {
-				messages[i].StopReason = rec.StopReason
-				messages[i].TurnUsage = usageFromSessionOutput(rec.TurnUsage)
-			}
-			if messages[i].TurnDurationMs == 0 && rec.TurnDurationMs > 0 {
-				messages[i].TurnDurationMs = rec.TurnDurationMs
-			}
-		} else if len(obj.Turns) == 0 && obj.TurnUsage != nil && turnIdx == assistantCount-1 {
-			if messages[i].TurnUsage.IsZero() {
-				messages[i].StopReason = obj.StopReason
-				messages[i].TurnUsage = usageFromSessionOutput(obj.TurnUsage)
-			}
-		}
-		turnIdx++
-	}
-	return messages
-}
-
 func marshalSessionOutput(message, stopReason string, turnUsage, sessionUsage provider.TokenUsage, history []provider.Message) (json.RawMessage, error) {
 	out := sessionOutput{
 		Message:      message,
@@ -174,6 +134,18 @@ func loadFoldedSession(ctx context.Context, q *store.Queries, sessionID string) 
 		return nil, nil, err
 	}
 	return buildProviderContext(events), buildSessionOutput(events), nil
+}
+
+// syncInteractiveStateFromFold reloads in-memory conversation state from the event log.
+func syncInteractiveStateFromFold(ctx context.Context, q *store.Queries, sessionID string, st *interactiveSessionState) error {
+	history, output, err := loadFoldedSession(ctx, q, sessionID)
+	if err != nil {
+		return err
+	}
+	st.history = history
+	st.turnCount = countCompletedTurns(history)
+	_, st.sessionUsage = usageFromSessionOutputJSON(output)
+	return nil
 }
 
 func usageFromSessionOutputJSON(output json.RawMessage) (turnUsage, sessionUsage provider.TokenUsage) {

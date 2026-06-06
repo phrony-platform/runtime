@@ -63,13 +63,14 @@ func TestRecoverOutstandingToolInvocations_redispatchesPendingAndQueued(t *testi
 		},
 	}
 
-	mock.ExpectQuery(`FROM tool_invocations`).WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows(nil))
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
-	for _, callID := range []string{"call-pending", "call-queued"} {
-		mock.ExpectQuery(`FROM tool_invocations`).WithArgs(callID).
-			WillReturnRows(toolInvocationSQLRows(callID, "sess-1", model.ToolInvocationQueued, nil, now))
-	}
+	mock.ExpectQuery(`FROM tool_invocations`).WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{"call_id"}))
+	expectListEventsBySession(mock, "sess-1", nil, now)
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("sess-1", model.SessionStatusRunning, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	err := srv.recoverOutstandingToolInvocations(
 		context.Background(), q, ver,
@@ -159,14 +160,12 @@ func TestRecoverDispatchedInvocation_nonIdempotentEscalates(t *testing.T) {
 		Tool: "weather.get-forecast", Version: "1.0.0",
 	}
 	now := time.Now()
+	mock.MatchExpectationsInOrder(false)
 	rows := toolInvocationSQLRows("call-hitl", "sess-1", model.ToolInvocationDispatched, nil, now)
 	mock.ExpectQuery(`FROM tool_invocations`).WithArgs("call-hitl").WillReturnRows(rows)
-	mock.ExpectQuery(`UPDATE tool_invocations`).WithArgs("call-hitl", model.ToolInvocationIndeterminate, "indeterminate", sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"call_id"}).AddRow("call-hitl"))
-	mock.ExpectQuery(`FROM tool_invocations`).WithArgs("call-hitl").
-		WillReturnRows(toolInvocationSQLRows("call-hitl", "sess-1", model.ToolInvocationIndeterminate, nil, now))
-	mock.ExpectQuery(`INSERT INTO approvals`).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(now))
-	mock.ExpectQuery(`UPDATE sessions`).WithArgs("sess-1", model.SessionStatusAwaitingApproval, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+	expectAppendToolIndeterminateTx(mock, "sess-1", 1, "call-hitl")
+	expectAppendApprovalRequiredTx(mock, "sess-1", 2)
+	mock.ExpectQuery(`UPDATE sessions`).WithArgs("sess-1", model.SessionStatusAwaitingApproval, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	err := srv.recoverDispatchedInvocation(

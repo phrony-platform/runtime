@@ -8,6 +8,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
 	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/store"
 )
 
 type approvalRowOpts struct {
@@ -78,8 +79,29 @@ func expectDecideFlowGetApproval(mock sqlmock.Sqlmock, id string, row *sqlmock.R
 }
 
 func expectDecideVote(mock sqlmock.Sqlmock) {
+	expectApprovalEventAppend(mock, "sess-1", 1, EventApprovalVote)
 	mock.ExpectQuery(`INSERT INTO approval_votes`).
 		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(time.Now()))
+	mock.ExpectCommit()
+}
+
+func expectDecideVoteDuplicate(mock sqlmock.Sqlmock) {
+	expectApprovalEventAppend(mock, "sess-1", 1, EventApprovalVote)
+	mock.ExpectQuery(`INSERT INTO approval_votes`).
+		WillReturnError(store.ErrDuplicateApprovalVote)
+	mock.ExpectRollback()
+}
+
+func expectApprovalEventAppend(mock sqlmock.Sqlmock, sessionID string, eventSeq int, eventType string) {
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`FROM sessions`).WithArgs(sessionID).
+		WillReturnRows(sessionMockRows(sessionID, "av-1", model.SessionStatusAwaitingApproval, []byte(`{}`), nil, sessionID, eventSeq-1, now, now))
+	mock.ExpectQuery(`UPDATE sessions`).WithArgs(sessionID).
+		WillReturnRows(sqlmock.NewRows([]string{"event_seq"}).AddRow(eventSeq))
+	mock.ExpectQuery(`INSERT INTO events`).
+		WithArgs(sessionID, sessionID, eventSeq, eventType, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(eventSeq)))
 }
 
 func expectDecideIncrement(mock sqlmock.Sqlmock, id string, received, required int) {
@@ -89,9 +111,11 @@ func expectDecideIncrement(mock sqlmock.Sqlmock, id string, received, required i
 }
 
 func expectDecideFinalize(mock sqlmock.Sqlmock, id, status, decidedBy string, received int) {
+	expectApprovalEventAppend(mock, "sess-1", 2, EventApprovalDecided)
 	mock.ExpectQuery(`UPDATE approvals`).
 		WithArgs(id, status, decidedBy, sqlmock.AnyArg(), received).
 		WillReturnRows(sqlmock.NewRows([]string{"decided_at"}).AddRow(time.Now()))
+	mock.ExpectCommit()
 }
 
 func expectUpdateToolInvocationStatus(mock sqlmock.Sqlmock, callID, status string) {

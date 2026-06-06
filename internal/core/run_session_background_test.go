@@ -19,10 +19,11 @@ import (
 
 func TestRuntime_RunSessionBackground_hubDeliversEventsToSubscriber(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-bg", model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	expectRecordTurnEvents(mock, "sess-bg", 1, 2, true)
+	expectSyncFoldAfterTurn(mock, "sess-bg", "hi", "Hi there", "end_turn", provider.TokenUsage{}, now)
+	expectParkAwaitingInput(mock, "sess-bg", now)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{
@@ -71,10 +72,11 @@ func TestRuntime_RunSessionBackground_hubDeliversEventsToSubscriber(t *testing.T
 
 func TestRuntime_RunSessionBackground_reachesAwaitingInput(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-bg", model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	expectRecordTurnEvents(mock, "sess-bg", 1, 2, true)
+	expectSyncFoldAfterTurn(mock, "sess-bg", "hi", "Hi there", "end_turn", provider.TokenUsage{}, now)
+	expectParkAwaitingInput(mock, "sess-bg", now)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{
@@ -110,9 +112,7 @@ func TestRuntime_RunSessionBackground_reachesAwaitingInput(t *testing.T) {
 
 func TestRuntime_RunSessionBackground_loadFailureMarksFailed(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-bg", model.SessionStatusFailed, nil, context.Canceled.Error(), nil).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
+	expectAppendSessionFailedTxWithBegin(mock, "sess-bg", 1, context.Canceled.Error())
 
 	srv := &runtimeServer{
 		db: db,
@@ -181,9 +181,16 @@ func TestRuntime_RunSessionBackground_registersActiveSession(t *testing.T) {
 
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	expectCreateRunSessionMocks(mock, "version-uuid", []byte(`{"message":"hi"}`))
+	turnNow := time.Now()
+	expectRecordTurnEventsAny(mock, 2, 3, true)
+	turnFold := foldEventsWithMessages("sess-any", "hi", "Hi there", "end_turn", provider.TokenUsage{})
+	mock.ExpectQuery(`FROM events`).WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sessionEventLogRows(turnNow, turnFold...))
+	mock.ExpectQuery(`FROM events`).WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sessionEventLogRows(turnNow, turnFold...))
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now())).
+		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(turnNow)).
 		WillDelayFor(50 * time.Millisecond)
 
 	resp, err := srv.RunSession(context.Background(), &runtimev1.RunSessionRequest{
@@ -233,12 +240,8 @@ func TestRuntime_expireWallClockSession_marksParkedSessionFailed(t *testing.T) {
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-bg").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-bg", "version-uuid", []byte(`{}`), model.SessionStatusAwaitingInput, nil, nil, []byte(`[]`), now.Add(-time.Hour), now))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-bg", model.SessionStatusFailed, nil, sqlmock.AnyArg(), nil).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+		WillReturnRows(sessionMockRows("sess-bg", "version-uuid", model.SessionStatusAwaitingInput, []byte(`{}`), nil, "sess-bg", 0, now.Add(-time.Hour), now))
+	expectAppendSessionFailedTxWithBegin(mock, "sess-bg", 1, "run limit max_wall_clock_seconds exceeded (on_limit=halt)")
 	mock.ExpectExec(`DELETE FROM session_secrets`).
 		WithArgs("sess-bg").
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -266,9 +269,7 @@ func TestRuntime_expireWallClockSession_skipsTerminalSession(t *testing.T) {
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-bg").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-bg", "version-uuid", []byte(`{}`), model.SessionStatusCompleted, nil, nil, []byte(`[]`), now.Add(-time.Hour), now))
+		WillReturnRows(sessionMockRows("sess-bg", "version-uuid", model.SessionStatusCompleted, []byte(`{}`), nil, "sess-bg", 1, now.Add(-time.Hour), now))
 
 	srv := &runtimeServer{db: db, activeSessions: &sync.Map{}}
 	srv.expireWallClockSession("sess-bg", "halt")
@@ -280,10 +281,11 @@ func TestRuntime_expireWallClockSession_skipsTerminalSession(t *testing.T) {
 
 func TestRuntime_runSessionInteractiveLoop_waitForUserFalseStopsAfterAwaitingInput(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	expectRecordTurnEvents(mock, "sess-1", 1, 2, false)
+	expectSyncFoldAfterTurn(mock, "sess-1", "hi", "Hi there", "end_turn", provider.TokenUsage{}, now)
+	expectParkAwaitingInput(mock, "sess-1", now)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{
@@ -314,16 +316,12 @@ func TestRuntime_runSessionInteractiveLoop_waitForUserFalseStopsAfterAwaitingInp
 
 func TestRuntime_runSessionInteractiveLoop_delegationDepthCompletesWithoutParking(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
-	for i := 0; i < 2; i++ {
-		mock.ExpectQuery(`INSERT INTO session_events`).
-			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(i + 1)))
-	}
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("child-sess", model.SessionStatusCompleted, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
-	mock.ExpectQuery(`INSERT INTO session_events`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(3)))
+	expectRecordTurnEvents(mock, "child-sess", 1, 2, false)
+	expectSyncFoldAfterTurn(mock, "child-sess", "hi", "Hi there", "end_turn", provider.TokenUsage{}, now)
+	expectListEventsBySession(mock, "child-sess", foldEventsWithMessages("child-sess", "hi", "Hi there", "end_turn", provider.TokenUsage{}), now)
+	expectAppendSessionCompletedTx(mock, "child-sess", 3)
 	mock.ExpectExec(`DELETE FROM session_secrets`).
 		WithArgs("child-sess").
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -365,10 +363,11 @@ func TestRuntime_runSessionInteractiveLoop_delegationDepthCompletesWithoutParkin
 
 func TestRuntime_runSessionInteractiveLoop_waitForUserFalseDoesNotAutoCompleteOnEOF(t *testing.T) {
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	now := time.Now()
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	expectRecordTurnEvents(mock, "sess-1", 1, 2, false)
+	expectSyncFoldAfterTurn(mock, "sess-1", "hi", "Hi there", "end_turn", provider.TokenUsage{}, now)
+	expectParkAwaitingInput(mock, "sess-1", now)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{

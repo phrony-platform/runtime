@@ -2,13 +2,14 @@ package core
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/phrony-platform/runtime/internal/evidence"
 	"github.com/phrony-platform/runtime/internal/manifest"
+	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/store"
 )
 
@@ -34,18 +35,27 @@ func TestEnsureSessionEvidence_recordsAndIsIdempotent(t *testing.T) {
 			},
 		},
 	}
-
-	mock.ExpectQuery(`FROM session_evidence`).
-		WithArgs("sess-1").
-		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(`INSERT INTO session_evidence`).
-		WithArgs("sess-1", sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"session_id"}).AddRow("sess-1"))
-
 	payload, _ := evidence.BuildSnapshot(agent).JSON()
-	mock.ExpectQuery(`FROM session_evidence`).
-		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(payload))
+	now := time.Now()
+
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").
+		WillReturnRows(sessionEventLogRows(now))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`FROM sessions`).WithArgs("sess-1").
+		WillReturnRows(sessionMockRows("sess-1", "version-uuid", model.SessionStatusRunning, []byte(`{}`), nil, "sess-1", 0, now, now))
+	mock.ExpectQuery(`UPDATE sessions`).WithArgs("sess-1").
+		WillReturnRows(sqlmock.NewRows([]string{"event_seq"}).AddRow(1))
+	mock.ExpectQuery(`INSERT INTO events`).
+		WithArgs("sess-1", "sess-1", 1, EventEvidenceRecorded, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), ActorSystem, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
+	mock.ExpectCommit()
+
+	recorded := []store.Event{{
+		ID: 1, SessionID: "sess-1", RootSessionID: "sess-1", Seq: 1, TS: now,
+		Type: EventEvidenceRecorded, Actor: ActorSystem, Payload: payload,
+	}}
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").
+		WillReturnRows(sessionEventLogRows(now, recorded...))
 
 	q := store.New(db)
 	srv := &runtimeServer{}

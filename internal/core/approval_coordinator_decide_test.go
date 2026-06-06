@@ -8,7 +8,6 @@ import (
 
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/policy"
-	"github.com/phrony-platform/runtime/internal/store"
 )
 
 func TestApprovalCoordinator_comprehensionRequired(t *testing.T) {
@@ -198,8 +197,7 @@ func TestApprovalCoordinator_duplicateVote(t *testing.T) {
 	coord, mock := testApprovalCoordinator(t)
 
 	expectDecideGetApproval(mock, "appr-1", approvalRow("appr-1", "sess-1", "call-1", model.ApprovalStatusPending, false, 1, 0, nil))
-	mock.ExpectQuery(`INSERT INTO approval_votes`).
-		WillReturnError(store.ErrDuplicateApprovalVote)
+	expectDecideVoteDuplicate(mock)
 
 	_, err := coord.Decide(context.Background(), approvalDecideParams{
 		ApprovalID: "appr-1",

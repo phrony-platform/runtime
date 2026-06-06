@@ -181,9 +181,7 @@ func testServeDB(t *testing.T) *sqlx.DB {
 	t.Helper()
 	db, mock := testSQLxDB(t)
 	mock.ExpectQuery(`FROM sessions`).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}))
+		WillReturnRows(sqlmock.NewRows(sessionSelectColumns))
 	return db
 }
 

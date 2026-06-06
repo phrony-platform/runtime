@@ -5,11 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/manifest"
-	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/provider"
 	"github.com/phrony-platform/runtime/internal/providertest"
 	"github.com/phrony-platform/runtime/internal/store"
@@ -21,9 +19,10 @@ func TestRuntime_RunSessionInteractive_oneTurnWithStatsEOF(t *testing.T) {
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	expectCreateRunSessionMocks(mock, "version-uuid", []byte(`{"message":"hi"}`))
 	expectGetRunningSessionForAttach(mock, "version-uuid", []byte(`{"message":"hi"}`))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs(sqlmock.AnyArg(), model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
+	turnNow := time.Now()
+	expectRecordTurnEventsAny(mock, 2, 3, true)
+	expectSyncFoldAfterTurnAny(mock, "hi", "ok", "end_turn", provider.TokenUsage{InputTokens: 10, OutputTokens: 5}, turnNow)
+	expectParkAwaitingInputAny(mock, turnNow)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{

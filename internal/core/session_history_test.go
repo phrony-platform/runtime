@@ -6,7 +6,31 @@ import (
 	"testing"
 
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/store"
 )
+
+func TestBuildProviderContext_foldsMessagesAndToolResults(t *testing.T) {
+	callID := "call-1"
+	events := []store.Event{
+		{Type: EventMessageUser, Payload: userMessagePayload("hi")},
+		{Type: EventMessageAssistant, Payload: assistantMessagePayload("thinking", "tool_use", provider.TokenUsage{}, 0)},
+		{Type: EventToolCompleted, CallID: &callID, Payload: json.RawMessage(`{"result":{"temp":72}}`)},
+		{Type: EventMessageAssistant, Payload: assistantMessagePayload("done", "end_turn", provider.TokenUsage{InputTokens: 5, OutputTokens: 2}, 50)},
+	}
+	ctx := buildProviderContext(events)
+	if len(ctx) != 4 {
+		t.Fatalf("len(context) = %d, want 4", len(ctx))
+	}
+	if ctx[0].Role != provider.RoleUser || ctx[0].Content != "hi" {
+		t.Fatalf("user = %+v", ctx[0])
+	}
+	if ctx[2].Role != provider.RoleUser || len(ctx[2].Blocks) != 1 {
+		t.Fatalf("tool result = %+v", ctx[2])
+	}
+	if ctx[3].Content != "done" || ctx[3].TurnUsage.InputTokens != 5 {
+		t.Fatalf("final assistant = %+v", ctx[3])
+	}
+}
 
 func TestEncodeDecodeHistory_roundTrip(t *testing.T) {
 	in := []provider.Message{

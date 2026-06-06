@@ -1,7 +1,6 @@
 package core
 
 import (
-	"encoding/json"
 	"strings"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
@@ -44,34 +43,6 @@ func lastAssistantHistoryContent(history []provider.Message) string {
 		}
 	}
 	return ""
-}
-
-// patchHistoryLastAssistantFromOutput uses session output.message when it is longer
-// than the last assistant row (covers re-attach before history commit visibility).
-func patchHistoryLastAssistantFromOutput(history []provider.Message, output json.RawMessage) []provider.Message {
-	if len(output) == 0 || len(history) == 0 {
-		return history
-	}
-	var obj sessionOutput
-	if err := json.Unmarshal(output, &obj); err != nil || obj.Message == "" {
-		return history
-	}
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Role != provider.RoleAssistant {
-			continue
-		}
-		if len(obj.Message) > len(history[i].Content) {
-			history[i].Content = obj.Message
-			if obj.StopReason != "" {
-				history[i].StopReason = obj.StopReason
-			}
-			if obj.TurnUsage != nil {
-				history[i].TurnUsage = usageFromSessionOutput(obj.TurnUsage)
-			}
-		}
-		break
-	}
-	return history
 }
 
 func liveAssistantReplayDelta(history []provider.Message, live string) string {

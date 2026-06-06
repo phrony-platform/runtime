@@ -359,14 +359,13 @@ func (c *approvalCoordinator) finalizeDecision(
 	if c.server != nil && c.server.sessionIsActive(row.SessionID) {
 		return result, nil
 	}
-	// Detached sessions with no in-process driver resume asynchronously.
+	// Resume detached sessions synchronously so a nested delegation driver blocked in
+	// WaitApproval cannot race with a concurrent recoverOutstandingToolInvocations pass.
 	if c.server != nil && !c.server.sessionIsActive(row.SessionID) {
 		resumeRow := row
-		go func() {
-			if err := c.server.resumeAfterApproval(context.Background(), resumeRow, approved, args, comment); err != nil {
-				slog.Error("resume after approval", "session_id", resumeRow.SessionID, "approval_id", resumeRow.ID, "error", err)
-			}
-		}()
+		if err := c.server.resumeAfterApproval(context.Background(), resumeRow, approved, args, comment); err != nil {
+			slog.Error("resume after approval", "session_id", resumeRow.SessionID, "approval_id", resumeRow.ID, "error", err)
+		}
 	}
 	return result, nil
 }

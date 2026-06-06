@@ -22,11 +22,7 @@ func TestRuntime_RunSession_bundleActiveDeployment(t *testing.T) {
 		WithArgs("root-ver").
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	expectBundleMemberManifestsEmpty(mock, "bv-1")
-	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "root-ver", []byte(`{"message":"hi"}`), "running", nil, 0, "bv-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
-	mock.ExpectCommit()
+	expectInsertSessionWithStartedEvent(mock, "root-ver", []byte(`{"message":"hi"}`), nil, 0, "bv-1", sqlmock.AnyArg())
 
 	srv := &runtimeServer{
 		db: db,
@@ -65,11 +61,7 @@ func TestRuntime_RunSession_bundleExplicitSemverActive(t *testing.T) {
 		WithArgs("root-ver").
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	expectBundleMemberManifestsEmpty(mock, "bv-1")
-	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), "root-ver", []byte(`{"message":"hi"}`), "running", nil, 0, "bv-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
-	mock.ExpectCommit()
+	expectInsertSessionWithStartedEvent(mock, "root-ver", []byte(`{"message":"hi"}`), nil, 0, "bv-1", sqlmock.AnyArg())
 
 	srv := &runtimeServer{
 		db: db,

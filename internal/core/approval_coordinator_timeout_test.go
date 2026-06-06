@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/policy"
 )
@@ -82,11 +81,7 @@ func TestHandleApprovalTimeout_escalate(t *testing.T) {
 		ID: "appr-1", SessionID: "sess-1", CallID: "call-1",
 		Status: model.ApprovalStatusPending, PolicyRuntime: runtime,
 	}))
-	mock.ExpectQuery(`UPDATE approvals`).
-		WithArgs("appr-1", model.ApprovalStatusEscalated, "system:timeout").
-		WillReturnRows(sqlmock.NewRows([]string{"decided_at"}).AddRow(time.Now()))
-	mock.ExpectQuery(`INSERT INTO approvals`).
-		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(time.Now()))
+	expectApprovalEscalateTimeoutFlow(mock, "sess-1", "appr-1", 1)
 
 	coord.handleApprovalTimeout("appr-1")
 	if err := mock.ExpectationsWereMet(); err != nil {

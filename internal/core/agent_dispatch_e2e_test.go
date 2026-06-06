@@ -14,7 +14,6 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
-	"github.com/phrony-platform/runtime/internal/provider"
 	"github.com/phrony-platform/runtime/internal/sessionids"
 	"github.com/phrony-platform/runtime/internal/store"
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
@@ -490,14 +489,10 @@ func TestAgentDelegationE2E_recoveryResumesDelegation(t *testing.T) {
 
 	parentID := uuid.NewString()
 	callID := uuid.NewString()
-	historyJSON, err := encodeHistory([]provider.Message{{Role: provider.RoleUser, Content: "please delegate"}})
-	if err != nil {
-		t.Fatalf("encodeHistory: %v", err)
-	}
 	if _, err := db.Exec(`
-		INSERT INTO sessions (id, agent_version_id, input, status, history)
-		VALUES ($1, $2, '{"message":"please delegate"}'::jsonb, $3, $4::jsonb)
-	`, parentID, published.rootVersionID, model.SessionStatusAwaitingTool, historyJSON); err != nil {
+		INSERT INTO sessions (id, agent_version_id, input, status, root_session_id)
+		VALUES ($1, $2, '{"message":"please delegate"}'::jsonb, $3, $1)
+	`, parentID, published.rootVersionID, model.SessionStatusAwaitingTool); err != nil {
 		t.Fatalf("insert parent session: %v", err)
 	}
 	if _, err := db.Exec(`
@@ -561,14 +556,10 @@ func TestAgentDelegationE2E_recoveryResumesChildStoredVersionAfterRepublish(t *t
 	parentID := uuid.NewString()
 	callID := uuid.NewString()
 	childID := sessionids.ChildFromCallID(callID)
-	historyJSON, err := encodeHistory([]provider.Message{{Role: provider.RoleUser, Content: "please delegate"}})
-	if err != nil {
-		t.Fatalf("encodeHistory: %v", err)
-	}
 	if _, err := db.Exec(`
-		INSERT INTO sessions (id, agent_version_id, input, status, history)
-		VALUES ($1, $2, '{"message":"please delegate"}'::jsonb, $3, $4::jsonb)
-	`, parentID, v1.rootVersionID, model.SessionStatusAwaitingTool, historyJSON); err != nil {
+		INSERT INTO sessions (id, agent_version_id, input, status, root_session_id)
+		VALUES ($1, $2, '{"message":"please delegate"}'::jsonb, $3, $1)
+	`, parentID, v1.rootVersionID, model.SessionStatusAwaitingTool); err != nil {
 		t.Fatalf("insert parent session: %v", err)
 	}
 	if _, err := db.Exec(`
@@ -578,9 +569,9 @@ func TestAgentDelegationE2E_recoveryResumesChildStoredVersionAfterRepublish(t *t
 		t.Fatalf("insert dispatched delegation invocation: %v", err)
 	}
 	if _, err := db.Exec(`
-		INSERT INTO sessions (id, agent_version_id, parent_session_id, input, status, history, depth)
-		VALUES ($1, $2, $3, '{"task":"help"}'::jsonb, $4, '[]'::jsonb, 1)
-	`, childID, specialistV1ID, parentID, model.SessionStatusRunning); err != nil {
+		INSERT INTO sessions (id, agent_version_id, parent_session_id, input, status, root_session_id, depth)
+		VALUES ($1, $2, $3, '{"task":"help"}'::jsonb, $4, $5, 1)
+	`, childID, specialistV1ID, parentID, model.SessionStatusRunning, parentID); err != nil {
 		t.Fatalf("insert interrupted child session: %v", err)
 	}
 

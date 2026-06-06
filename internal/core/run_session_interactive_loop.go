@@ -171,18 +171,20 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				state.blockInput(err)
 			}
 
-			outputJSON, err := marshalSessionOutput(out.assistantText, out.stopReason, out.turnUsage, state.sessionUsage, state.history)
-			if err != nil {
-				return status.Errorf(codes.Internal, "encode session output: %v", err)
+			if err := syncInteractiveStateFromFold(ctx, q, sessionID, state); err != nil {
+				return status.Errorf(codes.Internal, "sync session fold: %v", err)
 			}
-
-			historyJSON, err := encodeHistory(state.history)
+			foldedOutput, err := loadSessionOutputJSON(ctx, q, sessionID)
 			if err != nil {
-				return status.Errorf(codes.Internal, "encode session history: %v", err)
+				return status.Errorf(codes.Internal, "load session output: %v", err)
 			}
 			if state.delegationDepth > 0 {
 				s.clearActiveSessionLiveAssistant(sessionID)
-				return s.completeInteractiveSession(ctx, q, events, sessionID, out.stopReason, outputJSON, state.turnCount, out.turnUsage, state.sessionUsage, historyJSON)
+				historyJSON, err := encodeHistory(state.history)
+				if err != nil {
+					return status.Errorf(codes.Internal, "encode session history: %v", err)
+				}
+				return s.completeInteractiveSession(ctx, q, events, sessionID, out.stopReason, foldedOutput, state.turnCount, out.turnUsage, state.sessionUsage, historyJSON)
 			}
 			if waitForUser {
 				if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
@@ -191,13 +193,12 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 				}); err != nil {
 					return status.Errorf(codes.Internal, "update session: %v", err)
 				}
-				_, _ = outputJSON, historyJSON
-			} else if err := s.persistDetachedSessionAfterTurn(ctx, q, sessionID, state, outputJSON, historyJSON); err != nil {
+			} else if err := s.persistDetachedSessionAfterTurn(ctx, q, sessionID, state); err != nil {
 				return err
 			}
 			s.clearActiveSessionLiveAssistant(sessionID)
 			lastStopReason = out.stopReason
-			lastOutput = outputJSON
+			lastOutput = foldedOutput
 			lastTurnUsage = out.turnUsage
 
 			if err := sendAwaitingInput(events, out.stopReason, state.turnCount, out.turnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {

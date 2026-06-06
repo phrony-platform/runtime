@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/store"
 )
 
 func TestPersistSessionOutput_includesCurrentTurnUsage(t *testing.T) {
@@ -55,25 +56,23 @@ func TestMarshalSessionOutput_roundTripUsage(t *testing.T) {
 	}
 }
 
-func TestEnrichHistoryFromSessionOutput_turnsArray(t *testing.T) {
-	history := []provider.Message{
-		{Role: provider.RoleUser, Content: "hi"},
-		{Role: provider.RoleAssistant, Content: "one"},
-		{Role: provider.RoleUser, Content: "again"},
-		{Role: provider.RoleAssistant, Content: "two"},
+func TestBuildSessionOutput_foldsAssistantEvents(t *testing.T) {
+	events := []store.Event{
+		{Type: EventMessageUser, Payload: userMessagePayload("hi")},
+		{Type: EventMessageAssistant, Payload: assistantMessagePayload("one", "end_turn", provider.TokenUsage{InputTokens: 10, OutputTokens: 5}, 100)},
+		{Type: EventMessageUser, Payload: userMessagePayload("again")},
+		{Type: EventMessageAssistant, Payload: assistantMessagePayload("two", "end_turn", provider.TokenUsage{InputTokens: 20, OutputTokens: 8}, 200)},
 	}
-	output, err := json.Marshal(sessionOutput{
-		Turns: []sessionTurnRecord{
-			{StopReason: "end_turn", TurnUsage: &sessionOutputUsage{InputTokens: 10, OutputTokens: 5}},
-			{StopReason: "end_turn", TurnUsage: &sessionOutputUsage{InputTokens: 20, OutputTokens: 8}},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
+	raw := buildSessionOutput(events)
+	turn, session := usageFromSessionOutputJSON(raw)
+	if turn.InputTokens != 20 || turn.OutputTokens != 8 {
+		t.Fatalf("last turn usage = %+v", turn)
 	}
-	enriched := enrichHistoryFromSessionOutput(history, output)
-	if enriched[1].TurnUsage.InputTokens != 10 || enriched[3].TurnUsage.InputTokens != 20 {
-		t.Fatalf("enriched = %+v", enriched)
+	if session.InputTokens != 30 || session.OutputTokens != 13 {
+		t.Fatalf("session usage = %+v", session)
+	}
+	if stopReasonFromSessionOutput(raw) != "end_turn" {
+		t.Fatalf("stop_reason = %q", stopReasonFromSessionOutput(raw))
 	}
 }
 

@@ -27,8 +27,13 @@ func expectCreateRunSessionWithSecretsMocks(t *testing.T, mock sqlmock.Sqlmock, 
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0, "").
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0, "", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	mock.ExpectQuery(`UPDATE sessions`).WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"event_seq"}).AddRow(1))
+	mock.ExpectQuery(`INSERT INTO events`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), 1, EventSessionStarted, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), ActorSystem, input).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
 	mock.ExpectExec(`INSERT INTO session_secrets`).
 		WithArgs(sqlmock.AnyArg(), "anthropic", 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -43,8 +48,13 @@ func expectCreateRunSessionMissingSecretsMocks(t *testing.T, mock sqlmock.Sqlmoc
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0, "").
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0, "", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	mock.ExpectQuery(`UPDATE sessions`).WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"event_seq"}).AddRow(1))
+	mock.ExpectQuery(`INSERT INTO events`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), 1, EventSessionStarted, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), ActorSystem, input).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
 	mock.ExpectRollback()
 }
 
@@ -137,10 +147,8 @@ func TestRuntime_RunSession_withResolvedSecrets(t *testing.T) {
 func TestRuntime_persistDetachedSessionAfterTurn_retainsSecrets(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()
-	output := json.RawMessage(`{"message":"ok","stop_reason":"end_turn"}`)
-	history := json.RawMessage(`[]`)
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-park", model.SessionStatusAwaitingInput, output, nil, history).
+		WithArgs("sess-park", model.SessionStatusAwaitingInput, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	srv := &runtimeServer{db: db}
@@ -150,8 +158,6 @@ func TestRuntime_persistDetachedSessionAfterTurn_retainsSecrets(t *testing.T) {
 		store.New(db),
 		"sess-park",
 		state,
-		output,
-		history,
 	)
 	if err != nil {
 		t.Fatalf("persistDetachedSessionAfterTurn: %v", err)
@@ -253,15 +259,13 @@ func TestRuntime_loadSessionVersion_secondTurnAfterAwaitingInput(t *testing.T) {
 
 	db, mock := testSQLxDB(t)
 	now := time.Now()
-	output := json.RawMessage(`{"message":"ok","stop_reason":"end_turn"}`)
-	history := json.RawMessage(`[]`)
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-park", model.SessionStatusAwaitingInput, output, nil, history).
+		WithArgs("sess-park", model.SessionStatusAwaitingInput, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	srv := &runtimeServer{db: db, secretsEnc: enc}
 	state := &interactiveSessionState{sessionID: "sess-park"}
-	if err := srv.persistDetachedSessionAfterTurn(context.Background(), store.New(db), "sess-park", state, output, history); err != nil {
+	if err := srv.persistDetachedSessionAfterTurn(context.Background(), store.New(db), "sess-park", state); err != nil {
 		t.Fatalf("persistDetachedSessionAfterTurn: %v", err)
 	}
 

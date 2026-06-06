@@ -6,7 +6,9 @@ import (
 	"log/slog"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/provider"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -135,12 +137,9 @@ type approvalDecidedPayload struct {
 }
 
 // replaySessionEventLog re-emits the persisted timeline for an attaching client.
-// It sends the wire-backed steps (tool_call / tool_result / policy_denied /
-// approval_required) in insertion order so re-attach shows tool activity that
-// happened before this client joined. Conversation text is replayed via
-// session_started.history, and lifecycle / approval_decided entries are audit
-// only, so they are skipped here. skipApprovalID suppresses the currently pending
-// approval, which the caller surfaces separately, to avoid a double prompt.
+// Conversation text is replayed via session_started.history (folded from the log).
+// Wire-backed tool/approval steps are sent in insertion order; JSON-backed tool
+// events are synthesized into wire messages when needed.
 func replaySessionEventLog(ctx context.Context, q *store.Queries, events sessionEventSink, sessionID, skipApprovalID string) error {
 	if q == nil || events == nil || sessionID == "" {
 		return nil
@@ -151,29 +150,102 @@ func replaySessionEventLog(ctx context.Context, q *store.Queries, events session
 		return nil
 	}
 	for _, ev := range log {
-		switch ev.Type {
-		case EventToolRequested, EventToolCompleted, EventToolPolicyDenied:
-			msg, err := serverMsgFromSessionEvent(ev.Payload)
-			if err != nil {
-				continue
-			}
-			if err := events.Send(msg); err != nil {
-				return err
-			}
-		case EventApprovalRequired:
-			msg, err := serverMsgFromSessionEvent(ev.Payload)
-			if err != nil {
-				continue
-			}
-			if ar := msg.GetApprovalRequired(); ar != nil && skipApprovalID != "" && ar.GetApprovalId() == skipApprovalID {
-				continue
-			}
-			if err := events.Send(msg); err != nil {
-				return err
-			}
+		msg, ok := replayWireMsgFromEvent(ev)
+		if !ok || msg == nil {
+			continue
+		}
+		if ar := msg.GetApprovalRequired(); ar != nil && skipApprovalID != "" && ar.GetApprovalId() == skipApprovalID {
+			continue
+		}
+		if err := events.Send(msg); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func replayWireMsgFromEvent(ev store.Event) (*runtimev1.RunSessionInteractiveServerMsg, bool) {
+	switch ev.Type {
+	case EventToolRequested, EventToolCompleted, EventToolPolicyDenied, EventApprovalRequired:
+	default:
+		return nil, false
+	}
+	if msg, err := serverMsgFromSessionEvent(ev.Payload); err == nil {
+		switch {
+		case msg.GetToolCall() != nil, msg.GetToolResult() != nil, msg.GetApprovalRequired() != nil:
+			return msg, true
+		}
+	}
+	return synthesizeReplayMsgFromEvent(ev)
+}
+
+func synthesizeReplayMsgFromEvent(ev store.Event) (*runtimev1.RunSessionInteractiveServerMsg, bool) {
+	callID := ""
+	if ev.CallID != nil {
+		callID = *ev.CallID
+	}
+	switch ev.Type {
+	case EventToolRequested:
+		var body struct {
+			Tool    string          `json:"tool"`
+			Version string          `json:"version"`
+			Args    json.RawMessage `json:"args"`
+		}
+		if err := json.Unmarshal(ev.Payload, &body); err != nil || body.Tool == "" {
+			return nil, false
+		}
+		if len(body.Args) == 0 {
+			body.Args = json.RawMessage("{}")
+		}
+		return toolCallServerMsg(executor.ToolCallEvent{
+			CallID:  callID,
+			Tool:    body.Tool,
+			Version: body.Version,
+			Args:    body.Args,
+		}, nil), true
+	case EventToolCompleted, EventToolPolicyDenied:
+		var body struct {
+			Result       json.RawMessage `json:"result"`
+			ErrorMessage string          `json:"error_message"`
+			Error        string          `json:"error"`
+		}
+		if err := json.Unmarshal(ev.Payload, &body); err != nil {
+			return nil, false
+		}
+		errMsg := body.ErrorMessage
+		if errMsg == "" {
+			errMsg = body.Error
+		}
+		if msg, err := serverMsgFromSessionEvent(ev.Payload); err == nil && msg.GetToolResult() != nil {
+			return msg, true
+		}
+		return toolResultServerMsg(executor.ToolResultEvent{
+			CallID:       callID,
+			Payload:      body.Result,
+			ErrorMessage: errMsg,
+			Denied:       ev.Type == EventToolPolicyDenied,
+		}), true
+	case EventApprovalRequired:
+		var open store.InsertApprovalParams
+		if err := json.Unmarshal(ev.Payload, &open); err != nil {
+			return nil, false
+		}
+		args := open.Args
+		if len(args) == 0 {
+			args = json.RawMessage("{}")
+		}
+		return approvalRequiredServerMsg(policy.ApprovalRequest{
+			ApprovalID: open.ID,
+			SessionID:  open.SessionID,
+			CallID:     open.CallID,
+			Reason:     open.Reason,
+			Tool:       open.Tool,
+			Version:    open.Version,
+			Args:       args,
+		}), true
+	default:
+		return nil, false
+	}
 }
 
 // pendingApprovalIDForReplay returns the id of the session's still-pending

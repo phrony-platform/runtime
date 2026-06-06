@@ -109,13 +109,17 @@ func (s *runtimeServer) resumeAfterApproval(
 	if denyMsg == "" {
 		denyMsg = "tool call denied"
 	}
-	history = appendRecoveredToolResults(history, []provider.ContentBlock{
-		provider.ToolResultBlock(row.CallID, denyMsg, true),
-	})
+	if err := recordPolicyDeniedToolResult(ctx, q, row.SessionID, row.CallID, denyMsg); err != nil {
+		return err
+	}
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 		ID:     row.SessionID,
 		Status: model.SessionStatusRunning,
 	}); err != nil {
+		return err
+	}
+	history, err = loadProviderContext(ctx, q, row.SessionID)
+	if err != nil {
 		return err
 	}
 	if gate != nil && gate.events != nil {
@@ -165,6 +169,7 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	recorder := newSessionEventRecorder(q)
 	ch := make(chan executor.Event, 32)
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -215,9 +220,10 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 			turnUsage = ev.Usage
 			stopReason := ev.StopReason
 			turnDuration := time.Duration(0)
-			st.history = appendTurnHistory(st.history, "", assistantText, stopReason, turnUsage, turnDuration)
-			st.turnCount++
-			st.sessionUsage.Add(turnUsage)
+			recorder.Record(ctx, st.sessionID, model.SessionEventAssistantMessage, assistantMessagePayload(assistantText, stopReason, turnUsage, turnDuration.Milliseconds()))
+			if err := syncInteractiveStateFromFold(ctx, q, st.sessionID, st); err != nil {
+				return err
+			}
 
 			if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 				ID:     st.sessionID,

@@ -2,12 +2,10 @@ package core
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/evidence"
@@ -57,14 +55,13 @@ func TestSendSessionStarted_includesDescriptiveMetadata(t *testing.T) {
 
 func TestRuntime_RunSessionBackground_recordsSessionEvidence(t *testing.T) {
 	db, mock := testSQLxDB(t)
-	mock.ExpectQuery(`FROM session_evidence`).
-		WithArgs("sess-bg").
-		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(`INSERT INTO session_evidence`).
-		WithArgs("sess-bg", sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"session_id"}).AddRow("sess-bg"))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(time.Now()))
+	mock.MatchExpectationsInOrder(false)
+	now := time.Now()
+	expectListEventsBySession(mock, "sess-bg", nil, now)
+	expectAppendEventTxWithBegin(mock, "sess-bg", 1, EventEvidenceRecorded, "", nil)
+	expectRecordTurnEvents(mock, "sess-bg", 2, 3, true)
+	expectSyncFoldAfterTurn(mock, "sess-bg", "hi", "Hi there", "end_turn", provider.TokenUsage{}, now)
+	expectParkAwaitingInput(mock, "sess-bg", now)
 
 	agent := &manifest.Agent{
 		Metadata: manifest.AgentMetadata{Owner: "ops"},

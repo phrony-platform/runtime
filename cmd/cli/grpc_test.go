@@ -279,8 +279,13 @@ func expectInteractiveRunSessionMocks(mock sqlmock.Sqlmock, versionID string, in
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow(manifest))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0, "").
+		WithArgs(sqlmock.AnyArg(), versionID, input, model.SessionStatusRunning, nil, 0, "", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("generated-session"))
+	mock.ExpectQuery(`UPDATE sessions`).WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"event_seq"}).AddRow(1))
+	mock.ExpectQuery(`INSERT INTO events`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), 1, core.EventSessionStarted, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), core.ActorSystem, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
 	mock.ExpectCommit()
 	mock.ExpectQuery(`SELECT manifest`).
 		WithArgs(versionID).
@@ -297,12 +302,14 @@ func expectRunAttachSessionMocks(mock sqlmock.Sqlmock, versionID string, input a
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs(sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("run_attach_test", versionID, sessionInput, model.SessionStatusRunning, nil, nil, []byte(`[]`), now, now))
+		WillReturnRows(grpcSessionRows("run_attach_test", versionID, sessionInput, model.SessionStatusRunning, nil, "run_attach_test", 1, now, now))
 	mock.ExpectQuery(`SELECT manifest`).
 		WithArgs(versionID).
 		WillReturnError(sql.ErrNoRows)
+	for i := 0; i < 3; i++ {
+		mock.ExpectQuery(`FROM events`).WithArgs(sqlmock.AnyArg()).
+			WillReturnRows(grpcEventLogRows(now))
+	}
 }
 
 func startTestRuntimeAddrForBundlesList(t *testing.T) string {
@@ -647,9 +654,22 @@ func startTestRuntimeAddrForRunsCancel(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`FROM sessions`).WithArgs("run_abc").
+		WillReturnRows(grpcSessionRows("run_abc", "av-1", []byte(`{}`), "running", nil, "run_abc", 0, now, now))
+	mock.ExpectQuery(`UPDATE sessions`).WithArgs("run_abc").
+		WillReturnRows(sqlmock.NewRows([]string{"event_seq"}).AddRow(1))
+	mock.ExpectQuery(`INSERT INTO events`).
+		WithArgs("run_abc", "run_abc", 1, core.EventSessionCancelled, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs("run_abc").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("run_abc"))
+	mock.ExpectCommit()
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("run_abc").
+		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	return startRuntimeOnDB(t, sqlDB)
 }
@@ -868,9 +888,7 @@ func startTestRuntimeAddrForRunAttachFailed(t *testing.T) string {
 	errMsg := "model unavailable"
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-failed").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-failed", "version-uuid", []byte("{}"), "failed", nil, &errMsg, []byte(`[]`), now, now))
+		WillReturnRows(grpcSessionRows("sess-failed", "version-uuid", []byte("{}"), "failed", &errMsg, "sess-failed", 1, now, now))
 	mock.ExpectQuery(`SELECT manifest`).
 		WithArgs("version-uuid").
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow([]byte(attachTestManifestJSON)))
@@ -878,6 +896,10 @@ func startTestRuntimeAddrForRunAttachFailed(t *testing.T) string {
 		WithArgs("sess-failed", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
+	for i := 0; i < 2; i++ {
+		mock.ExpectQuery(`FROM events`).WithArgs("sess-failed").
+			WillReturnRows(grpcEventLogRows(now))
+	}
 
 	return startRuntimeOnDB(t, sqlDB)
 }
@@ -903,12 +925,9 @@ func startTestRuntimeAddrForRunAttachCompleted(t *testing.T) string {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 	now := time.Now()
-	output := []byte(`{"message":"done","stop_reason":"end_turn"}`)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-completed").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-completed", "version-uuid", []byte("{}"), "completed", output, nil, []byte(`[]`), now, now))
+		WillReturnRows(grpcSessionRows("sess-completed", "version-uuid", []byte("{}"), "completed", nil, "sess-completed", 2, now, now))
 	mock.ExpectQuery(`SELECT manifest`).
 		WithArgs("version-uuid").
 		WillReturnRows(sqlmock.NewRows([]string{"manifest"}).AddRow([]byte(attachTestManifestJSON)))
@@ -916,8 +935,32 @@ func startTestRuntimeAddrForRunAttachCompleted(t *testing.T) string {
 		WithArgs("sess-completed", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
+	for i := 0; i < 2; i++ {
+		mock.ExpectQuery(`FROM events`).WithArgs("sess-completed").
+			WillReturnRows(grpcEventLogRows(now))
+	}
 
 	return startRuntimeOnDB(t, sqlDB)
+}
+
+var grpcSessionSelectColumns = []string{
+	"id", "agent_version_id", "input", "status", "error", "root_session_id", "event_seq", "created_at", "updated_at",
+}
+
+func grpcSessionRows(sessionID, agentVersionID string, input []byte, status string, sessionErr *string, rootSessionID string, eventSeq int, createdAt, updatedAt time.Time) *sqlmock.Rows {
+	if rootSessionID == "" {
+		rootSessionID = sessionID
+	}
+	return sqlmock.NewRows(grpcSessionSelectColumns).AddRow(
+		sessionID, agentVersionID, input, status, sessionErr, rootSessionID, eventSeq, createdAt, updatedAt,
+	)
+}
+
+func grpcEventLogRows(now time.Time) *sqlmock.Rows {
+	return sqlmock.NewRows([]string{
+		"id", "session_id", "root_session_id", "seq", "ts", "type",
+		"turn", "call_id", "child_session_id", "actor", "payload",
+	})
 }
 
 func startRuntimeOnDB(t *testing.T, sqlDB *sql.DB) string {

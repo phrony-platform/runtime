@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/manifest"
@@ -20,18 +19,18 @@ func TestRuntime_RunSessionInteractive_attachReconcilesStaleRunningWallClock(t *
 	max := 30
 	created := time.Now().Add(-2 * time.Minute)
 	now := time.Now()
-	output := []byte(`{"message":"hi","stop_reason":"end_turn","turn_usage":{"input_tokens":1,"output_tokens":1},"session_usage":{"input_tokens":1,"output_tokens":1}}`)
-	history := []byte(`[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`)
+	events := foldEventsWithMessages("sess-stale", "hello", "hi", "end_turn", provider.TokenUsage{InputTokens: 1, OutputTokens: 1})
 
 	db, mock := testSQLxDB(t)
+	mock.MatchExpectationsInOrder(false)
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-stale").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-stale", "version-uuid", []byte(`{"message":"hello"}`), model.SessionStatusRunning, output, nil, history, created, now))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-stale", model.SessionStatusFailed, nil, sqlmock.AnyArg(), nil).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+		WillReturnRows(sessionMockRows("sess-stale", "version-uuid", model.SessionStatusRunning, []byte(`{"message":"hello"}`), nil, "sess-stale", len(events), created, now))
+	for i := 0; i < 2; i++ {
+		expectListEventsBySession(mock, "sess-stale", events, now)
+	}
+	expectAppendSessionFailedTxWithBegin(mock, "sess-stale", len(events)+1, "run limit max_wall_clock_seconds exceeded (on_limit=halt)")
+	expectAttachSessionFoldQueries(mock, "sess-stale", events, now)
 
 	agent := &manifest.Agent{
 		Spec: manifest.AgentSpec{

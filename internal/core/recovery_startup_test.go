@@ -20,9 +20,7 @@ func TestRuntime_reconcileSessionsOnStartup_pendingStartsBackgroundDriver(t *tes
 	db, mock := testSQLxDB(t)
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-pending", "version-uuid", []byte(`{"message":"hi"}`), model.SessionStatusPending, nil, nil, []byte(`[]`), now, now))
+		WillReturnRows(sessionMockRows("sess-pending", "version-uuid", model.SessionStatusPending, []byte(`{"message":"hi"}`), nil, "sess-pending", 0, now, now))
 	mock.ExpectExec(`DELETE FROM session_secrets`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 

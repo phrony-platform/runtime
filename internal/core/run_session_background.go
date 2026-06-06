@@ -217,14 +217,14 @@ func (s *runtimeServer) expireWallClockSession(sessionID, onLimit string) {
 	s.finalizeSessionSecrets(ctx, q, sessionID)
 }
 
-// persistDetachedSessionAfterTurn stores a completed detached turn and parks the
-// session at awaiting_input so an operator can attach and continue it later.
+// persistDetachedSessionAfterTurn parks the session at awaiting_input so an
+// operator can attach and continue it later. Conversation state lives in the
+// event log and is folded on read.
 func (s *runtimeServer) persistDetachedSessionAfterTurn(
 	ctx context.Context,
 	q *store.Queries,
 	sessionID string,
 	state *interactiveSessionState,
-	outputJSON, historyJSON json.RawMessage,
 ) error {
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 		ID:     sessionID,
