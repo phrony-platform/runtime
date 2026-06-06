@@ -86,7 +86,10 @@ func TestAgentDispatcher_depthCapReturnsToolError(t *testing.T) {
 		server:   &runtimeServer{},
 		depth:    2,
 		maxDepth: 2,
-		bindings: map[string]agentBinding{"support.billing": {namespace: "support", name: "billing", result: manifest.SubagentResultSummary}},
+		bindings: map[string]agentBinding{"support.billing": {
+			namespace: "support", name: "billing", agentVersionID: "av-billing",
+			result: manifest.SubagentResultSummary,
+		}},
 	}
 	res, err := d.Dispatch(context.Background(), tooldispatch.ToolCall{CallID: "c1", Tool: "support.billing"})
 	if err != nil {
@@ -94,6 +97,24 @@ func TestAgentDispatcher_depthCapReturnsToolError(t *testing.T) {
 	}
 	if res.Err == nil || res.Err.Code != "subagent_depth_exceeded" {
 		t.Fatalf("res.Err = %#v, want subagent_depth_exceeded tool error", res.Err)
+	}
+}
+
+func TestAgentDispatcher_unpinnedBindingReturnsToolError(t *testing.T) {
+	d := &agentDispatcher{
+		server:   &runtimeServer{},
+		depth:    rootSessionDepth,
+		maxDepth: defaultMaxSubagentDepth,
+		bindings: map[string]agentBinding{"support.billing": {
+			namespace: "support", name: "billing", result: manifest.SubagentResultSummary,
+		}},
+	}
+	res, err := d.Dispatch(context.Background(), tooldispatch.ToolCall{CallID: "c1", Tool: "support.billing"})
+	if err != nil {
+		t.Fatalf("Dispatch returned infra error: %v", err)
+	}
+	if res.Err == nil || res.Err.Code != "subagent_unpinned" {
+		t.Fatalf("res.Err = %#v, want subagent_unpinned tool error", res.Err)
 	}
 }
 

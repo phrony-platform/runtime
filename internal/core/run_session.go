@@ -82,9 +82,11 @@ func resolveAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.Ag
 	return validateActiveVersionForRun(active, agentRef, versionLabel)
 }
 
-// resolveDelegatedAgentVersionID resolves the target agent version for a compiled
-// spec.agents delegation. An empty version follows the active deployment; a pinned
-// version label runs that published version even when it is not active.
+// resolveDelegatedAgentVersionID resolves the target agent version for a late_bound
+// spec.agents delegation at call time. An empty version follows the active
+// deployment; a pinned version label runs that published version even when it is
+// not active. Non-late-bound bindings must use the frozen AgentVersionID compiled
+// into the manifest at bundle publish and must not call this function.
 func resolveDelegatedAgentVersionID(ctx context.Context, db store.DBTX, ref *runtimev1.AgentRef) (string, error) {
 	if ref.GetVersion() == "" {
 		return resolveAgentVersionID(ctx, db, ref)

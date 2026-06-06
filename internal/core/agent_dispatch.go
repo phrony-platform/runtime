@@ -24,14 +24,17 @@ const rootSessionDepth = 0
 // recursion (e.g. A->B->A) from exhausting resources.
 const defaultMaxSubagentDepth = 5
 
-// agentBinding is a compiled spec.agents entry resolved for dispatch: the target
-// agent identity (active deployment when version is empty, otherwise the pinned
-// label) and the result shape.
+// agentBinding is a compiled spec.agents entry resolved for dispatch. Non-late-bound
+// bindings carry a frozen AgentVersionID from bundle publish; late_bound bindings
+// resolve against the catalog at call time via resolveDelegatedAgentVersionID.
 type agentBinding struct {
-	namespace string
-	name      string
-	version   string
-	result    string
+	namespace      string
+	name           string
+	version        string
+	childName      string
+	lateBound      bool
+	agentVersionID string
+	result         string
 }
 
 // agentDispatcher backs spec.agents tool bindings by running the target agent in
@@ -70,10 +73,13 @@ func (s *runtimeServer) buildAgentDispatcher(
 			continue
 		}
 		bindings[tb.DispatchRef()] = agentBinding{
-			namespace: tb.Agent.Namespace,
-			name:      tb.Agent.Name,
-			version:   tb.Agent.Version,
-			result:    tb.Agent.ResolvedResult(),
+			namespace:      tb.Agent.Namespace,
+			name:           tb.Agent.Name,
+			version:        tb.Agent.Version,
+			childName:      tb.Agent.ChildName,
+			lateBound:      tb.Agent.LateBound,
+			agentVersionID: tb.Agent.AgentVersionID,
+			result:         tb.Agent.ResolvedResult(),
 		}
 	}
 	if len(bindings) == 0 {
@@ -185,18 +191,29 @@ func (d *agentDispatcher) runChild(ctx context.Context, call tooldispatch.ToolCa
 	}
 
 	s := d.server
+
+	var agentVersionID string
+	switch {
+	case binding.lateBound:
+		var err error
+		agentVersionID, err = resolveDelegatedAgentVersionID(ctx, s.db.DB, &runtimev1.AgentRef{
+			Namespace: binding.namespace,
+			Name:      binding.name,
+			Version:   binding.version,
+		})
+		if err != nil {
+			return subagentToolError(call.CallID, "subagent_unresolved", err.Error()), nil
+		}
+	case binding.agentVersionID == "":
+		return subagentToolError(call.CallID, "subagent_unpinned",
+			"delegation target not pinned in bundle closure"), nil
+	default:
+		agentVersionID = binding.agentVersionID
+	}
+
 	q, err := s.queries()
 	if err != nil {
 		return tooldispatch.ToolResult{}, err
-	}
-
-	agentVersionID, err := resolveDelegatedAgentVersionID(ctx, s.db.DB, &runtimev1.AgentRef{
-		Namespace: binding.namespace,
-		Name:      binding.name,
-		Version:   binding.version,
-	})
-	if err != nil {
-		return subagentToolError(call.CallID, "subagent_unresolved", err.Error()), nil
 	}
 
 	inputJSON := childInputFromArgs(call.Args)

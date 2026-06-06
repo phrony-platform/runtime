@@ -47,15 +47,15 @@ func stubDelegationAgent(namespace, name, script string, mutate func(*manifest.A
 }
 
 // delegationBinding returns a compiled agent-backed tool binding (the shape
-// spec.agents compiles to) targeting the named agent's active deployment.
-func delegationBinding(wire, namespace, name string, mutate func(*manifest.ToolBinding)) manifest.ToolBinding {
+// spec.agents compiles to) with a frozen AgentVersionID from bundle publish.
+func delegationBinding(wire, namespace, name, agentVersionID string, mutate func(*manifest.ToolBinding)) manifest.ToolBinding {
 	tb := manifest.ToolBinding{
 		Ref:             manifest.LogicalID(namespace, name),
 		As:              wire,
 		Description:     "Delegate to " + name,
 		InputSchema:     &manifest.SchemaSpec{Inline: map[string]any{"type": "object"}},
 		SideEffectClass: manifest.SideEffectNonIdempotentWrite,
-		Agent:           &manifest.ToolAgentBinding{Namespace: namespace, Name: name},
+		Agent:           &manifest.ToolAgentBinding{Namespace: namespace, Name: name, AgentVersionID: agentVersionID},
 	}
 	if mutate != nil {
 		mutate(&tb)
@@ -64,8 +64,7 @@ func delegationBinding(wire, namespace, name string, mutate func(*manifest.ToolB
 }
 
 // redeployStubAgent inserts a new agent version and deployment for an existing
-// agent, making that version the active target for delegation bindings that do
-// not pin a version label.
+// agent, making that version the active target for late_bound delegation bindings.
 func redeployStubAgent(t *testing.T, db *sqlx.DB, namespace, name string, agent *manifest.Agent) string {
 	t.Helper()
 	var agentID string
@@ -183,16 +182,14 @@ func TestAgentDelegationE2E_pinnedVersionRunsNonActive(t *testing.T) {
 	ns := "agentdeleg-" + uuid.NewString()[:8]
 	t.Cleanup(func() { cleanupAgentDelegationFixture(t, db, ns) })
 
-	insertDeployedStubAgent(t, db, ns, "specialist",
+	specialistV1ID := insertDeployedStubAgent(t, db, ns, "specialist",
 		stubDelegationAgent(ns, "specialist",
 			`{"turns":[[{"type":"text_delta","text":"answer from v1"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil))
 
 	orchestrator := stubDelegationAgent(ns, "orchestrator",
 		`{"turns":[[{"type":"tool_call","name":"ask_specialist","args":{"task":"help"}},{"type":"completed","stop_reason":"tool_use"}],[{"type":"text_delta","text":"orchestrator done"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 		func(a *manifest.Agent) {
-			a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", func(tb *manifest.ToolBinding) {
-				tb.Agent.Version = "1.0.0"
-			})}
+			a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", specialistV1ID, nil)}
 		})
 	orchestratorVersionID := insertDeployedStubAgent(t, db, ns, "orchestrator", orchestrator)
 
@@ -226,14 +223,14 @@ func TestAgentDelegationE2E_happyPath(t *testing.T) {
 	ns := "agentdeleg-" + uuid.NewString()[:8]
 	t.Cleanup(func() { cleanupAgentDelegationFixture(t, db, ns) })
 
-	insertDeployedStubAgent(t, db, ns, "specialist",
+	specialistVersionID := insertDeployedStubAgent(t, db, ns, "specialist",
 		stubDelegationAgent(ns, "specialist",
 			`{"turns":[[{"type":"text_delta","text":"resolved by specialist"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil))
 
 	orchestrator := stubDelegationAgent(ns, "orchestrator",
 		`{"turns":[[{"type":"tool_call","name":"ask_specialist","args":{"task":"help"}},{"type":"completed","stop_reason":"tool_use"}],[{"type":"text_delta","text":"orchestrator done"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 		func(a *manifest.Agent) {
-			a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", nil)}
+			a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", specialistVersionID, nil)}
 		})
 	orchestratorVersionID := insertDeployedStubAgent(t, db, ns, "orchestrator", orchestrator)
 
@@ -284,22 +281,22 @@ func TestAgentDelegationE2E_recursionDepthTwo(t *testing.T) {
 	ns := "agentdeleg-" + uuid.NewString()[:8]
 	t.Cleanup(func() { cleanupAgentDelegationFixture(t, db, ns) })
 
-	insertDeployedStubAgent(t, db, ns, "leaf",
+	leafVersionID := insertDeployedStubAgent(t, db, ns, "leaf",
 		stubDelegationAgent(ns, "leaf",
 			`{"turns":[[{"type":"text_delta","text":"leaf answer"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil))
 
-	insertDeployedStubAgent(t, db, ns, "middle",
+	middleVersionID := insertDeployedStubAgent(t, db, ns, "middle",
 		stubDelegationAgent(ns, "middle",
 			`{"turns":[[{"type":"tool_call","name":"ask_leaf","args":{"task":"x"}},{"type":"completed","stop_reason":"tool_use"}],[{"type":"text_delta","text":"middle answer"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 			func(a *manifest.Agent) {
-				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_leaf", ns, "leaf", nil)}
+				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_leaf", ns, "leaf", leafVersionID, nil)}
 			}))
 
 	rootVersionID := insertDeployedStubAgent(t, db, ns, "root",
 		stubDelegationAgent(ns, "root",
 			`{"turns":[[{"type":"tool_call","name":"ask_middle","args":{"task":"x"}},{"type":"completed","stop_reason":"tool_use"}],[{"type":"text_delta","text":"root answer"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 			func(a *manifest.Agent) {
-				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_middle", ns, "middle", nil)}
+				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_middle", ns, "middle", middleVersionID, nil)}
 			}))
 
 	srv := newAgentDelegationServer(db)
@@ -344,7 +341,7 @@ func TestAgentDelegationE2E_recoveryResumesDelegation(t *testing.T) {
 	ns := "agentdeleg-" + uuid.NewString()[:8]
 	t.Cleanup(func() { cleanupAgentDelegationFixture(t, db, ns) })
 
-	insertDeployedStubAgent(t, db, ns, "specialist",
+	specialistVersionID := insertDeployedStubAgent(t, db, ns, "specialist",
 		stubDelegationAgent(ns, "specialist",
 			`{"turns":[[{"type":"text_delta","text":"recovered answer"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil))
 
@@ -355,7 +352,7 @@ func TestAgentDelegationE2E_recoveryResumesDelegation(t *testing.T) {
 		stubDelegationAgent(ns, "orchestrator",
 			`{"turns":[[{"type":"text_delta","text":"orchestrator recovered"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 			func(a *manifest.Agent) {
-				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", nil)}
+				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", specialistVersionID, nil)}
 			}))
 
 	parentID := uuid.NewString()
@@ -427,7 +424,7 @@ func TestAgentDelegationE2E_recoveryResumesChildStoredVersionAfterRedeploy(t *te
 		stubDelegationAgent(ns, "orchestrator",
 			`{"turns":[[{"type":"text_delta","text":"orchestrator recovered"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 			func(a *manifest.Agent) {
-				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", nil)}
+				a.Spec.Tools = []manifest.ToolBinding{delegationBinding("ask_specialist", ns, "specialist", specialistV1ID, nil)}
 			}))
 
 	parentID := uuid.NewString()

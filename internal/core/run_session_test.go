@@ -203,7 +203,7 @@ func TestNormalizeSessionInput_invalidJSON(t *testing.T) {
 	}
 }
 
-func TestResolveDelegatedAgentVersionID_emptyUsesActive(t *testing.T) {
+func TestResolveDelegatedAgentVersionID_lateBoundEmptyUsesActive(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	expectActiveDeployment(mock, "support", "billing", "active-ver", "2.0.0")
 
