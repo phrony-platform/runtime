@@ -415,7 +415,7 @@ func (q *Queries) ListUnfinishedInvocationsBySession(ctx context.Context, sessio
 // nested child sessions spawned by agent delegation are recovered by re-driving
 // their parent's delegation, so they must not be independently re-driven here.
 const listSessionsForRecovery = `
-SELECT id, agent_version_id, input, status, output, error, history, created_at, updated_at
+SELECT id, agent_version_id, input, status, error, root_session_id, event_seq, created_at, updated_at
 FROM sessions
 WHERE status IN ('pending', 'running', 'awaiting_tool', 'awaiting_approval')
   AND parent_session_id IS NULL
@@ -432,23 +432,19 @@ func (q *Queries) ListSessionsForRecovery(ctx context.Context) ([]Session, error
 	var out []Session
 	for rows.Next() {
 		var s Session
-		var output sql.NullString
 		var errText sql.NullString
 		if err := rows.Scan(
 			&s.ID,
 			&s.AgentVersionID,
 			&s.Input,
 			&s.Status,
-			&output,
 			&errText,
-			&s.History,
+			&s.RootSessionID,
+			&s.EventSeq,
 			&s.CreatedAt,
 			&s.UpdatedAt,
 		); err != nil {
 			return nil, err
-		}
-		if output.Valid {
-			s.Output = json.RawMessage(output.String)
 		}
 		if errText.Valid {
 			s.Error = &errText.String

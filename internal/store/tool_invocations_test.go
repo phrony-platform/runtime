@@ -191,8 +191,8 @@ func TestQueries_ListSessionsForRecovery(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).WillReturnRows(sqlmock.NewRows([]string{
-		"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-	}).AddRow("sess-1", "av-1", []byte(`{}`), model.SessionStatusAwaitingTool, nil, nil, []byte(`[]`), now, now))
+		"id", "agent_version_id", "input", "status", "error", "root_session_id", "event_seq", "created_at", "updated_at",
+	}).AddRow("sess-1", "av-1", []byte(`{}`), model.SessionStatusAwaitingTool, nil, "sess-1", 0, now, now))
 
 	q := New(sqlDB)
 	sessions, err := q.ListSessionsForRecovery(context.Background())

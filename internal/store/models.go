@@ -29,11 +29,25 @@ type Session struct {
 	AgentVersionID string          `json:"agent_version_id"`
 	Input          json.RawMessage `json:"input"`
 	Status         string          `json:"status"`
-	Output         json.RawMessage `json:"output"`
 	Error          *string         `json:"error"`
-	History        json.RawMessage `json:"history"`
+	RootSessionID  string          `json:"root_session_id"`
+	EventSeq       int             `json:"event_seq"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
+}
+
+type Event struct {
+	ID             int64           `json:"id"`
+	SessionID      string          `json:"session_id"`
+	RootSessionID  string          `json:"root_session_id"`
+	Seq            int             `json:"seq"`
+	TS             time.Time       `json:"ts"`
+	Type           string          `json:"type"`
+	Turn           *int            `json:"turn"`
+	CallID         *string         `json:"call_id"`
+	ChildSessionID *string         `json:"child_session_id"`
+	Actor          string          `json:"actor"`
+	Payload        json.RawMessage `json:"payload"`
 }
 
 type RuntimeMetum struct {

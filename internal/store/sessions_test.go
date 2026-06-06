@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -19,7 +18,7 @@ func TestQueries_InsertSession(t *testing.T) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	mock.ExpectQuery(`INSERT INTO sessions`).
-		WithArgs("sess-1", "ver-1", []byte("{}"), "pending", nil, 0, "").
+		WithArgs("sess-1", "ver-1", []byte("{}"), "pending", nil, 0, "", "sess-1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("sess-1"))
 
 	q := New(sqlDB)
@@ -48,8 +47,8 @@ func TestQueries_GetSession(t *testing.T) {
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "ver-1", []byte(`{"q":"hi"}`), "running", []byte(`{"answer":"ok"}`), nil, []byte(`[]`), now, now))
+			"id", "agent_version_id", "input", "status", "error", "root_session_id", "event_seq", "created_at", "updated_at",
+		}).AddRow("sess-1", "ver-1", []byte(`{"q":"hi"}`), "running", nil, "sess-1", 0, now, now))
 
 	q := New(sqlDB)
 	s, err := q.GetSession(context.Background(), "sess-1")
@@ -59,11 +58,8 @@ func TestQueries_GetSession(t *testing.T) {
 	if s.Status != "running" {
 		t.Fatalf("status = %q, want running", s.Status)
 	}
-	if string(s.Output) != `{"answer":"ok"}` {
-		t.Fatalf("output = %s", s.Output)
-	}
-	if string(s.History) != `[]` {
-		t.Fatalf("history = %s, want []", s.History)
+	if s.RootSessionID != "sess-1" {
+		t.Fatalf("root_session_id = %q, want sess-1", s.RootSessionID)
 	}
 }
 
@@ -95,14 +91,13 @@ func TestQueries_UpdateSession(t *testing.T) {
 	now := time.Now()
 	errMsg := "provider timeout"
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", "failed", json.RawMessage(`{"partial":true}`), errMsg, nil).
+		WithArgs("sess-1", "failed", errMsg).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	q := New(sqlDB)
 	updatedAt, err := q.UpdateSession(context.Background(), UpdateSessionParams{
 		ID:     "sess-1",
 		Status: "failed",
-		Output: json.RawMessage(`{"partial":true}`),
 		Error:  &errMsg,
 	})
 	if err != nil {
@@ -122,7 +117,7 @@ func TestQueries_UpdateSession_statusOnly(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", "awaiting_input", nil, nil, nil).
+		WithArgs("sess-1", "awaiting_input", nil).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 
 	q := New(sqlDB)
@@ -132,58 +127,6 @@ func TestQueries_UpdateSession_statusOnly(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("UpdateSession: %v", err)
-	}
-}
-
-func TestQueries_UpdateSession_history(t *testing.T) {
-	sqlDB, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("sqlmock.New: %v", err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	now := time.Now()
-	history := json.RawMessage(`[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]`)
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("sess-1", "awaiting_input", nil, nil, history).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
-
-	q := New(sqlDB)
-	updatedAt, err := q.UpdateSession(context.Background(), UpdateSessionParams{
-		ID:      "sess-1",
-		Status:  "awaiting_input",
-		History: history,
-	})
-	if err != nil {
-		t.Fatalf("UpdateSession: %v", err)
-	}
-	if !updatedAt.Equal(now) {
-		t.Fatalf("updated_at = %v, want %v", updatedAt, now)
-	}
-}
-
-func TestQueries_GetSession_history(t *testing.T) {
-	sqlDB, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("sqlmock.New: %v", err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	now := time.Now()
-	history := []byte(`[{"role":"user","content":"hi"}]`)
-	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("sess-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-		}).AddRow("sess-1", "ver-1", []byte(`{}`), "awaiting_input", nil, nil, history, now, now))
-
-	q := New(sqlDB)
-	s, err := q.GetSession(context.Background(), "sess-1")
-	if err != nil {
-		t.Fatalf("GetSession: %v", err)
-	}
-	if string(s.History) != string(history) {
-		t.Fatalf("history = %s, want %s", s.History, history)
 	}
 }
 
