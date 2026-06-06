@@ -364,18 +364,19 @@ func TestRunChildSessionToCompletion_drivesChildToCompleted(t *testing.T) {
 		mock.ExpectQuery(`INSERT INTO session_events`).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(i + 1)))
 	}
-	// After the turn the driver persists output, then completes the child
-	// autonomously (the closed input stream yields no operator messages) and
-	// purges its inherited secrets.
+	// After the turn the delegated child completes directly (no awaiting_input park).
 	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("child-sess", model.SessionStatusAwaitingInput, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
-	mock.ExpectQuery(`UPDATE sessions`).
-		WithArgs("child-sess", model.SessionStatusCompleted, sqlmock.AnyArg(), nil, nil).
+		WithArgs("child-sess", model.SessionStatusCompleted, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
 	mock.ExpectExec(`DELETE FROM session_secrets`).
 		WithArgs("child-sess").
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("child-sess").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
+		}).AddRow("child-sess", "child-ver", []byte(`{"message":"hi"}`), model.SessionStatusCompleted,
+			[]byte(`{"message":"done","stop_reason":"end_turn"}`), nil, []byte(`[]`), now, now))
 
 	if err := srv.runChildSessionToCompletion(
 		context.Background(), store.New(db), "child-sess", "child-ver", ver, []byte(`{"message":"hi"}`), 1,

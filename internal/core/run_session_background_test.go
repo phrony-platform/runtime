@@ -312,6 +312,57 @@ func TestRuntime_runSessionInteractiveLoop_waitForUserFalseStopsAfterAwaitingInp
 	}
 }
 
+func TestRuntime_runSessionInteractiveLoop_delegationDepthCompletesWithoutParking(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	now := time.Now()
+	for i := 0; i < 2; i++ {
+		mock.ExpectQuery(`INSERT INTO session_events`).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(i + 1)))
+	}
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("child-sess", model.SessionStatusCompleted, sqlmock.AnyArg(), nil, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(now))
+	mock.ExpectQuery(`INSERT INTO session_events`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(3)))
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("child-sess").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Instructions: manifest.InstructionsSpec{Text: "System."},
+			Model:        manifest.ModelConfig{Provider: provider.IDAnthropic, Name: "m"},
+		},
+	}
+	stream := &mockInteractiveStream{ctx: context.Background()}
+	srv := &runtimeServer{
+		db: db,
+		loadSessionVersionFn: func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
+			return executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()), nil
+		},
+	}
+	state := &interactiveSessionState{
+		sessionID:        "child-sess",
+		version:          executor.NewVersionWithProvider("version-uuid", agent, providertest.DeltaCompleted()),
+		sessionStartedAt: now,
+		delegationDepth:  1,
+	}
+	events := sessionEventsFromStream(stream)
+	if err := srv.runSessionInteractiveLoop(context.Background(), stream, events, store.New(db), "child-sess", state, []byte(`{"message":"hi"}`), true); err != nil {
+		t.Fatalf("runSessionInteractiveLoop: %v", err)
+	}
+	for _, msg := range stream.sent {
+		if msg.GetAwaitingInput() != nil {
+			t.Fatal("delegated child should not park at awaiting_input")
+		}
+		if msg.GetCompleted() == nil {
+			continue
+		}
+		return
+	}
+	t.Fatal("expected completed event for delegated child")
+}
+
 func TestRuntime_runSessionInteractiveLoop_waitForUserFalseDoesNotAutoCompleteOnEOF(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	now := time.Now()

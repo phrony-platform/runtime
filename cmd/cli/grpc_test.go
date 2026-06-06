@@ -694,7 +694,7 @@ func startTestRuntimeAddrForRunsListAll(t *testing.T) string {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("", "").
+		WithArgs("", "", false).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
 			AddRow("sess-await", "version-uuid", "awaiting_input", time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 13, 0, 0, 0, time.UTC)))
 
@@ -716,7 +716,7 @@ func startTestRuntimeAddrForSessionsList(t *testing.T) string {
 			"id", "version", "deprecated_at", "retired_at", "archived_at",
 		}).AddRow("version-uuid", "1.2.0", nil, nil, nil))
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("version-uuid", "").
+		WithArgs("version-uuid", "", false).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
 			AddRow("sess-await", "version-uuid", "awaiting_input", time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 13, 0, 0, 0, time.UTC)).
 			AddRow("sess-done", "version-uuid", "completed", time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 11, 0, 0, 0, time.UTC)))
@@ -812,7 +812,7 @@ func startTestRuntimeAddrForSessionsListFiltered(t *testing.T) string {
 			"id", "version", "deprecated_at", "retired_at", "archived_at",
 		}).AddRow("version-uuid", "1.2.0", nil, nil, nil))
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("version-uuid", "awaiting_input").
+		WithArgs("version-uuid", "awaiting_input", false).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
 			AddRow("sess-await", "version-uuid", "awaiting_input", time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 13, 0, 0, 0, time.UTC)))
 

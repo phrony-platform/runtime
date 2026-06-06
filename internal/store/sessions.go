@@ -220,6 +220,7 @@ SELECT id, agent_version_id, status, created_at, updated_at
 FROM sessions
 WHERE (NULLIF($1, '') IS NULL OR agent_version_id = NULLIF($1, '')::uuid)
   AND ($2 = '' OR status = $2)
+  AND ($3::boolean OR parent_session_id IS NULL)
 ORDER BY updated_at DESC
 `
 
@@ -227,6 +228,8 @@ type ListSessionsByAgentVersionIDParams struct {
 	AgentVersionID string
 	// Status filter; empty means all statuses.
 	Status string
+	// IncludeChildren includes delegated child sessions when true.
+	IncludeChildren bool
 }
 
 const listDescendantSessionIDs = `
@@ -263,7 +266,7 @@ func (q *Queries) ListDescendantSessionIDs(ctx context.Context, rootSessionID st
 }
 
 func (q *Queries) ListSessionsByAgentVersionID(ctx context.Context, arg ListSessionsByAgentVersionIDParams) ([]SessionListRow, error) {
-	rows, err := q.db.QueryContext(ctx, listSessionsByAgentVersionID, arg.AgentVersionID, arg.Status)
+	rows, err := q.db.QueryContext(ctx, listSessionsByAgentVersionID, arg.AgentVersionID, arg.Status, arg.IncludeChildren)
 	if err != nil {
 		return nil, err
 	}

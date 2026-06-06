@@ -26,10 +26,12 @@ func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 				agentName = args[0]
 			}
 			status, _ := cmd.Flags().GetString("status")
-			return runSessionsList(cmd, runtimeAddr, agentName, status)
+			includeChildren, _ := cmd.Flags().GetBool("include-children")
+			return runSessionsList(cmd, runtimeAddr, agentName, status, includeChildren)
 		},
 	}
 	ls.Flags().String("status", "", "filter by session status (pending, running, awaiting_input, completed, failed, cancelled)")
+	ls.Flags().Bool("include-children", false, "include delegated child sessions in the listing")
 
 	inspect := &cobra.Command{
 		Use:   "inspect SESSION_ID",
@@ -79,7 +81,7 @@ func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 	return cmd
 }
 
-func runSessionsList(cmd *cobra.Command, runtimeAddr *string, agentName, status string) error {
+func runSessionsList(cmd *cobra.Command, runtimeAddr *string, agentName, status string, includeChildren bool) error {
 	var ref *runtimev1.AgentRef
 	if agentName != "" {
 		var err error
@@ -91,8 +93,9 @@ func runSessionsList(cmd *cobra.Command, runtimeAddr *string, agentName, status 
 
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
 		resp, err := rt.ListSessions(cmd.Context(), &runtimev1.ListSessionsRequest{
-			AgentRef: ref,
-			Status:   status,
+			AgentRef:        ref,
+			Status:          status,
+			IncludeChildren: includeChildren,
 		})
 		if err != nil {
 			return clierr.WrapRPC("list sessions", err)

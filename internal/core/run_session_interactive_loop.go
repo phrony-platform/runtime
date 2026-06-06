@@ -180,6 +180,10 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			if err != nil {
 				return status.Errorf(codes.Internal, "encode session history: %v", err)
 			}
+			if state.delegationDepth > 0 {
+				s.clearActiveSessionLiveAssistant(sessionID)
+				return s.completeInteractiveSession(ctx, q, events, sessionID, out.stopReason, outputJSON, state.turnCount, out.turnUsage, state.sessionUsage, historyJSON)
+			}
 			if waitForUser {
 				if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 					ID:      sessionID,
@@ -327,7 +331,7 @@ func (s *runtimeServer) finishInteractiveIfClientClosed(
 	if len(lastOutput) == 0 {
 		return true, nil
 	}
-	return true, s.completeInteractiveSession(ctx, q, events, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage)
+	return true, s.completeInteractiveSession(ctx, q, events, sessionID, lastStopReason, lastOutput, state.turnCount, lastTurnUsage, state.sessionUsage, nil)
 }
 
 func encodeInteractiveUserMessageText(text string) (json.RawMessage, error) {

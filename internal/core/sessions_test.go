@@ -17,7 +17,7 @@ func TestRuntime_ListSessions_success(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("version-uuid", "").
+		WithArgs("version-uuid", "", false).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
 			AddRow("sess-1", "version-uuid", model.SessionStatusAwaitingInput, now, now))
 
@@ -72,7 +72,7 @@ func TestRuntime_ListSessions_statusFilter(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	expectActiveDeployment(mock, "demo", "echo-agent", "version-uuid", "1.2.0")
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("version-uuid", model.SessionStatusAwaitingInput).
+		WithArgs("version-uuid", model.SessionStatusAwaitingInput, false).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_version_id", "status", "created_at", "updated_at"}).
 			AddRow("sess-await", "version-uuid", model.SessionStatusAwaitingInput, now, now))
 

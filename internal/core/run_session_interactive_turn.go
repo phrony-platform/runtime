@@ -33,6 +33,7 @@ type interactiveSessionState struct {
 	approvalGate       *sessionApprovalGate
 	liveTextSink       func(cumulative string)
 	clientRecvEOF      bool
+	delegationDepth    int
 	wallClockPaused    bool
 	pauseStartedAt     time.Time
 	totalWallPaused    time.Duration
@@ -62,6 +63,7 @@ func newInteractiveSessionState(
 		toolDispatch:     dispatch,
 		policies:         policy.NewEvaluator(ver.Agent),
 		approvalGate:     gate,
+		delegationDepth:  depth,
 	}
 	gate.hitl = st
 	return st, nil
@@ -243,12 +245,14 @@ func (s *runtimeServer) completeInteractiveSession(
 	output json.RawMessage,
 	turn int,
 	turnUsage, sessionUsage provider.TokenUsage,
+	history json.RawMessage,
 ) error {
 	endedAt := time.Now()
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:     sessionID,
-		Status: model.SessionStatusCompleted,
-		Output: output,
+		ID:      sessionID,
+		Status:  model.SessionStatusCompleted,
+		Output:  output,
+		History: history,
 	}); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}

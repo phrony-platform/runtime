@@ -240,7 +240,7 @@ func TestRuntime_completeInteractiveSession(t *testing.T) {
 
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	srv := &runtimeServer{db: db}
-	err := srv.completeInteractiveSession(context.Background(), store.New(db), stream, "sess-1", "end_turn", output, 1, provider.TokenUsage{}, provider.TokenUsage{})
+	err := srv.completeInteractiveSession(context.Background(), store.New(db), stream, "sess-1", "end_turn", output, 1, provider.TokenUsage{}, provider.TokenUsage{}, nil)
 	if err != nil {
 		t.Fatalf("completeInteractiveSession: %v", err)
 	}

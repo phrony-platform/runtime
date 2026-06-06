@@ -9,7 +9,9 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/sessionids"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 )
@@ -194,6 +196,25 @@ func TestRuntime_InspectSession_treeWithChild(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestSessionEventSummary_agentDelegation(t *testing.T) {
+	agent := agentDelegatingAgent()
+	agent.Spec.Tools[0].Agent.Version = "1.0.0"
+	msg := toolCallServerMsg(executor.ToolCallEvent{
+		CallID:  "call-delegate-1",
+		Tool:    "support.billing",
+		Version: "1.0.0",
+		Args:    json.RawMessage(`{"task":"explain refund"}`),
+	}, agent)
+	payload := marshalSessionEventProto(msg)
+
+	got := sessionEventSummary(string(model.SessionEventToolCall), payload)
+	wantChild := sessionids.ChildFromCallID("call-delegate-1")
+	want := "agent_delegation target=support.billing@1.0.0 child_session_id=" + wantChild + " call_id=call-delegate-1"
+	if got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
 	}
 }
 

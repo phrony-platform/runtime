@@ -26,8 +26,9 @@ func (s *runtimeServer) ListSessions(ctx context.Context, req *runtimev1.ListSes
 	}
 
 	rows, err := q.ListSessionsByAgentVersionID(ctx, store.ListSessionsByAgentVersionIDParams{
-		AgentVersionID: agentVersionID,
-		Status:         req.GetStatus(),
+		AgentVersionID:  agentVersionID,
+		Status:          req.GetStatus(),
+		IncludeChildren: req.GetIncludeChildren(),
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list sessions: %v", err)

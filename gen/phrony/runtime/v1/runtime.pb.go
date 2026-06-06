@@ -4421,9 +4421,11 @@ type ListSessionsRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	AgentRef *AgentRef              `protobuf:"bytes,1,opt,name=agent_ref,json=agentRef,proto3" json:"agent_ref,omitempty"`
 	// Optional filter; empty means all statuses.
-	Status        string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	// When false (default), delegated child sessions (parent_session_id set) are omitted.
+	IncludeChildren bool `protobuf:"varint,3,opt,name=include_children,json=includeChildren,proto3" json:"include_children,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ListSessionsRequest) Reset() {
@@ -4468,6 +4470,13 @@ func (x *ListSessionsRequest) GetStatus() string {
 		return x.Status
 	}
 	return ""
+}
+
+func (x *ListSessionsRequest) GetIncludeChildren() bool {
+	if x != nil {
+		return x.IncludeChildren
+	}
+	return false
 }
 
 type SessionSummary struct {
@@ -7581,10 +7590,11 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
 	"retired_at\x18\x06 \x01(\tR\tretiredAt\"_\n" +
 	"\x19ListAgentVersionsResponse\x12B\n" +
-	"\bversions\x18\x01 \x03(\v2&.phrony.runtime.v1.AgentVersionSummaryR\bversions\"g\n" +
+	"\bversions\x18\x01 \x03(\v2&.phrony.runtime.v1.AgentVersionSummaryR\bversions\"\x92\x01\n" +
 	"\x13ListSessionsRequest\x128\n" +
 	"\tagent_ref\x18\x01 \x01(\v2\x1b.phrony.runtime.v1.AgentRefR\bagentRef\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\"\xa0\x01\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12)\n" +
+	"\x10include_children\x18\x03 \x01(\bR\x0fincludeChildren\"\xa0\x01\n" +
 	"\x0eSessionSummary\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12(\n" +
 	"\x10agent_version_id\x18\x02 \x01(\tR\x0eagentVersionId\x12\x16\n" +

@@ -452,6 +452,16 @@ func sessionEventSummary(typ string, payload json.RawMessage) string {
 	case model.SessionEventToolCall:
 		if msg, err := serverMsgFromSessionEvent(payload); err == nil {
 			if tc := msg.GetToolCall(); tc != nil {
+				if tc.GetAgentDelegation() {
+					target := tc.GetDelegationTarget()
+					if target == "" {
+						target = fmt.Sprintf("%s@%s", tc.GetTool(), tc.GetVersion())
+					}
+					return fmt.Sprintf(
+						"agent_delegation target=%s child_session_id=%s call_id=%s",
+						target, tc.GetChildSessionId(), tc.GetCallId(),
+					)
+				}
 				return fmt.Sprintf("tool_call %s@%s call_id=%s", tc.GetTool(), tc.GetVersion(), tc.GetCallId())
 			}
 		}

@@ -196,7 +196,7 @@ func TestQueries_ListSessionsByAgentVersionID(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("ver-1", "awaiting_input").
+		WithArgs("ver-1", "awaiting_input", false).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "agent_version_id", "status", "created_at", "updated_at",
 		}).
@@ -306,7 +306,7 @@ func TestQueries_ListSessionsByAgentVersionID_allAgents(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("", "").
+		WithArgs("", "", false).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "agent_version_id", "status", "created_at", "updated_at",
 		}).
@@ -358,7 +358,7 @@ func TestQueries_ListSessionsByAgentVersionID_allStatuses(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectQuery(`FROM sessions`).
-		WithArgs("ver-1", "").
+		WithArgs("ver-1", "", false).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "agent_version_id", "status", "created_at", "updated_at",
 		}).AddRow("sess-1", "ver-1", "completed", now, now))
@@ -372,5 +372,34 @@ func TestQueries_ListSessionsByAgentVersionID_allStatuses(t *testing.T) {
 	}
 	if len(rows) != 1 {
 		t.Fatalf("len(rows) = %d, want 1", len(rows))
+	}
+}
+
+func TestQueries_ListSessionsByAgentVersionID_includeChildren(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	now := time.Now()
+	mock.ExpectQuery(`FROM sessions`).
+		WithArgs("ver-1", "", true).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "agent_version_id", "status", "created_at", "updated_at",
+		}).
+			AddRow("child-sess", "ver-1", "completed", now, now).
+			AddRow("root-sess", "ver-1", "completed", now.Add(-time.Hour), now))
+
+	q := New(sqlDB)
+	rows, err := q.ListSessionsByAgentVersionID(context.Background(), ListSessionsByAgentVersionIDParams{
+		AgentVersionID:  "ver-1",
+		IncludeChildren: true,
+	})
+	if err != nil {
+		t.Fatalf("ListSessionsByAgentVersionID: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("len(rows) = %d, want 2", len(rows))
 	}
 }

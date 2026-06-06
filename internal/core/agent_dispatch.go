@@ -340,10 +340,28 @@ func (s *runtimeServer) runChildSessionToCompletion(
 	}
 	defer s.unregisterActiveSession(childSessionID)
 
-	return s.driveSessionToCompletion(
+	if err := s.driveSessionToCompletion(
 		childCtx, q, childSessionID, agentVersionID, ver,
 		eventHub, inputMux, inputJSON, true, depth,
-	)
+	); err != nil {
+		return err
+	}
+
+	child, err := q.GetSession(ctx, childSessionID)
+	if err != nil {
+		return fmt.Errorf("load subagent session after drive: %w", err)
+	}
+	if !sessionStatusTerminal(child.Status) && len(child.Output) > 0 {
+		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+			ID:     childSessionID,
+			Status: model.SessionStatusCompleted,
+		}); err != nil {
+			return fmt.Errorf("finalize subagent session: %w", err)
+		}
+		newSessionEventRecorder(q).Record(ctx, childSessionID, model.SessionEventSessionCompleted, marshalSessionEventJSON(map[string]string{"stop_reason": stopReasonFromSessionOutput(child.Output)}))
+		s.finalizeSessionSecrets(ctx, q, childSessionID)
+	}
+	return nil
 }
 
 // newClosedChildInputStream returns an interactive server stream that yields no

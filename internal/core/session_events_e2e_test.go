@@ -524,7 +524,7 @@ func TestSessionEventsE2E_lifecycleEventsRecorded(t *testing.T) {
 	ctx := context.Background()
 	output := json.RawMessage(`{"message":"ok","stop_reason":"end_turn"}`)
 	stream := &mockInteractiveStream{ctx: ctx}
-	if err := srv.completeInteractiveSession(ctx, q, sessionEventsFromStream(stream), sessionID, provider.StopReasonEndTurn, output, 1, provider.TokenUsage{}, provider.TokenUsage{}); err != nil {
+	if err := srv.completeInteractiveSession(ctx, q, sessionEventsFromStream(stream), sessionID, provider.StopReasonEndTurn, output, 1, provider.TokenUsage{}, provider.TokenUsage{}, nil); err != nil {
 		t.Fatalf("completeInteractiveSession: %v", err)
 	}
 	if countSessionEventType(mustListSessionEvents(t, q, sessionID), model.SessionEventSessionCompleted) != 1 {
