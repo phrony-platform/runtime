@@ -8,6 +8,9 @@ import (
 	"github.com/phrony-platform/runtime/internal/store"
 )
 
+// messages is the in-memory history snapshot before tool dispatch; conversation
+// state is persisted via message.* events on the interactive turn path.
+
 func (st *interactiveSessionState) persistBeforeToolDispatch(
 	ctx context.Context,
 	q *store.Queries,
@@ -16,14 +19,9 @@ func (st *interactiveSessionState) persistBeforeToolDispatch(
 	if q == nil || st.sessionID == "" {
 		return nil
 	}
-	historyJSON, err := encodeHistory(messages)
-	if err != nil {
-		return err
-	}
-	_, err = q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:      st.sessionID,
-		Status:  model.SessionStatusAwaitingTool,
-		History: historyJSON,
+	_, err := q.UpdateSession(ctx, store.UpdateSessionParams{
+		ID:     st.sessionID,
+		Status: model.SessionStatusAwaitingTool,
 	})
 	return err
 }

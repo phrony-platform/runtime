@@ -100,12 +100,11 @@ func (s *runtimeServer) recoverDetachedSession(sessionID string) {
 		return
 	}
 
-	history, err := decodeHistory(session.History)
+	history, err := loadProviderContext(ctx, q, sessionID)
 	if err != nil {
-		slog.Error("recovery: decode history", "session_id", sessionID, "error", err)
+		slog.Error("recovery: load provider context", "session_id", sessionID, "error", err)
 		return
 	}
-	history = enrichHistoryFromSessionOutput(history, session.Output)
 
 	if len(invocations) > 0 {
 		if err := s.recoverOutstandingToolInvocations(ctx, q, ver, session, history, invocations, true); err != nil {
@@ -119,11 +118,10 @@ func (s *runtimeServer) recoverDetachedSession(sessionID string) {
 		if err != nil || sessionStatusTerminal(session.Status) {
 			return
 		}
-		history, err = decodeHistory(session.History)
+		history, err = loadProviderContext(ctx, q, sessionID)
 		if err != nil {
 			return
 		}
-		history = enrichHistoryFromSessionOutput(history, session.Output)
 	}
 
 	if session.Status == model.SessionStatusRunning {
@@ -232,14 +230,9 @@ func (s *runtimeServer) recoverOutstandingToolInvocations(
 	}
 
 	history = appendRecoveredToolResults(history, resultBlocks)
-	historyJSON, err := encodeHistory(history)
-	if err != nil {
-		return err
-	}
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:      session.ID,
-		Status:  model.SessionStatusRunning,
-		History: historyJSON,
+		ID:     session.ID,
+		Status: model.SessionStatusRunning,
 	}); err != nil {
 		return err
 	}
@@ -413,13 +406,7 @@ func (s *runtimeServer) continueRecoveredTurn(
 }
 
 func (s *runtimeServer) failDetachedSession(ctx context.Context, q *store.Queries, sessionID string, runErr error) error {
-	msg := runErr.Error()
-	errText := msg
-	_, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:     sessionID,
-		Status: model.SessionStatusFailed,
-		Error:  &errText,
-	})
+	err := appendSessionFailed(ctx, q, sessionID, runErr.Error())
 	if err == nil {
 		s.finalizeSessionSecrets(ctx, q, sessionID)
 	}

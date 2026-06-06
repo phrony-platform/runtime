@@ -11,7 +11,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
 )
 
-// ToolInvocationRecorder writes tool_invocations rows for dispatch audit.
+// ToolInvocationRecorder writes tool_invocations rows via the event log.
 type ToolInvocationRecorder struct {
 	Q *store.Queries
 }
@@ -30,16 +30,9 @@ func (r *ToolInvocationRecorder) RecordPending(ctx context.Context, call tooldis
 	if status == "" {
 		status = model.ToolInvocationPending
 	}
-	_, err := r.Q.InsertToolInvocationPending(ctx, store.InsertToolInvocationPendingParams{
-		CallID:         call.CallID,
-		SessionID:      call.SessionID,
-		AgentVersionID: call.AgentVersionID,
-		Turn:           call.Turn,
-		Tool:           call.Tool,
-		Version:        call.Version,
-		Args:           call.Args,
-		Status:         status,
-	})
+	ev := toolEventInput(call.SessionID, EventToolRequested, call, toolRequestedPayload(call, status))
+	ev.Tool.Status = status
+	_, _, err := appendEventAuto(ctx, r.Q, ev)
 	return err
 }
 
@@ -47,35 +40,20 @@ func (r *ToolInvocationRecorder) RecordQueued(ctx context.Context, call tooldisp
 	if r == nil || r.Q == nil || call.CallID == "" {
 		return nil
 	}
-	return r.Q.UpdateToolInvocationStatus(ctx, call.CallID, model.ToolInvocationQueued)
+	ev := toolEventInput(call.SessionID, EventToolQueued, call, toolRequestedPayload(call, model.ToolInvocationQueued))
+	_, _, err := appendEventAuto(ctx, r.Q, ev)
+	return err
 }
 
 func (r *ToolInvocationRecorder) RecordDispatched(ctx context.Context, prov tooldispatch.DispatchProvenance) error {
 	if r == nil || r.Q == nil {
 		return nil
 	}
-	manifestHash := prov.ManifestContentHash
-	if manifestHash == "" && prov.Call.AgentVersionID != "" {
-		hash, err := r.Q.GetAgentVersionContentHash(ctx, prov.Call.AgentVersionID)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			return err
-		}
-		manifestHash = hash
-	}
-	_, err := r.Q.InsertToolInvocationDispatched(ctx, store.InsertToolInvocationDispatchedParams{
-		CallID:              prov.Call.CallID,
-		SessionID:           prov.Call.SessionID,
-		AgentVersionID:      prov.Call.AgentVersionID,
-		Turn:                prov.Call.Turn,
-		Tool:                prov.Call.Tool,
-		Version:             prov.Call.Version,
-		Args:                prov.Call.Args,
-		Status:              model.ToolInvocationDispatched,
-		WorkerIdentity:      prov.Worker.WorkloadIdentity,
-		ImageDigest:         prov.Worker.ImageDigest,
-		DescriptorHash:      prov.DescriptorHash,
-		ManifestContentHash: manifestHash,
-	})
+	call := prov.Call
+	ev := toolEventInput(call.SessionID, EventToolDispatched, call, toolRequestedPayload(call, model.ToolInvocationDispatched))
+	ev.Tool.Provenance = &prov
+	ev.Actor = ActorWorker
+	_, _, err := appendEventAuto(ctx, r.Q, ev)
 	return err
 }
 
@@ -83,45 +61,11 @@ func (r *ToolInvocationRecorder) RecordCompleted(ctx context.Context, call toold
 	if r == nil || r.Q == nil || call.CallID == "" {
 		return nil
 	}
-	status := model.ToolInvocationSucceeded
-	var result json.RawMessage
-	var errCode, errMsg *string
-
-	switch {
-	case dispatchErr != nil:
-		status = model.ToolInvocationFailed
-		code := "dispatch_error"
-		msg := dispatchErr.Error()
-		errCode = &code
-		errMsg = &msg
-		if tooldispatch.IsIntegrityError(dispatchErr) {
-			if ie, ok := dispatchErr.(*tooldispatch.IntegrityError); ok {
-				errCode = strPtr(string(ie.Violation))
-			}
-		}
-	case res.Err != nil:
-		status = model.ToolInvocationFailed
-		errCode = strPtr(res.Err.Code)
-		errMsg = strPtr(res.Err.Message)
-	default:
-		if len(res.Payload) > 0 {
-			result = res.Payload
-		} else {
-			result = json.RawMessage("{}")
-		}
-	}
-
-	usageInput, usageOutput, usageEstimated := usageFieldsFromToolResult(res)
-	_, err := r.Q.CompleteToolInvocation(ctx, store.CompleteToolInvocationParams{
-		CallID:            call.CallID,
-		Status:            status,
-		Result:            result,
-		ErrorCode:         errCode,
-		ErrorMessage:      errMsg,
-		UsageInputTokens:  usageInput,
-		UsageOutputTokens: usageOutput,
-		UsageEstimated:    usageEstimated,
-	})
+	ev := toolEventInput(call.SessionID, EventToolCompleted, call, toolCompletedPayload(call, res, dispatchErr))
+	ev.Tool.Result = res
+	ev.Tool.DispatchErr = dispatchErr
+	ev.Actor = ActorWorker
+	_, _, err := appendEventAuto(ctx, r.Q, ev)
 	return err
 }
 
@@ -132,7 +76,11 @@ func (r *ToolInvocationRecorder) RecordIndeterminate(ctx context.Context, call t
 	if reason == "" {
 		reason = tooldispatch.ErrIndeterminate.Error()
 	}
-	return r.Q.MarkToolInvocationIndeterminate(ctx, call.CallID, reason)
+	ev := toolEventInput(call.SessionID, EventToolIndeterminate, call, marshalSessionEventJSON(map[string]string{"reason": reason}))
+	ev.Tool.IndeterminateReason = reason
+	ev.Actor = ActorWorker
+	_, _, err := appendEventAuto(ctx, r.Q, ev)
+	return err
 }
 
 func (r *ToolInvocationRecorder) LookupCompleted(ctx context.Context, callID string) (tooldispatch.ToolResult, bool, error) {
@@ -172,13 +120,6 @@ func (r *ToolInvocationRecorder) LookupCompleted(ctx context.Context, callID str
 	default:
 		return tooldispatch.ToolResult{}, false, nil
 	}
-}
-
-func strPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 func usageFieldsFromToolResult(res tooldispatch.ToolResult) (input, output int, estimated bool) {
@@ -222,4 +163,11 @@ func sumRecoveredInvocationUsage(ctx context.Context, q *store.Queries, invocati
 		}
 	}
 	return total, nil
+}
+
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

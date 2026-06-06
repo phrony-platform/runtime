@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/evidence"
@@ -17,19 +15,26 @@ func (s *runtimeServer) ensureSessionEvidence(ctx context.Context, q *store.Quer
 	if q == nil || sessionID == "" || snap.IsEmpty() {
 		return snap, nil
 	}
-	raw, err := q.GetSessionEvidence(ctx, sessionID)
-	if err == nil {
-		return evidence.ParseSnapshot(raw)
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	events, err := q.ListEventsBySession(ctx, sessionID)
+	if err != nil {
 		return evidence.Snapshot{}, err
+	}
+	for _, ev := range events {
+		if ev.Type == EventEvidenceRecorded {
+			return evidence.ParseSnapshot(ev.Payload)
+		}
 	}
 
 	payload, err := snap.JSON()
 	if err != nil {
 		return evidence.Snapshot{}, err
 	}
-	if err := q.InsertSessionEvidence(ctx, sessionID, payload); err != nil {
+	if _, _, err := appendEventAuto(ctx, q, EventInput{
+		SessionID: sessionID,
+		Type:      EventEvidenceRecorded,
+		Actor:     ActorSystem,
+		Payload:   payload,
+	}); err != nil {
 		return evidence.Snapshot{}, err
 	}
 	return snap, nil

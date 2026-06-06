@@ -300,12 +300,17 @@ func (d *agentDispatcher) childResult(
 			fmt.Sprintf("subagent ended in non-terminal status %q", session.Status)), nil
 	}
 
-	payload, err := subagentResultPayload(session.Output, resultShape)
+	events, err := q.ListEventsBySession(ctx, childSessionID)
+	if err != nil {
+		return tooldispatch.ToolResult{}, fmt.Errorf("load subagent events: %w", err)
+	}
+	output := buildSessionOutput(events)
+	payload, err := subagentResultPayload(output, resultShape)
 	if err != nil {
 		return tooldispatch.ToolResult{}, err
 	}
 	res := tooldispatch.ToolResult{CallID: callID, Payload: payload}
-	if _, sessionUsage := usageFromSessionOutputJSON(session.Output); !sessionUsage.IsZero() {
+	if _, sessionUsage := usageFromSessionOutputJSON(output); !sessionUsage.IsZero() {
 		res.Usage = &tooldispatch.ToolUsage{
 			InputTokens:  sessionUsage.InputTokens,
 			OutputTokens: sessionUsage.OutputTokens,
@@ -351,14 +356,10 @@ func (s *runtimeServer) runChildSessionToCompletion(
 	if err != nil {
 		return fmt.Errorf("load subagent session after drive: %w", err)
 	}
-	if !sessionStatusTerminal(child.Status) && len(child.Output) > 0 {
-		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-			ID:     childSessionID,
-			Status: model.SessionStatusCompleted,
-		}); err != nil {
+	if !sessionStatusTerminal(child.Status) {
+		if err := appendSessionCompleted(ctx, q, childSessionID, json.RawMessage("{}"), false); err != nil {
 			return fmt.Errorf("finalize subagent session: %w", err)
 		}
-		newSessionEventRecorder(q).Record(ctx, childSessionID, model.SessionEventSessionCompleted, marshalSessionEventJSON(map[string]string{"stop_reason": stopReasonFromSessionOutput(child.Output)}))
 		s.finalizeSessionSecrets(ctx, q, childSessionID)
 	}
 	return nil
@@ -436,12 +437,7 @@ func (s *runtimeServer) inheritSessionSecrets(
 // failChildSession marks a child session failed and purges its secrets after a
 // setup error that prevents the session from being driven.
 func (s *runtimeServer) failChildSession(ctx context.Context, q *store.Queries, childSessionID, message string) {
-	errText := message
-	_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:     childSessionID,
-		Status: model.SessionStatusFailed,
-		Error:  &errText,
-	})
+	_ = appendSessionFailed(ctx, q, childSessionID, message)
 	s.finalizeSessionSecrets(ctx, q, childSessionID)
 }
 

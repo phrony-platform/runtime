@@ -212,13 +212,8 @@ func (s *runtimeServer) expireWallClockSession(sessionID, onLimit string) {
 		return
 	}
 	msg := (&executor.LimitError{Kind: executor.LimitMaxWallClockSeconds, OnLimit: onLimit}).Error()
-	errText := msg
 	ctx := context.Background()
-	_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:     sessionID,
-		Status: model.SessionStatusFailed,
-		Error:  &errText,
-	})
+	_ = appendSessionFailed(ctx, q, sessionID, msg)
 	s.finalizeSessionSecrets(ctx, q, sessionID)
 }
 
@@ -232,10 +227,8 @@ func (s *runtimeServer) persistDetachedSessionAfterTurn(
 	outputJSON, historyJSON json.RawMessage,
 ) error {
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:      sessionID,
-		Status:  model.SessionStatusAwaitingInput,
-		Output:  outputJSON,
-		History: historyJSON,
+		ID:     sessionID,
+		Status: model.SessionStatusAwaitingInput,
 	}); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
@@ -251,14 +244,10 @@ func (s *runtimeServer) persistDetachedSessionOutcome(
 	state *interactiveSessionState,
 	lastOutput json.RawMessage,
 ) error {
-	params := store.UpdateSessionParams{
+	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
 		ID:     sessionID,
 		Status: model.SessionStatusAwaitingInput,
-	}
-	if len(lastOutput) > 0 {
-		params.Output = lastOutput
-	}
-	if _, err := q.UpdateSession(ctx, params); err != nil {
+	}); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
 	return nil

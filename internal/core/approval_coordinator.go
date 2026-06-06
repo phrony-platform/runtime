@@ -173,20 +173,7 @@ func (c *approvalCoordinator) OpenApproval(
 		expiresAt = &t
 	}
 	runtimeJSON := mergeApprovalRuntime(req)
-	_, err := gate.q.InsertToolInvocationPending(ctx, store.InsertToolInvocationPendingParams{
-		CallID:         req.CallID,
-		SessionID:      req.SessionID,
-		AgentVersionID: gate.agentVersionID,
-		Turn:           0,
-		Tool:           req.Tool,
-		Version:        req.Version,
-		Args:           args,
-		Status:         model.ToolInvocationAwaitingApproval,
-	})
-	if err != nil {
-		return err
-	}
-	_, err = gate.q.InsertApproval(ctx, store.InsertApprovalParams{
+	openApproval := store.InsertApprovalParams{
 		ID:                    req.ApprovalID,
 		SessionID:             req.SessionID,
 		CallID:                req.CallID,
@@ -204,8 +191,28 @@ func (c *approvalCoordinator) OpenApproval(
 		OnModify:              req.OnModify,
 		ExpiresAt:             expiresAt,
 		PolicyRuntime:         runtimeJSON,
-	})
-	if err != nil {
+	}
+	callID := req.CallID
+	if _, _, err := appendEventAuto(ctx, gate.q, EventInput{
+		SessionID: req.SessionID,
+		Type:      EventApprovalRequired,
+		CallID:    &callID,
+		Actor:     ActorPolicy,
+		Payload:   marshalSessionEventJSON(openApproval),
+		Approval: &EventApprovalProjection{
+			Open: &openApproval,
+			OpenInvocation: &store.InsertToolInvocationPendingParams{
+				CallID:         req.CallID,
+				SessionID:      req.SessionID,
+				AgentVersionID: gate.agentVersionID,
+				Turn:           0,
+				Tool:           req.Tool,
+				Version:        req.Version,
+				Args:           args,
+				Status:         model.ToolInvocationAwaitingApproval,
+			},
+		},
+	}); err != nil {
 		return err
 	}
 	if expiresAt != nil {
@@ -254,12 +261,20 @@ func (c *approvalCoordinator) decideLoaded(
 	if p.Approved {
 		decision = model.ApprovalVoteApproved
 	}
-	if _, err := q.InsertApprovalVote(ctx, store.InsertApprovalVoteParams{
+	vote := store.InsertApprovalVoteParams{
 		ApprovalID:                p.ApprovalID,
 		DecidedBy:                 decidedBy,
 		Decision:                  decision,
 		Comment:                   p.Comment,
 		ComprehensionAcknowledged: p.ComprehensionAcknowledged,
+	}
+	if _, _, err := appendEventAuto(ctx, q, EventInput{
+		SessionID: row.SessionID,
+		Type:      EventApprovalVote,
+		CallID:    strPtrIf(row.CallID),
+		Actor:     decidedBy,
+		Payload:   marshalSessionEventJSON(vote),
+		Approval:  &EventApprovalProjection{Vote: &vote},
 	}); err != nil {
 		if errors.Is(err, store.ErrDuplicateApprovalVote) {
 			return approvalDecideResult{}, fmt.Errorf("actor %q already decided on this approval", decidedBy)
@@ -302,19 +317,7 @@ func (c *approvalCoordinator) finalizeDecision(
 		}
 		failErr := errors.New(msg)
 		received := approvalsReceived
-		if _, err := q.DecideApproval(ctx, store.DecideApprovalParams{
-			ID:                row.ID,
-			Status:            model.ApprovalStatusDenied,
-			DecidedBy:         decidedBy,
-			Comment:           comment,
-			ApprovalsReceived: received,
-		}); err != nil {
-			return approvalDecideResult{}, err
-		}
-		recordApprovalDecided(ctx, q, row, false, decidedBy, comment)
-		if row.CallID != "" {
-			_ = q.UpdateToolInvocationStatus(ctx, row.CallID, model.ToolInvocationFailed)
-		}
+		recordApprovalDecided(ctx, q, row, false, decidedBy, comment, received)
 		c.unlockApprovalCleanup(row.ID)
 		c.unregisterParked(row.SessionID)
 		result := approvalDecideResult{
@@ -341,23 +344,7 @@ func (c *approvalCoordinator) finalizeDecision(
 		status = model.ApprovalStatusApproved
 	}
 	received := approvalsReceived
-	if _, err := q.DecideApproval(ctx, store.DecideApprovalParams{
-		ID:                row.ID,
-		Status:            status,
-		DecidedBy:         decidedBy,
-		Comment:           comment,
-		ApprovalsReceived: received,
-	}); err != nil {
-		return approvalDecideResult{}, err
-	}
-	recordApprovalDecided(ctx, q, row, approved, decidedBy, comment)
-	if row.CallID != "" {
-		invStatus := model.ToolInvocationFailed
-		if approved {
-			invStatus = model.ToolInvocationPending
-		}
-		_ = q.UpdateToolInvocationStatus(ctx, row.CallID, invStatus)
-	}
+	recordApprovalDecided(ctx, q, row, approved, decidedBy, comment, received)
 	c.unlockApprovalCleanup(row.ID)
 	c.unregisterParked(row.SessionID)
 

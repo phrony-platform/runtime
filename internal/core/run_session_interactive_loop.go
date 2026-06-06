@@ -186,13 +186,12 @@ func (s *runtimeServer) runSessionInteractiveLoop(
 			}
 			if waitForUser {
 				if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-					ID:      sessionID,
-					Status:  model.SessionStatusAwaitingInput,
-					Output:  outputJSON,
-					History: historyJSON,
+					ID:     sessionID,
+					Status: model.SessionStatusAwaitingInput,
 				}); err != nil {
 					return status.Errorf(codes.Internal, "update session: %v", err)
 				}
+				_, _ = outputJSON, historyJSON
 			} else if err := s.persistDetachedSessionAfterTurn(ctx, q, sessionID, state, outputJSON, historyJSON); err != nil {
 				return err
 			}
@@ -400,15 +399,14 @@ func sendAwaitingInput(
 // sendInteractiveCompletedFromSession emits the terminal Completed event built
 // from a session's persisted output. Used both when attaching to an
 // already-completed session and when a session is completed out-of-band.
-func sendInteractiveCompletedFromSession(events sessionEventSink, session store.Session, history []provider.Message) error {
-	output := session.Output
+func sendInteractiveCompletedFromSession(events sessionEventSink, session store.Session, history []provider.Message, output json.RawMessage) error {
 	if len(output) == 0 {
 		output = json.RawMessage("null")
 	}
 	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{
 			Completed: &runtimev1.RunSessionInteractiveCompleted{
-				StopReason:           stopReasonFromSessionOutput(session.Output),
+				StopReason:           stopReasonFromSessionOutput(output),
 				Output:               output,
 				Stats:                interactiveStatsFromSessionOutput(history, output),
 				SessionEndedAtUnixMs: session.UpdatedAt.UnixMilli(),
@@ -437,7 +435,11 @@ func (s *runtimeServer) completedExternally(
 	if session.Status != model.SessionStatusCompleted {
 		return false, nil
 	}
-	if err := sendInteractiveCompletedFromSession(events, session, state.history); err != nil {
+	foldedOutput, err := loadSessionOutputJSON(sessionLookupCtx(ctx), q, sessionID)
+	if err != nil {
+		return false, status.Errorf(codes.Internal, "load session output: %v", err)
+	}
+	if err := sendInteractiveCompletedFromSession(events, session, state.history, foldedOutput); err != nil {
 		return false, err
 	}
 	return true, nil

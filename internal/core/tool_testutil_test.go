@@ -63,14 +63,11 @@ func insertToolE2ESessionAwaitingTool(
 	history []provider.Message,
 ) {
 	t.Helper()
-	historyJSON, err := encodeHistory(history)
-	if err != nil {
-		t.Fatalf("encodeHistory: %v", err)
-	}
+	_ = history
 	if _, err := db.Exec(`
-		INSERT INTO sessions (id, agent_version_id, input, status, history)
-		VALUES ($1, $2, '{"message":"weather?"}'::jsonb, $3, $4::jsonb)
-	`, sessionID, agentVersionID, model.SessionStatusAwaitingTool, historyJSON); err != nil {
+		INSERT INTO sessions (id, agent_version_id, input, status, root_session_id)
+		VALUES ($1, $2, '{"message":"weather?"}'::jsonb, $3, $1)
+	`, sessionID, agentVersionID, model.SessionStatusAwaitingTool); err != nil {
 		t.Fatalf("insert session: %v", err)
 	}
 }

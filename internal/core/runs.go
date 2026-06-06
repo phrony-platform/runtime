@@ -24,13 +24,11 @@ func (s *runtimeServer) CancelSession(ctx context.Context, req *runtimev1.Cancel
 		return nil, status.Error(codes.InvalidArgument, "session_id is required")
 	}
 
-	if _, err := q.CancelSession(ctx, sessionID); errors.Is(err, sql.ErrNoRows) {
+	if err := appendSessionCancelled(ctx, q, sessionID, true); isNoRows(err) {
 		return nil, status.Errorf(codes.NotFound, "session %s not found or already terminal", sessionID)
 	} else if err != nil {
 		return nil, status.Errorf(codes.Internal, "cancel session: %v", err)
 	}
-
-	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionCancelled, json.RawMessage("{}"))
 	s.finalizeSessionSecrets(ctx, q, sessionID) // after audit event
 
 	s.cancelActiveSession(sessionID)
@@ -52,13 +50,11 @@ func (s *runtimeServer) CompleteSession(ctx context.Context, req *runtimev1.Comp
 		return nil, status.Error(codes.InvalidArgument, "session_id is required")
 	}
 
-	if _, err := q.CompleteSession(ctx, sessionID); errors.Is(err, sql.ErrNoRows) {
+	if err := appendSessionCompleted(ctx, q, sessionID, json.RawMessage("{}"), true); isNoRows(err) {
 		return nil, status.Errorf(codes.NotFound, "session %s not found or already terminal", sessionID)
 	} else if err != nil {
 		return nil, status.Errorf(codes.Internal, "complete session: %v", err)
 	}
-
-	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionCompleted, json.RawMessage("{}"))
 	s.finalizeSessionSecrets(ctx, q, sessionID) // after audit event
 
 	// Stop any active driver/attach loop. The loop detects the completed status

@@ -13,37 +13,62 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// SessionEventRecorder appends ordered audit events to session_events. Every
-// write is best-effort: a persistence failure is logged but never breaks the
-// live turn (mirrors ToolInvocationRecorder).
-type SessionEventRecorder struct {
+// EventRecorder appends ordered audit events to the events log. Every write is
+// best-effort: a persistence failure is logged but never breaks the live turn
+// (mirrors ToolInvocationRecorder).
+type EventRecorder struct {
 	Q *store.Queries
 }
 
-func newSessionEventRecorder(q *store.Queries) *SessionEventRecorder {
+func newEventRecorder(q *store.Queries) *EventRecorder {
 	if q == nil {
 		return nil
 	}
-	return &SessionEventRecorder{Q: q}
+	return &EventRecorder{Q: q}
+}
+
+func newSessionEventRecorder(q *store.Queries) *EventRecorder {
+	return newEventRecorder(q)
 }
 
 // Record appends a single audit event in insertion order.
-func (r *SessionEventRecorder) Record(ctx context.Context, sessionID string, t model.SessionEventType, payload json.RawMessage) {
+func (r *EventRecorder) Record(ctx context.Context, sessionID string, t model.SessionEventType, payload json.RawMessage) {
 	if r == nil || r.Q == nil || sessionID == "" {
 		return
 	}
-	if _, err := r.Q.InsertSessionEvent(ctx, store.InsertSessionEventParams{
+	evType := legacySessionEventType(t)
+	ev := EventInput{
 		SessionID: sessionID,
-		Type:      string(t),
+		Type:      evType,
+		Actor:     actorForLegacySessionEvent(t),
 		Payload:   payload,
-	}); err != nil {
-		slog.Error("record session event", "session_id", sessionID, "type", string(t), "error", err)
+	}
+	switch t {
+	case model.SessionEventSessionCompleted:
+		ev.Session = &EventSessionProjection{Status: model.SessionStatusCompleted}
+	case model.SessionEventSessionFailed:
+		msg := sessionFailedMessageFromPayload(payload)
+		var errText *string
+		if msg != "" {
+			errText = &msg
+		}
+		ev.Session = &EventSessionProjection{
+			Status: model.SessionStatusFailed,
+			Error:  errText,
+		}
+	case model.SessionEventSessionCancelled:
+		ev.Session = &EventSessionProjection{Status: model.SessionStatusCancelled}
+	case model.SessionEventToolCall, model.SessionEventToolResult, model.SessionEventPolicyDenied, model.SessionEventApprovalRequired:
+		ev.SkipProjection = true
+	}
+	if _, _, err := appendEventAuto(ctx, r.Q, ev); err != nil {
+		slog.Error("record event", "session_id", sessionID, "type", evType, "error", err)
 	}
 }
 
 // RecordServerMsg persists a wire-backed event by marshalling the exact gRPC
 // server message, so attach replay can re-send it verbatim.
-func (r *SessionEventRecorder) RecordServerMsg(ctx context.Context, sessionID string, t model.SessionEventType, msg *runtimev1.RunSessionInteractiveServerMsg) {
+func (r *EventRecorder) RecordServerMsg(ctx context.Context, sessionID string, t model.SessionEventType, msg *runtimev1.RunSessionInteractiveServerMsg) {
 	if r == nil || r.Q == nil || msg == nil {
 		return
 	}
@@ -51,7 +76,7 @@ func (r *SessionEventRecorder) RecordServerMsg(ctx context.Context, sessionID st
 }
 
 // marshalSessionEventProto is the single chokepoint that turns a proto message
-// into a session_events payload, keeping the on-disk shape aligned with the wire.
+// into an event payload, keeping the on-disk shape aligned with the wire.
 func marshalSessionEventProto(m proto.Message) json.RawMessage {
 	b, err := protojson.Marshal(m)
 	if err != nil {
@@ -61,7 +86,7 @@ func marshalSessionEventProto(m proto.Message) json.RawMessage {
 }
 
 // serverMsgFromSessionEvent reconstructs a gRPC server message from a wire-backed
-// session_events payload for attach replay.
+// event payload for attach replay.
 func serverMsgFromSessionEvent(payload json.RawMessage) (*runtimev1.RunSessionInteractiveServerMsg, error) {
 	var msg runtimev1.RunSessionInteractiveServerMsg
 	if err := protojson.Unmarshal(payload, &msg); err != nil {
@@ -120,14 +145,14 @@ func replaySessionEventLog(ctx context.Context, q *store.Queries, events session
 	if q == nil || events == nil || sessionID == "" {
 		return nil
 	}
-	log, err := q.ListSessionEventsBySessionID(ctx, sessionID)
+	log, err := q.ListEventsBySession(ctx, sessionID)
 	if err != nil {
 		slog.Error("replay session events", "session_id", sessionID, "error", err)
 		return nil
 	}
 	for _, ev := range log {
-		switch model.SessionEventType(ev.Type) {
-		case model.SessionEventToolCall, model.SessionEventToolResult, model.SessionEventPolicyDenied:
+		switch ev.Type {
+		case EventToolRequested, EventToolCompleted, EventToolPolicyDenied:
 			msg, err := serverMsgFromSessionEvent(ev.Payload)
 			if err != nil {
 				continue
@@ -135,7 +160,7 @@ func replaySessionEventLog(ctx context.Context, q *store.Queries, events session
 			if err := events.Send(msg); err != nil {
 				return err
 			}
-		case model.SessionEventApprovalRequired:
+		case EventApprovalRequired:
 			msg, err := serverMsgFromSessionEvent(ev.Payload)
 			if err != nil {
 				continue
@@ -166,15 +191,11 @@ func pendingApprovalIDForReplay(ctx context.Context, q *store.Queries, sessionID
 }
 
 // recordApprovalDecided appends the audit entry for a resolved approval.
-func recordApprovalDecided(ctx context.Context, q *store.Queries, row store.Approval, approved bool, decidedBy, comment string) {
-	newSessionEventRecorder(q).Record(ctx, row.SessionID, model.SessionEventApprovalDecided, marshalSessionEventJSON(approvalDecidedPayload{
-		ApprovalID: row.ID,
-		CallID:     row.CallID,
-		Approved:   approved,
-		DecidedBy:  decidedBy,
-		Comment:    comment,
-		OnReject:   row.OnReject,
-	}))
+func recordApprovalDecided(ctx context.Context, q *store.Queries, row store.Approval, approved bool, decidedBy, comment string, received int) {
+	ev := approvalDecidedEventInput(row, approved, decidedBy, comment, received)
+	if _, _, err := appendEventAuto(ctx, q, ev); err != nil {
+		slog.Error("record approval decided", "session_id", row.SessionID, "approval_id", row.ID, "error", err)
+	}
 }
 
 func marshalSessionEventJSON(v any) json.RawMessage {

@@ -123,17 +123,16 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		}
 	}
 
-	history, err := decodeHistory(session.History)
+	history, output, err := loadFoldedSession(sessionCtx, q, sessionID)
 	if err != nil {
-		return status.Errorf(codes.Internal, "decode session history: %v", err)
+		return status.Errorf(codes.Internal, "load session fold: %v", err)
 	}
-	history = enrichHistoryFromSessionOutput(history, session.Output)
 	endedAt := sessionEndedAtForAttach(&session)
 	var attachAwaitingState *interactiveSessionState
 	var attachAwaitingLastTurn provider.TokenUsage
 	if session.Status == model.SessionStatusAwaitingInput {
 		var sessionUsage provider.TokenUsage
-		attachAwaitingLastTurn, sessionUsage = usageFromSessionOutputJSON(session.Output)
+		attachAwaitingLastTurn, sessionUsage = usageFromSessionOutputJSON(output)
 		attachAwaitingState, err = newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q, rootSessionDepth)
 		if err != nil {
 			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
@@ -184,7 +183,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 						state.approvalGate.setPendingReplay(req)
 					}
 				}
-				if err := sendAwaitingInput(events, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
+				if err := sendAwaitingInput(events, stopReasonFromSessionOutput(output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
 					return err
 				}
 				return s.withActiveSession(sessionID, activeSessionEntry{
@@ -193,14 +192,13 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 					return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, nil, true)
 				})
 			}
-			history, err = decodeHistory(session.History)
+			history, output, err = loadFoldedSession(sessionCtx, q, sessionID)
 			if err != nil {
-				return status.Errorf(codes.Internal, "decode session history: %v", err)
+				return status.Errorf(codes.Internal, "load session fold: %v", err)
 			}
-			history = enrichHistoryFromSessionOutput(history, session.Output)
 			state.history = history
 		}
-		if err := sendAwaitingInput(events, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_tool"); err != nil {
+		if err := sendAwaitingInput(events, stopReasonFromSessionOutput(output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_tool"); err != nil {
 			return err
 		}
 		return s.withActiveSession(sessionID, activeSessionEntry{
@@ -227,7 +225,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 				state.approvalGate.setPendingReplay(req)
 			}
 		}
-		if err := sendAwaitingInput(events, stopReasonFromSessionOutput(session.Output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
+		if err := sendAwaitingInput(events, stopReasonFromSessionOutput(output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
 			return err
 		}
 		return s.withActiveSession(sessionID, activeSessionEntry{
@@ -254,7 +252,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		})
 
 	case model.SessionStatusCompleted:
-		if err := sendInteractiveCompletedFromSession(events, session, history); err != nil {
+		if err := sendInteractiveCompletedFromSession(events, session, history, output); err != nil {
 			return err
 		}
 		return rejectInteractiveUserMessage(stream)
@@ -268,7 +266,7 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		// Wall-clock expiry is terminal (the daemon failed it on purpose); other run
 		// limits remain resumable so an operator can continue the conversation.
 		if executor.IsLimitErrorMessage(errMsg) && !isWallClockLimitMessage(errMsg) {
-			lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
+			lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(output)
 			state, err := newInteractiveSessionState(sessionCtx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q, rootSessionDepth)
 			if err != nil {
 				return status.Errorf(codes.Internal, "build tool dispatch: %v", err)
@@ -328,12 +326,7 @@ func (s *runtimeServer) attachWallClockTerminal(
 	message string,
 ) error {
 	if session.Status != model.SessionStatusFailed {
-		errText := message
-		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-			ID:     sessionID,
-			Status: model.SessionStatusFailed,
-			Error:  &errText,
-		}); err != nil {
+		if err := appendSessionFailed(ctx, q, sessionID, message); err != nil {
 			return status.Errorf(codes.Internal, "update session: %v", err)
 		}
 	}
@@ -373,7 +366,11 @@ func (s *runtimeServer) runSessionInteractiveAttachBlocked(
 			return status.Errorf(codes.Internal, "update session: %v", err)
 		}
 	}
-	stopReason := stopReasonFromSessionOutput(session.Output)
+	foldedOutput, err := loadSessionOutputJSON(ctx, q, sessionID)
+	if err != nil {
+		return status.Errorf(codes.Internal, "load session output: %v", err)
+	}
+	stopReason := stopReasonFromSessionOutput(foldedOutput)
 	if err := sendAwaitingInput(events, stopReason, state.turnCount, lastTurnUsage, state.sessionUsage, state.inputBlockedReason); err != nil {
 		return err
 	}

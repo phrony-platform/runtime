@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/store"
 )
 
 type historyMessage struct {
@@ -55,4 +57,64 @@ func decodeHistory(raw json.RawMessage) ([]provider.Message, error) {
 		out[i] = msg
 	}
 	return out, nil
+}
+
+// buildProviderContext folds conversation and tool-result events into the LLM message list.
+func buildProviderContext(events []store.Event) []provider.Message {
+	var out []provider.Message
+	for _, ev := range events {
+		switch ev.Type {
+		case EventMessageUser, EventMessageAssistant:
+			msg, err := conversationMessageFromSessionEvent(ev.Payload)
+			if err != nil {
+				continue
+			}
+			pm := provider.Message{Role: msg.GetRole(), Content: msg.GetContent()}
+			if msg.GetRole() == provider.RoleAssistant {
+				pm.StopReason = msg.GetStopReason()
+				pm.TurnUsage = tokenUsageFromProto(msg.GetTurnUsage())
+				pm.TurnDurationMs = msg.GetTurnDurationMs()
+			}
+			out = append(out, pm)
+		case EventToolRequested:
+			// tool calls are represented in assistant blocks at dispatch time.
+		case EventToolCompleted, EventToolPolicyDenied:
+			var body struct {
+				Result       json.RawMessage `json:"result"`
+				ErrorCode    string          `json:"error_code"`
+				ErrorMessage string          `json:"error_message"`
+				Error        string          `json:"error"`
+			}
+			if err := json.Unmarshal(ev.Payload, &body); err != nil {
+				continue
+			}
+			callID := ""
+			if ev.CallID != nil {
+				callID = *ev.CallID
+			}
+			denied := ev.Type == EventToolPolicyDenied
+			content := string(body.Result)
+			if body.ErrorMessage != "" {
+				content = body.ErrorMessage
+			} else if body.Error != "" {
+				content = body.Error
+			}
+			out = append(out, provider.Message{
+				Role: provider.RoleUser,
+				Blocks: []provider.ContentBlock{
+					provider.ToolResultBlock(callID, content, denied),
+				},
+			})
+		}
+	}
+	return out
+}
+
+// loadProviderContext loads the folded provider message list for a session.
+func loadProviderContext(ctx context.Context, q *store.Queries, sessionID string) ([]provider.Message, error) {
+	events, err := q.ListEventsBySession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return buildProviderContext(events), nil
 }

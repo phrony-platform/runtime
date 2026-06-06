@@ -219,15 +219,9 @@ func (s *runtimeServer) failInteractiveSession(
 	runErr error,
 ) error {
 	msg := runErr.Error()
-	errText := msg
-	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:     sessionID,
-		Status: model.SessionStatusFailed,
-		Error:  &errText,
-	}); err != nil {
+	if err := appendSessionFailed(ctx, q, sessionID, msg); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
-	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionFailed, marshalSessionEventJSON(map[string]string{"message": msg}))
 	s.finalizeSessionSecrets(ctx, q, sessionID)
 	_ = events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Failed{
@@ -248,15 +242,13 @@ func (s *runtimeServer) completeInteractiveSession(
 	history json.RawMessage,
 ) error {
 	endedAt := time.Now()
-	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:      sessionID,
-		Status:  model.SessionStatusCompleted,
-		Output:  output,
-		History: history,
-	}); err != nil {
+	if err := appendSessionCompleted(ctx, q, sessionID, marshalSessionEventJSON(map[string]string{
+		"stop_reason": stopReason,
+		"output":      string(output),
+		"history":     string(history),
+	}), false); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
-	newSessionEventRecorder(q).Record(ctx, sessionID, model.SessionEventSessionCompleted, marshalSessionEventJSON(map[string]string{"stop_reason": stopReason}))
 	s.finalizeSessionSecrets(ctx, q, sessionID)
 	return events.Send(&runtimev1.RunSessionInteractiveServerMsg{
 		Body: &runtimev1.RunSessionInteractiveServerMsg_Completed{

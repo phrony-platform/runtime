@@ -94,6 +94,17 @@ func (s *runtimeServer) persistNewSession(ctx context.Context, row newSessionRow
 
 	txQ := q.WithTx(tx)
 
+	rootSessionID := row.sessionID
+	if row.parentSessionID != nil && *row.parentSessionID != "" {
+		parent, err := txQ.GetSession(ctx, *row.parentSessionID)
+		if err != nil {
+			return "", status.Errorf(codes.Internal, "load parent session: %v", err)
+		}
+		rootSessionID = parent.RootSessionID
+		if rootSessionID == "" {
+			rootSessionID = parent.ID
+		}
+	}
 	if _, err := txQ.InsertSession(ctx, store.InsertSessionParams{
 		ID:              row.sessionID,
 		AgentVersionID:  row.agentVersionID,
@@ -102,8 +113,12 @@ func (s *runtimeServer) persistNewSession(ctx context.Context, row newSessionRow
 		Status:          model.SessionStatusRunning,
 		ParentSessionID: row.parentSessionID,
 		Depth:           row.depth,
+		RootSessionID:   rootSessionID,
 	}); err != nil {
 		return "", status.Errorf(codes.Internal, "persist session: %v", err)
+	}
+	if err := appendSessionStarted(ctx, txQ, row.sessionID, rootSessionID, row.input); err != nil {
+		return "", status.Errorf(codes.Internal, "record session started: %v", err)
 	}
 
 	if err := s.persistSessionSecrets(ctx, txQ, row.sessionID, agent, bundleUnion, row.resolved); err != nil {

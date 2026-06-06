@@ -21,7 +21,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/tooldispatch/testworker"
 )
 
-func sessionEventTypes(events []store.SessionEvent) []string {
+func sessionEventTypes(events []store.Event) []string {
 	out := make([]string, len(events))
 	for i, ev := range events {
 		out[i] = ev.Type
@@ -31,16 +31,13 @@ func sessionEventTypes(events []store.SessionEvent) []string {
 
 func insertSessionEventsE2ESession(t *testing.T, db *sqlx.DB, sessionID, agentVersionID, status string, history []provider.Message) {
 	t.Helper()
-	historyJSON, err := encodeHistory(history)
-	if err != nil {
-		t.Fatalf("encodeHistory: %v", err)
-	}
 	if _, err := db.Exec(`
-		INSERT INTO sessions (id, agent_version_id, input, status, history)
-		VALUES ($1, $2, '{"message":"go"}'::jsonb, $3, $4::jsonb)
-	`, sessionID, agentVersionID, status, historyJSON); err != nil {
+		INSERT INTO sessions (id, agent_version_id, input, status, root_session_id)
+		VALUES ($1, $2, '{"message":"go"}'::jsonb, $3, $1)
+	`, sessionID, agentVersionID, status); err != nil {
 		t.Fatalf("insert session: %v", err)
 	}
+	_ = history
 }
 
 func cleanupSessionEventsE2EFixture(t *testing.T, db *sqlx.DB, namespace, sessionID string) {
@@ -48,17 +45,16 @@ func cleanupSessionEventsE2EFixture(t *testing.T, db *sqlx.DB, namespace, sessio
 	_, _ = db.Exec(`DELETE FROM approval_votes WHERE approval_id IN (SELECT id FROM approvals WHERE session_id = $1)`, sessionID)
 	_, _ = db.Exec(`DELETE FROM approvals WHERE session_id = $1`, sessionID)
 	_, _ = db.Exec(`DELETE FROM tool_invocations WHERE session_id = $1`, sessionID)
-	_, _ = db.Exec(`DELETE FROM session_events WHERE session_id = $1`, sessionID)
-	_, _ = db.Exec(`DELETE FROM session_evidence WHERE session_id = $1`, sessionID)
+	_, _ = db.Exec(`DELETE FROM events WHERE session_id = $1`, sessionID)
 	_, _ = db.Exec(`DELETE FROM sessions WHERE id = $1`, sessionID)
 	_, _ = db.Exec(`DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE namespace = $1)`, namespace)
 	_, _ = db.Exec(`DELETE FROM agents WHERE namespace = $1`, namespace)
 }
 
-func assistantMessageContents(events []store.SessionEvent) []string {
+func assistantMessageContents(events []store.Event) []string {
 	var out []string
 	for _, ev := range events {
-		if ev.Type != string(model.SessionEventAssistantMessage) {
+		if ev.Type != EventMessageAssistant {
 			continue
 		}
 		msg, err := conversationMessageFromSessionEvent(ev.Payload)
@@ -70,10 +66,11 @@ func assistantMessageContents(events []store.SessionEvent) []string {
 	return out
 }
 
-func countSessionEventType(events []store.SessionEvent, typ model.SessionEventType) int {
+func countSessionEventType(events []store.Event, typ model.SessionEventType) int {
+	want := legacySessionEventType(typ)
 	n := 0
 	for _, ev := range events {
-		if ev.Type == string(typ) {
+		if ev.Type == want {
 			n++
 		}
 	}
@@ -237,16 +234,16 @@ func TestSessionEventsE2E_policyDenyRecordsOrderedAuditLog(t *testing.T) {
 		t.Fatalf("assistant text = %q", text)
 	}
 
-	events, err := q.ListSessionEventsBySessionID(context.Background(), sessionID)
+	events, err := q.ListEventsBySession(context.Background(), sessionID)
 	if err != nil {
-		t.Fatalf("ListSessionEventsBySessionID: %v", err)
+		t.Fatalf("ListEventsBySession: %v", err)
 	}
 	got := sessionEventTypes(events)
 	want := []string{
-		string(model.SessionEventUserMessage),
-		string(model.SessionEventToolCall),
-		string(model.SessionEventPolicyDenied),
-		string(model.SessionEventAssistantMessage),
+		EventMessageUser,
+		EventToolRequested,
+		EventToolPolicyDenied,
+		EventMessageAssistant,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("event types = %v, want %v", got, want)
@@ -373,16 +370,16 @@ func TestSessionEventsE2E_successfulToolCallRecordsOrderedAuditLog(t *testing.T)
 		t.Fatalf("runTurnRecorded: %v", err)
 	}
 
-	events, err := q.ListSessionEventsBySessionID(context.Background(), sessionID)
+	events, err := q.ListEventsBySession(context.Background(), sessionID)
 	if err != nil {
-		t.Fatalf("ListSessionEventsBySessionID: %v", err)
+		t.Fatalf("ListEventsBySession: %v", err)
 	}
 	got := sessionEventTypes(events)
 	want := []string{
-		string(model.SessionEventUserMessage),
-		string(model.SessionEventToolCall),
-		string(model.SessionEventToolResult),
-		string(model.SessionEventAssistantMessage),
+		EventMessageUser,
+		EventToolRequested,
+		EventToolCompleted,
+		EventMessageAssistant,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("event types = %v, want %v", got, want)
@@ -506,7 +503,7 @@ func TestSessionEventsE2E_rejectedApprovalRecordsDecided(t *testing.T) {
 		t.Fatalf("tool_result count = %d, want 1 denied result", countSessionEventType(events, model.SessionEventToolResult))
 	}
 	if countSessionEventType(events, model.SessionEventToolCall) != 0 {
-		t.Fatalf("tool_call count = %d, want 0 when approval is rejected before dispatch", countSessionEventType(events, model.SessionEventToolCall))
+		t.Fatalf("tool.requested count = %d, want 0 when approval is rejected before dispatch", countSessionEventType(events, model.SessionEventToolCall))
 	}
 }
 
@@ -560,19 +557,9 @@ func TestSessionEventsE2E_activeAttachReplaysPersistedToolTimeline(t *testing.T)
 	resultMsg := toolResultServerMsg(executor.ToolResultEvent{
 		CallID: "call-1", Payload: json.RawMessage(`{"temp":72}`),
 	})
-	for _, spec := range []struct {
-		typ     model.SessionEventType
-		payload json.RawMessage
-	}{
-		{model.SessionEventToolCall, marshalSessionEventProto(callMsg)},
-		{model.SessionEventToolResult, marshalSessionEventProto(resultMsg)},
-	} {
-		if _, err := q.InsertSessionEvent(context.Background(), store.InsertSessionEventParams{
-			SessionID: sessionID, Type: string(spec.typ), Payload: spec.payload,
-		}); err != nil {
-			t.Fatalf("InsertSessionEvent(%s): %v", spec.typ, err)
-		}
-	}
+	rec := newEventRecorder(q)
+	rec.RecordServerMsg(context.Background(), sessionID, model.SessionEventToolCall, callMsg)
+	rec.RecordServerMsg(context.Background(), sessionID, model.SessionEventToolResult, resultMsg)
 
 	agent := e2eWeatherAgent(nil)
 	h.srv.loadSessionVersionFn = func(context.Context, *store.Queries, string, string) (*executor.Version, error) {
@@ -631,11 +618,11 @@ func TestSessionEventsE2E_activeAttachReplaysPersistedToolTimeline(t *testing.T)
 	<-done
 }
 
-func mustListSessionEvents(t *testing.T, q *store.Queries, sessionID string) []store.SessionEvent {
+func mustListSessionEvents(t *testing.T, q *store.Queries, sessionID string) []store.Event {
 	t.Helper()
-	events, err := q.ListSessionEventsBySessionID(context.Background(), sessionID)
+	events, err := q.ListEventsBySession(context.Background(), sessionID)
 	if err != nil {
-		t.Fatalf("ListSessionEventsBySessionID: %v", err)
+		t.Fatalf("ListEventsBySession: %v", err)
 	}
 	return events
 }

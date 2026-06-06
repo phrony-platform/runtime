@@ -3,9 +3,11 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/store"
 )
 
 type sessionOutputUsage struct {
@@ -115,6 +117,63 @@ func marshalSessionOutput(message, stopReason string, turnUsage, sessionUsage pr
 		Turns:        turnRecordsFromHistory(history),
 	}
 	return json.Marshal(out)
+}
+
+// buildSessionOutput folds assistant message events into the session output JSON shape.
+func buildSessionOutput(events []store.Event) json.RawMessage {
+	var lastAssistant string
+	var lastStopReason string
+	var lastTurnUsage provider.TokenUsage
+	var sessionUsage provider.TokenUsage
+	var turns []sessionTurnRecord
+	for _, ev := range events {
+		if ev.Type != EventMessageAssistant {
+			continue
+		}
+		msg, err := conversationMessageFromSessionEvent(ev.Payload)
+		if err != nil {
+			continue
+		}
+		turnUsage := tokenUsageFromProto(msg.GetTurnUsage())
+		lastAssistant = msg.GetContent()
+		lastStopReason = msg.GetStopReason()
+		lastTurnUsage = turnUsage
+		sessionUsage.Add(turnUsage)
+		turns = append(turns, sessionTurnRecord{
+			StopReason:     msg.GetStopReason(),
+			TurnUsage:      usageToSessionOutput(turnUsage),
+			TurnDurationMs: msg.GetTurnDurationMs(),
+		})
+	}
+	out := sessionOutput{
+		Message:      lastAssistant,
+		StopReason:   lastStopReason,
+		TurnUsage:    usageToSessionOutput(lastTurnUsage),
+		SessionUsage: usageToSessionOutput(sessionUsage),
+		Turns:        turns,
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return b
+}
+
+// loadSessionOutputJSON returns folded session output for a session.
+func loadSessionOutputJSON(ctx context.Context, q *store.Queries, sessionID string) (json.RawMessage, error) {
+	events, err := q.ListEventsBySession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return buildSessionOutput(events), nil
+}
+
+func loadFoldedSession(ctx context.Context, q *store.Queries, sessionID string) ([]provider.Message, json.RawMessage, error) {
+	events, err := q.ListEventsBySession(ctx, sessionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return buildProviderContext(events), buildSessionOutput(events), nil
 }
 
 func usageFromSessionOutputJSON(output json.RawMessage) (turnUsage, sessionUsage provider.TokenUsage) {

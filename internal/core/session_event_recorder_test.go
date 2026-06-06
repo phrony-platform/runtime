@@ -9,7 +9,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
-	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/provider"
 	"github.com/phrony-platform/runtime/internal/store"
@@ -24,14 +23,37 @@ func (s *captureSessionEventSink) Send(msg *runtimev1.RunSessionInteractiveServe
 	return nil
 }
 
-func sessionEventLogRows(now time.Time, events ...store.SessionEvent) *sqlmock.Rows {
-	rows := sqlmock.NewRows([]string{"id", "session_id", "type", "payload", "created_at"})
+func sessionEventLogRows(now time.Time, events ...store.Event) *sqlmock.Rows {
+	rows := sqlmock.NewRows([]string{
+		"id", "session_id", "root_session_id", "seq", "ts", "type",
+		"turn", "call_id", "child_session_id", "actor", "payload",
+	})
 	for _, ev := range events {
 		payload := ev.Payload
 		if len(payload) == 0 {
 			payload = json.RawMessage("{}")
 		}
-		rows.AddRow(ev.ID, ev.SessionID, ev.Type, payload, now)
+		var turn any
+		if ev.Turn != nil {
+			turn = *ev.Turn
+		}
+		var callID any
+		if ev.CallID != nil {
+			callID = *ev.CallID
+		}
+		var childSessionID any
+		if ev.ChildSessionID != nil {
+			childSessionID = *ev.ChildSessionID
+		}
+		rootID := ev.RootSessionID
+		if rootID == "" {
+			rootID = ev.SessionID
+		}
+		ts := ev.TS
+		if ts.IsZero() {
+			ts = now
+		}
+		rows.AddRow(ev.ID, ev.SessionID, rootID, ev.Seq, ts, ev.Type, turn, callID, childSessionID, ev.Actor, payload)
 	}
 	return rows
 }
@@ -54,13 +76,13 @@ func TestReplaySessionEventLog_replaysWireBackedEventsInOrder(t *testing.T) {
 	})
 
 	now := time.Now()
-	mock.ExpectQuery(`FROM session_events`).WithArgs("sess-1").WillReturnRows(sessionEventLogRows(now,
-		store.SessionEvent{ID: 1, SessionID: "sess-1", Type: string(model.SessionEventUserMessage), Payload: userMessagePayload("hi")},
-		store.SessionEvent{ID: 2, SessionID: "sess-1", Type: string(model.SessionEventToolCall), Payload: marshalSessionEventProto(callMsg)},
-		store.SessionEvent{ID: 3, SessionID: "sess-1", Type: string(model.SessionEventToolResult), Payload: marshalSessionEventProto(resultMsg)},
-		store.SessionEvent{ID: 4, SessionID: "sess-1", Type: string(model.SessionEventApprovalRequired), Payload: marshalSessionEventProto(approvalMsg)},
-		store.SessionEvent{ID: 5, SessionID: "sess-1", Type: string(model.SessionEventApprovalDecided), Payload: json.RawMessage(`{"approval_id":"appr-1","approved":false}`)},
-		store.SessionEvent{ID: 6, SessionID: "sess-1", Type: string(model.SessionEventSessionCompleted), Payload: json.RawMessage(`{"stop_reason":"end_turn"}`)},
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").WillReturnRows(sessionEventLogRows(now,
+		store.Event{ID: 1, SessionID: "sess-1", Seq: 1, Type: EventMessageUser, Payload: userMessagePayload("hi")},
+		store.Event{ID: 2, SessionID: "sess-1", Seq: 2, Type: EventToolRequested, Payload: marshalSessionEventProto(callMsg)},
+		store.Event{ID: 3, SessionID: "sess-1", Seq: 3, Type: EventToolCompleted, Payload: marshalSessionEventProto(resultMsg)},
+		store.Event{ID: 4, SessionID: "sess-1", Seq: 4, Type: EventApprovalRequired, Payload: marshalSessionEventProto(approvalMsg)},
+		store.Event{ID: 5, SessionID: "sess-1", Seq: 5, Type: EventApprovalDecided, Payload: json.RawMessage(`{"approval_id":"appr-1","approved":false}`)},
+		store.Event{ID: 6, SessionID: "sess-1", Seq: 6, Type: EventSessionCompleted, Payload: json.RawMessage(`{"stop_reason":"end_turn"}`)},
 	))
 
 	sink := &captureSessionEventSink{}
@@ -95,8 +117,8 @@ func TestReplaySessionEventLog_skipsPendingApproval(t *testing.T) {
 		ApprovalID: "appr-pending", CallID: "call-1", Tool: "weather.get-forecast", Version: "1.0.0",
 	})
 	now := time.Now()
-	mock.ExpectQuery(`FROM session_events`).WithArgs("sess-1").WillReturnRows(sessionEventLogRows(now,
-		store.SessionEvent{ID: 1, SessionID: "sess-1", Type: string(model.SessionEventApprovalRequired), Payload: marshalSessionEventProto(approvalMsg)},
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").WillReturnRows(sessionEventLogRows(now,
+		store.Event{ID: 1, SessionID: "sess-1", Seq: 1, Type: EventApprovalRequired, Payload: marshalSessionEventProto(approvalMsg)},
 	))
 
 	sink := &captureSessionEventSink{}

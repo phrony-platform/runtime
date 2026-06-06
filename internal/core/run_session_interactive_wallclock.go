@@ -45,25 +45,11 @@ func (s *runtimeServer) persistWallClockTerminal(
 	if errMsg == "" {
 		return nil
 	}
-	errText := errMsg
-	params := store.UpdateSessionParams{
-		ID:     sessionID,
-		Status: model.SessionStatusFailed,
-		Error:  &errText,
-	}
-	if len(output) > 0 {
-		params.Output = output
-	}
-	if state != nil && len(state.history) > 0 {
-		historyJSON, err := encodeHistory(state.history)
-		if err != nil {
-			return status.Errorf(codes.Internal, "encode session history: %v", err)
-		}
-		params.History = historyJSON
-	}
-	if _, err := q.UpdateSession(ctx, params); err != nil {
+	if err := appendSessionFailed(ctx, q, sessionID, errMsg); err != nil {
 		return status.Errorf(codes.Internal, "update session: %v", err)
 	}
+	_ = output
+	_ = state
 	return nil
 }
 
@@ -75,12 +61,15 @@ func (s *runtimeServer) reconcileStaleRunningSession(
 	session store.Session,
 	ver *executor.Version,
 ) (store.Session, error) {
-	history, err := decodeHistory(session.History)
+	history, err := loadProviderContext(ctx, q, session.ID)
 	if err != nil {
-		return session, status.Errorf(codes.Internal, "decode session history: %v", err)
+		return session, status.Errorf(codes.Internal, "load provider context: %v", err)
 	}
-	history = enrichHistoryFromSessionOutput(history, session.Output)
-	_, sessionUsage := usageFromSessionOutputJSON(session.Output)
+	output, err := loadSessionOutputJSON(ctx, q, session.ID)
+	if err != nil {
+		return session, status.Errorf(codes.Internal, "load session output: %v", err)
+	}
+	_, sessionUsage := usageFromSessionOutputJSON(output)
 	state := &interactiveSessionState{
 		sessionID:        session.ID,
 		version:          ver,
@@ -91,11 +80,7 @@ func (s *runtimeServer) reconcileStaleRunningSession(
 	}
 	if limitErr := state.sessionWallClockLimitError(); limitErr != nil {
 		errText := limitErrorMessage(limitErr)
-		if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-			ID:     session.ID,
-			Status: model.SessionStatusFailed,
-			Error:  &errText,
-		}); err != nil {
+		if err := appendSessionFailed(ctx, q, session.ID, errText); err != nil {
 			return session, status.Errorf(codes.Internal, "update session: %v", err)
 		}
 		session.Status = model.SessionStatusFailed

@@ -192,7 +192,17 @@ func (c *approvalCoordinator) escalateTimedOutApproval(ctx context.Context, q *s
 		}, row)
 		return err
 	}
-	if _, err := q.MarkApprovalEscalated(ctx, row.ID, "system:timeout"); err != nil {
+	if _, _, err := appendEventAuto(ctx, q, EventInput{
+		SessionID: row.SessionID,
+		Type:      EventApprovalEscalated,
+		CallID:    strPtrIf(row.CallID),
+		Actor:     ActorSystem,
+		Payload:   marshalSessionEventJSON(map[string]string{"approval_id": row.ID}),
+		Approval: &EventApprovalProjection{
+			EscalateID: row.ID,
+			EscalateBy: "system:timeout",
+		},
+	}); err != nil {
 		return err
 	}
 	c.cancelApprovalTimeout(row.ID)
@@ -219,7 +229,7 @@ func (c *approvalCoordinator) escalateTimedOutApproval(ctx context.Context, q *s
 	if len(args) == 0 {
 		args = json.RawMessage("{}")
 	}
-	_, err := q.InsertApproval(ctx, store.InsertApprovalParams{
+	childApproval := store.InsertApprovalParams{
 		ID:                    childID,
 		SessionID:             row.SessionID,
 		CallID:                row.CallID,
@@ -237,8 +247,26 @@ func (c *approvalCoordinator) escalateTimedOutApproval(ctx context.Context, q *s
 		OnModify:              row.OnModify,
 		ExpiresAt:             expiresAt,
 		PolicyRuntime:         runtime,
-	})
-	if err != nil {
+	}
+	callID := row.CallID
+	if _, _, err := appendEventAuto(ctx, q, EventInput{
+		SessionID: row.SessionID,
+		Type:      EventApprovalRequired,
+		CallID:    &callID,
+		Actor:     ActorPolicy,
+		Payload:   marshalSessionEventJSON(childApproval),
+		Approval: &EventApprovalProjection{
+			Open: &childApproval,
+			OpenInvocation: &store.InsertToolInvocationPendingParams{
+				CallID:    row.CallID,
+				SessionID: row.SessionID,
+				Tool:      row.Tool,
+				Version:   row.Version,
+				Args:      args,
+				Status:    model.ToolInvocationAwaitingApproval,
+			},
+		},
+	}); err != nil {
 		return err
 	}
 	c.registerParked(row.SessionID, childID)

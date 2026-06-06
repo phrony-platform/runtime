@@ -21,6 +21,7 @@ func TestToolInvocationRecorder_lifecyclePostgres(t *testing.T) {
 	_, agentVersionID, _ := insertToolE2EAgentFixture(t, db, namespace)
 	insertToolE2ESessionAwaitingTool(t, db, sessionID, agentVersionID, nil)
 	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM events WHERE session_id = $1`, sessionID)
 		_, _ = db.Exec(`DELETE FROM tool_invocations WHERE session_id = $1`, sessionID)
 		_, _ = db.Exec(`DELETE FROM sessions WHERE id = $1`, sessionID)
 		_, _ = db.Exec(`DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE namespace = $1)`, namespace)

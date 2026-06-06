@@ -26,6 +26,17 @@ func tokenUsageToProto(u provider.TokenUsage) *runtimev1.TokenUsage {
 	}
 }
 
+func tokenUsageFromProto(u *runtimev1.TokenUsage) provider.TokenUsage {
+	if u == nil {
+		return provider.TokenUsage{}
+	}
+	return provider.TokenUsage{
+		InputTokens:  int(u.GetInputTokens()),
+		OutputTokens: int(u.GetOutputTokens()),
+		Estimated:    u.GetEstimated(),
+	}
+}
+
 func interactiveSessionStats(turn int, turnUsage, sessionUsage provider.TokenUsage) *runtimev1.InteractiveSessionStats {
 	return &runtimev1.InteractiveSessionStats{
 		Turn:         int32(turn),

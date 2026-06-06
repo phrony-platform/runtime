@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 
@@ -43,12 +44,10 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 		return status.Errorf(codes.Internal, "load agent version: %v", err)
 	}
 
-	history, err := decodeHistory(session.History)
+	history, output, err := loadFoldedSession(ctx, q, sessionID)
 	if err != nil {
-		return status.Errorf(codes.Internal, "decode session history: %v", err)
+		return status.Errorf(codes.Internal, "load session fold: %v", err)
 	}
-	history = enrichHistoryFromSessionOutput(history, session.Output)
-	history = patchHistoryLastAssistantFromOutput(history, session.Output)
 	endedAt := sessionEndedAtForAttach(&session)
 
 	if session.Status == model.SessionStatusAwaitingInput {
@@ -58,7 +57,7 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 		}
 		limitState.history = history
 		limitState.turnCount = len(history) / 2
-		_, limitState.sessionUsage = usageFromSessionOutputJSON(session.Output)
+		_, limitState.sessionUsage = usageFromSessionOutputJSON(output)
 		if err := limitState.sessionLimitErrorBeforeTurn(); err != nil && isWallClockLimitError(err) {
 			return s.attachWallClockTerminal(ctx, q, stream, sessionID, session, limitErrorMessage(err))
 		}
@@ -79,7 +78,7 @@ func (s *runtimeServer) runSessionInteractiveAttachDriver(
 	if err := replaySessionEventLog(ctx, q, events, sessionID, pendingApprovalIDForReplay(ctx, q, sessionID)); err != nil {
 		return err
 	}
-	if err := s.replayAttachSessionState(ctx, q, events, sessionID, session, ver, history); err != nil {
+	if err := s.replayAttachSessionState(ctx, q, events, sessionID, session, ver, history, output); err != nil {
 		return err
 	}
 
@@ -99,9 +98,10 @@ func (s *runtimeServer) replayAttachSessionState(
 	session store.Session,
 	ver *executor.Version,
 	history []provider.Message,
+	output json.RawMessage,
 ) error {
 	turnCount := len(history) / 2
-	stopReason := stopReasonFromSessionOutput(session.Output)
+	stopReason := stopReasonFromSessionOutput(output)
 
 	switch session.Status {
 	case model.SessionStatusAwaitingApproval:
@@ -121,7 +121,7 @@ func (s *runtimeServer) replayAttachSessionState(
 		return sendAwaitingInput(events, stopReason, turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_tool")
 
 	case model.SessionStatusAwaitingInput:
-		lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(session.Output)
+		lastTurnUsage, sessionUsage := usageFromSessionOutputJSON(output)
 		state, err := newInteractiveSessionState(ctx, s, sessionID, session.AgentVersionID, ver, session.CreatedAt, events, q, rootSessionDepth)
 		if err != nil {
 			return status.Errorf(codes.Internal, "build tool dispatch: %v", err)

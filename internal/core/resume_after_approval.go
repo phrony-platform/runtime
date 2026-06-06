@@ -68,11 +68,10 @@ func (s *runtimeServer) resumeAfterApproval(
 		return err
 	}
 
-	history, err := decodeHistory(session.History)
+	history, err := loadProviderContext(ctx, q, session.ID)
 	if err != nil {
 		return err
 	}
-	history = enrichHistoryFromSessionOutput(history, session.Output)
 
 	inv, err := q.GetToolInvocation(ctx, row.CallID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -97,11 +96,10 @@ func (s *runtimeServer) resumeAfterApproval(
 			if err != nil {
 				return err
 			}
-			history, err = decodeHistory(session.History)
+			history, err = loadProviderContext(ctx, q, row.SessionID)
 			if err != nil {
 				return err
 			}
-			history = enrichHistoryFromSessionOutput(history, session.Output)
 			return s.completeApprovalTurnOnStream(ctx, q, gate, session, ver, history)
 		}
 		return s.recoverOutstandingToolInvocations(ctx, q, ver, session, history, []store.ToolInvocation{inv}, true)
@@ -114,18 +112,12 @@ func (s *runtimeServer) resumeAfterApproval(
 	history = appendRecoveredToolResults(history, []provider.ContentBlock{
 		provider.ToolResultBlock(row.CallID, denyMsg, true),
 	})
-	historyJSON, err := encodeHistory(history)
-	if err != nil {
-		return err
-	}
 	if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-		ID:      row.SessionID,
-		Status:  model.SessionStatusRunning,
-		History: historyJSON,
+		ID:     row.SessionID,
+		Status: model.SessionStatusRunning,
 	}); err != nil {
 		return err
 	}
-	session.History = historyJSON
 	if gate != nil && gate.events != nil {
 		return s.completeApprovalTurnOnStream(ctx, q, gate, session, ver, history)
 	}
@@ -227,19 +219,9 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 			st.turnCount++
 			st.sessionUsage.Add(turnUsage)
 
-			outputJSON, err := marshalSessionOutput(assistantText, stopReason, turnUsage, st.sessionUsage, st.history)
-			if err != nil {
-				return err
-			}
-			historyJSON, err := encodeHistory(st.history)
-			if err != nil {
-				return err
-			}
 			if _, err := q.UpdateSession(ctx, store.UpdateSessionParams{
-				ID:      st.sessionID,
-				Status:  model.SessionStatusAwaitingInput,
-				Output:  outputJSON,
-				History: historyJSON,
+				ID:     st.sessionID,
+				Status: model.SessionStatusAwaitingInput,
 			}); err != nil {
 				return err
 			}

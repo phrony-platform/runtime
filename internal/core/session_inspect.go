@@ -71,7 +71,6 @@ func (s *runtimeServer) buildSessionInspect(ctx context.Context, q *store.Querie
 		CreatedAt:      formatTime(session.CreatedAt),
 		UpdatedAt:      formatTime(session.UpdatedAt),
 		Input:          session.Input,
-		OutputRaw:      session.Output,
 		SessionStartedAtUnixMs: session.CreatedAt.UnixMilli(),
 	}
 	if meta.ParentSessionID != nil {
@@ -83,8 +82,11 @@ func (s *runtimeServer) buildSessionInspect(ctx context.Context, q *store.Querie
 	if session.Error != nil {
 		out.Error = *session.Error
 	}
-	if len(session.Output) > 0 {
-		out.Output = sessionOutputToProto(session.Output)
+	if output, err := loadSessionOutputJSON(ctx, q, sessionID); err != nil {
+		return nil, status.Errorf(codes.Internal, "load session output: %v", err)
+	} else if len(output) > 0 {
+		out.OutputRaw = output
+		out.Output = sessionOutputToProto(output)
 	}
 	if sessionEndedAtUnixMs := sessionEndedAtUnixMs(session.Status, session.UpdatedAt); sessionEndedAtUnixMs > 0 {
 		out.SessionEndedAtUnixMs = sessionEndedAtUnixMs
@@ -96,25 +98,20 @@ func (s *runtimeServer) buildSessionInspect(ctx context.Context, q *store.Querie
 	}
 	out.Agent = agentCtx
 
-	if raw, err := q.GetSessionEvidence(ctx, sessionID); err == nil {
-		if snap, parseErr := evidence.ParseSnapshot(raw); parseErr == nil {
-			out.DescriptiveMetadata = evidenceSnapshotToProto(snap)
-		}
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return nil, status.Errorf(codes.Internal, "get session evidence: %v", err)
-	}
-
-	history, err := decodeHistory(session.History)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "decode history: %v", err)
-	}
-	history = enrichHistoryFromSessionOutput(history, session.Output)
-	out.History = historyToProto(history)
-
-	events, err := q.ListSessionEventsBySessionID(ctx, sessionID)
+	events, err := q.ListEventsBySession(ctx, sessionID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list session events: %v", err)
 	}
+	for _, ev := range events {
+		if ev.Type == EventEvidenceRecorded {
+			if snap, parseErr := evidence.ParseSnapshot(ev.Payload); parseErr == nil {
+				out.DescriptiveMetadata = evidenceSnapshotToProto(snap)
+			}
+			break
+		}
+	}
+	history := buildProviderContext(events)
+	out.History = historyToProto(history)
 	out.Events = sessionEventsToProto(events)
 
 	invocations, err := q.ListToolInvocationsBySessionID(ctx, sessionID)
@@ -243,14 +240,14 @@ func sessionOutputToProto(output json.RawMessage) *runtimev1.SessionOutputInspec
 	return out
 }
 
-func sessionEventsToProto(events []store.SessionEvent) []*runtimev1.SessionEventEntry {
+func sessionEventsToProto(events []store.Event) []*runtimev1.SessionEventEntry {
 	out := make([]*runtimev1.SessionEventEntry, 0, len(events))
 	for _, ev := range events {
 		out = append(out, &runtimev1.SessionEventEntry{
 			Id:        ev.ID,
 			Type:      ev.Type,
 			Payload:   ev.Payload,
-			CreatedAt: formatTime(ev.CreatedAt),
+			CreatedAt: formatTime(ev.TS),
 		})
 	}
 	return out

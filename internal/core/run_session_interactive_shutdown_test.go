@@ -12,25 +12,24 @@ import (
 	"github.com/phrony-platform/runtime/internal/store"
 )
 
-func completedSessionRows(sessionID string, output []byte, now time.Time) *sqlmock.Rows {
+func completedSessionRows(sessionID string, _ []byte, now time.Time) *sqlmock.Rows {
 	return sqlmock.NewRows([]string{
-		"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-	}).AddRow(sessionID, "version-uuid", []byte("{}"), model.SessionStatusCompleted, output, nil, []byte(`[]`), now, now)
+		"id", "agent_version_id", "input", "status", "error", "root_session_id", "event_seq", "created_at", "updated_at",
+	}).AddRow(sessionID, "version-uuid", []byte("{}"), model.SessionStatusCompleted, nil, sessionID, 1, now, now)
 }
 
 func cancelledSessionRows(sessionID string, now time.Time) *sqlmock.Rows {
 	return sqlmock.NewRows([]string{
-		"id", "agent_version_id", "input", "status", "output", "error", "history", "created_at", "updated_at",
-	}).AddRow(sessionID, "version-uuid", []byte("{}"), model.SessionStatusCancelled, nil, nil, []byte(`[]`), now, now)
+		"id", "agent_version_id", "input", "status", "error", "root_session_id", "event_seq", "created_at", "updated_at",
+	}).AddRow(sessionID, "version-uuid", []byte("{}"), model.SessionStatusCancelled, nil, sessionID, 1, now, now)
 }
 
 func expectCompleteSessionRPC(mock sqlmock.Sqlmock, sessionID string) {
+	expectLifecycleEventTx(mock, sessionID)
 	mock.ExpectQuery(`UPDATE sessions`).
 		WithArgs(sessionID).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(sessionID))
-	mock.ExpectQuery(`INSERT INTO session_events`).
-		WithArgs(sessionID, sqlmock.AnyArg(), sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
+	mock.ExpectCommit()
 	mock.ExpectExec(`DELETE FROM session_secrets`).
 		WithArgs(sessionID).
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -43,6 +42,8 @@ func TestRuntime_completedExternally_afterDriverContextCancelled(t *testing.T) {
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
 		WillReturnRows(completedSessionRows("sess-1", output, now))
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").
+		WillReturnRows(sessionEventLogRows(now))
 
 	stream := &mockInteractiveStream{ctx: context.Background()}
 	srv := &runtimeServer{db: db}
@@ -71,6 +72,8 @@ func TestRuntime_runSessionInteractiveLoop_emitsCompletedOnDriverCancel(t *testi
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
 		WillReturnRows(completedSessionRows("sess-1", output, now))
+	mock.ExpectQuery(`FROM events`).WithArgs("sess-1").
+		WillReturnRows(sessionEventLogRows(now))
 	mock.ExpectQuery(`FROM sessions`).
 		WithArgs("sess-1").
 		WillReturnRows(completedSessionRows("sess-1", output, now))
@@ -166,12 +169,13 @@ func TestRuntime_CompleteSession_emitsCompletedToAttachedClient(t *testing.T) {
 	output := []byte(`{"message":"ok","stop_reason":"end_turn"}`)
 
 	expectCompleteSessionRPC(mock, sessionID)
-	mock.ExpectQuery(`FROM sessions`).
-		WithArgs(sessionID).
-		WillReturnRows(completedSessionRows(sessionID, output, now))
-	mock.ExpectQuery(`FROM sessions`).
-		WithArgs(sessionID).
-		WillReturnRows(completedSessionRows(sessionID, output, now))
+	for i := 0; i < 4; i++ {
+		mock.ExpectQuery(`FROM sessions`).
+			WithArgs(sessionID).
+			WillReturnRows(completedSessionRows(sessionID, output, now))
+	}
+	mock.ExpectQuery(`FROM events`).WithArgs(sessionID).
+		WillReturnRows(sessionEventLogRows(now))
 
 	driverCtx, driverCancel := context.WithCancel(context.Background())
 	defer driverCancel()
