@@ -58,19 +58,29 @@ func runAgentSession(cmd *cobra.Command, runtimeAddr *string, agentRefArg, versi
 }
 
 func runAttachedSession(cmd *cobra.Command, runtimeAddr *string, ref *runtimev1.AgentRef, input []byte, envFiles []string) error {
-	var sessionID string
-	if err := withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
+	return runAttachedSessionWithStart(cmd, runtimeAddr, "run session", func(rt runtimev1.RuntimeClient) (*runtimev1.RunSessionRequest, error) {
 		resolvedSecrets, err := prepareRunSecrets(cmd.Context(), rt, ref, envFiles)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		resp, err := rt.RunSession(cmd.Context(), &runtimev1.RunSessionRequest{
+		return &runtimev1.RunSessionRequest{
 			AgentRef:        ref,
 			Input:           input,
 			ResolvedSecrets: resolvedSecrets,
-		})
+		}, nil
+	})
+}
+
+func runAttachedSessionWithStart(cmd *cobra.Command, runtimeAddr *string, rpcOp string, buildReq func(rt runtimev1.RuntimeClient) (*runtimev1.RunSessionRequest, error)) error {
+	var sessionID string
+	if err := withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
+		req, err := buildReq(rt)
 		if err != nil {
-			return clierr.WrapRPC("run session", err)
+			return err
+		}
+		resp, err := rt.RunSession(cmd.Context(), req)
+		if err != nil {
+			return clierr.WrapRPC(rpcOp, err)
 		}
 		sessionID = resp.GetSessionId()
 		return nil

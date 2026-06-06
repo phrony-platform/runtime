@@ -28,9 +28,55 @@ func TestRootCommand_versionFlag(t *testing.T) {
 	}
 }
 
-func TestValidateCommand_requiresManifestArg(t *testing.T) {
+func TestRootCommand_flatAgentCommandsRemoved(t *testing.T) {
+	removed := []string{
+		"validate",
+		"publish",
+		"versions",
+		"deploy",
+		"active",
+		"history",
+		"diff",
+		"inspect",
+		"deprecate",
+		"retire",
+	}
+	for _, cmd := range removed {
+		t.Run(cmd, func(t *testing.T) {
+			root := NewRootCommand()
+			root.SetOut(&bytes.Buffer{})
+			root.SetErr(&bytes.Buffer{})
+			root.SetArgs([]string{cmd})
+
+			err := root.Execute()
+			if err == nil {
+				t.Fatalf("expected error for removed flat command %q", cmd)
+			}
+			if !strings.Contains(err.Error(), "unknown command") {
+				t.Fatalf("error = %v, want unknown command", err)
+			}
+		})
+	}
+}
+
+func TestRootCommand_flatBundleCommandRemoved(t *testing.T) {
 	root := NewRootCommand()
-	root.SetArgs([]string{"validate"})
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundle"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error for removed bundle group, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("error = %v, want unknown command", err)
+	}
+}
+
+func TestAgentValidateCommand_requiresManifestArg(t *testing.T) {
+	root := NewRootCommand()
+	root.SetArgs([]string{"agents", "validate"})
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 
@@ -43,9 +89,9 @@ func TestValidateCommand_requiresManifestArg(t *testing.T) {
 	}
 }
 
-func TestPublishCommand_requiresManifestArg(t *testing.T) {
+func TestAgentPublishCommand_requiresManifestArg(t *testing.T) {
 	root := NewRootCommand()
-	root.SetArgs([]string{"publish"})
+	root.SetArgs([]string{"agents", "publish"})
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 
@@ -60,7 +106,7 @@ func TestPublishCommand_requiresManifestArg(t *testing.T) {
 
 func TestBundleValidateCommand_requiresBundleArg(t *testing.T) {
 	root := NewRootCommand()
-	root.SetArgs([]string{"bundle", "validate"})
+	root.SetArgs([]string{"bundles", "validate"})
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 
@@ -73,9 +119,9 @@ func TestBundleValidateCommand_requiresBundleArg(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_requiresVersionedAgentRef(t *testing.T) {
+func TestAgentDeployCommand_requiresVersionedAgentRef(t *testing.T) {
 	root := NewRootCommand()
-	root.SetArgs([]string{"deploy", "demo/echo-agent"})
+	root.SetArgs([]string{"agents", "deploy", "demo/echo-agent"})
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 

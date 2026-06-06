@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -153,16 +154,73 @@ func WalkBundle(bundleRoot string, bundle *BundleManifest) (*ClosurePackage, err
 	return pkg, nil
 }
 
+// ExternalAgentResolver resolves manifest content hashes for pinned external agents.
+type ExternalAgentResolver interface {
+	ResolveExternal(ctx context.Context, namespace, name, version string) (contentHash string, err error)
+}
+
+// EnrichExternalMembers fills content_hash on external closure members with pinned
+// @version labels using resolver, then rebuilds the lockfile and bundle version hash.
+func EnrichExternalMembers(ctx context.Context, closure *ClosurePackage, resolver ExternalAgentResolver) error {
+	if closure == nil {
+		return nil
+	}
+	hasExternal := false
+	for _, m := range closure.Members {
+		if m.Origin == ClosureMemberOriginExternal {
+			hasExternal = true
+			break
+		}
+	}
+	if !hasExternal {
+		return nil
+	}
+	if resolver == nil {
+		return fmt.Errorf("closure has external members but no ExternalAgentResolver was provided")
+	}
+	for i := range closure.Members {
+		m := &closure.Members[i]
+		if m.Origin != ClosureMemberOriginExternal {
+			continue
+		}
+		version := strings.TrimSpace(m.Version)
+		if version == "" {
+			return fmt.Errorf("external member %q must pin @version to resolve content_hash", m.ChildName)
+		}
+		namespace := strings.TrimSpace(m.Namespace)
+		name := strings.TrimSpace(m.Name)
+		hash, err := resolver.ResolveExternal(ctx, namespace, name, version)
+		if err != nil {
+			return fmt.Errorf("resolve external member %q (%s): %w",
+				m.ChildName, LogicalID(namespace, name)+"@"+version, err)
+		}
+		hash = strings.TrimSpace(hash)
+		if hash == "" {
+			return fmt.Errorf("external member %q (%s): runtime returned empty content_hash",
+				m.ChildName, LogicalID(namespace, name)+"@"+version)
+		}
+		m.ContentHash = hash
+	}
+	closure.Lockfile = buildLockfile(closure)
+	version, err := hashLockfileBody(closure.Lockfile.RootChildName, closure.Lockfile.Members)
+	if err != nil {
+		return err
+	}
+	closure.Version = version
+	closure.Lockfile.Version = version
+	return nil
+}
+
 type closureWalkState struct {
-	bundleRoot     string
-	opts           *ValidateOptions
-	members        []ClosureMember
-	rootChildName  string
-	visitedChild   map[string]struct{}
-	visitedRef     map[string]struct{}
-	childNames     map[string]string // child_name -> first ref for duplicate detection
-	onStack        map[string]struct{}
-	stack          []string
+	bundleRoot    string
+	opts          *ValidateOptions
+	members       []ClosureMember
+	rootChildName string
+	visitedChild  map[string]struct{}
+	visitedRef    map[string]struct{}
+	childNames    map[string]string // child_name -> first ref for duplicate detection
+	onStack       map[string]struct{}
+	stack         []string
 }
 
 func (s *closureWalkState) walkLocalRef(ref string, isRoot bool) error {
@@ -312,6 +370,7 @@ func buildLockfile(pkg *ClosurePackage) Lockfile {
 			entry.Name = m.Name
 			entry.Version = m.Version
 			entry.Ref = m.Ref
+			entry.ContentHash = m.ContentHash
 		}
 		members = append(members, entry)
 	}

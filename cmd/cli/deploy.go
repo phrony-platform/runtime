@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newDeployCommand(runtimeAddr *string) *cobra.Command {
+func newAgentDeployCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "deploy AGENT@VERSION",
 		Short: "Activate a published agent version",

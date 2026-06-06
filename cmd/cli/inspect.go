@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newInspectCommand(runtimeAddr *string) *cobra.Command {
+func newAgentInspectCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "inspect AGENT@VERSION",
 		Short: "Show metadata for a published agent version",

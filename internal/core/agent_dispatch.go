@@ -393,8 +393,7 @@ func (s *runtimeServer) createChildSession(
 }
 
 // inheritSessionSecrets resolves the secrets the child agent declares by copying
-// the matching plaintext values from the parent session's encrypted store. The
-// root run must therefore supply every secret name used across the agent tree.
+// matching plaintext values from the bundle root session's encrypted secret pool.
 func (s *runtimeServer) inheritSessionSecrets(
 	ctx context.Context,
 	q *store.Queries,
@@ -404,12 +403,16 @@ func (s *runtimeServer) inheritSessionSecrets(
 	if agent == nil || len(agent.Secrets) == 0 {
 		return nil, nil
 	}
+	poolSessionID, err := resolveBundleRootSessionID(ctx, q, parentSessionID)
+	if err != nil {
+		return nil, err
+	}
 	resolved := make(map[string][]byte, len(agent.Secrets))
 	for name := range agent.Secrets {
 		if s.secretsEnc == nil {
 			return nil, &missingSecretError{name: name}
 		}
-		val, err := s.secretsEnc.DecryptForSession(ctx, q, parentSessionID, name)
+		val, err := s.secretsEnc.DecryptForSession(ctx, q, poolSessionID, name)
 		if err != nil {
 			return nil, &missingSecretError{name: name}
 		}
@@ -487,7 +490,7 @@ type missingSecretError struct {
 
 func (e *missingSecretError) Error() string {
 	return fmt.Sprintf(
-		"required secret %q is not available in the parent session; the root run must supply every secret used across the agent tree",
+		"required secret %q is not available in the bundle run secret pool; supply every secret required by the deployed bundle closure",
 		e.name,
 	)
 }

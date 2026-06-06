@@ -61,19 +61,24 @@ func TestCompareLockfiles_detectsDrift(t *testing.T) {
 	}
 }
 
-func TestCompareLockfiles_rejectsRecomputedExternalContentHash(t *testing.T) {
-	t.Parallel()
-	committed := Lockfile{
+func externalLockfileWithHash(contentHash string) Lockfile {
+	return Lockfile{
 		RootChildName: "orchestrator",
 		Members: []LockfileMember{{
-			ChildName: "refunds",
-			Origin:    ClosureMemberOriginExternal,
-			Ref:       "billing.refunds@1.4.0",
-			Namespace: "billing",
-			Name:      "refunds",
-			Version:   "1.4.0",
+			ChildName:   "refunds",
+			Origin:      ClosureMemberOriginExternal,
+			Ref:         "billing.refunds@1.4.0",
+			Namespace:   "billing",
+			Name:        "refunds",
+			Version:     "1.4.0",
+			ContentHash: contentHash,
 		}},
 	}
+}
+
+func TestCompareLockfiles_externalContentHashDrift(t *testing.T) {
+	t.Parallel()
+	committed := externalLockfileWithHash("hash-a")
 	version, err := LockfileVersion(committed.RootChildName, committed.Members)
 	if err != nil {
 		t.Fatalf("LockfileVersion: %v", err)
@@ -82,40 +87,52 @@ func TestCompareLockfiles_rejectsRecomputedExternalContentHash(t *testing.T) {
 
 	recomputed := committed
 	recomputed.Members = append([]LockfileMember(nil), committed.Members...)
-	recomputed.Members[0].ContentHash = "should-not-be-here"
+	recomputed.Members[0].ContentHash = "hash-b"
 	if err := CompareLockfiles(committed, recomputed); err == nil {
-		t.Fatal("CompareLockfiles() error = nil, want recomputed external content_hash rejection")
+		t.Fatal("CompareLockfiles() error = nil, want external content_hash drift")
 	}
-
 	if err := CompareLockfiles(committed, committed); err != nil {
 		t.Fatalf("CompareLockfiles identical: %v", err)
 	}
 }
 
-func TestCompareLockfiles_rejectsCommittedExternalContentHash(t *testing.T) {
+func TestCompareLockfiles_staleExternalLockMissingContentHash(t *testing.T) {
 	t.Parallel()
-	clean := Lockfile{
-		RootChildName: "orchestrator",
-		Members: []LockfileMember{{
-			ChildName: "refunds",
-			Origin:    ClosureMemberOriginExternal,
-			Ref:       "billing.refunds@1.4.0",
-			Namespace: "billing",
-			Name:      "refunds",
-			Version:   "1.4.0",
-		}},
-	}
-	version, err := LockfileVersion(clean.RootChildName, clean.Members)
+	stale := externalLockfileWithHash("")
+	version, err := LockfileVersion(stale.RootChildName, stale.Members)
 	if err != nil {
 		t.Fatalf("LockfileVersion: %v", err)
 	}
-	clean.Version = version
+	stale.Version = version
 
-	stale := clean
-	stale.Members = append([]LockfileMember(nil), clean.Members...)
-	stale.Members[0].ContentHash = "publish-time-enrichment"
-	if err := CompareLockfiles(stale, clean); err == nil {
-		t.Fatal("CompareLockfiles() error = nil, want rejection of committed external content_hash")
+	enriched := externalLockfileWithHash("resolved-hash")
+	enriched.Version, err = LockfileVersion(enriched.RootChildName, enriched.Members)
+	if err != nil {
+		t.Fatalf("LockfileVersion enriched: %v", err)
+	}
+
+	if err := CompareLockfiles(stale, enriched); err == nil {
+		t.Fatal("CompareLockfiles() error = nil, want stale external lock error")
+	} else if !strings.Contains(err.Error(), "missing content_hash") {
+		t.Fatalf("error = %v, want missing content_hash hint", err)
+	} else if !strings.Contains(err.Error(), "--runtime-addr") {
+		t.Fatalf("error = %v, want --runtime-addr hint", err)
+	}
+}
+
+func TestCompareLockfiles_externalMatchingHashPasses(t *testing.T) {
+	t.Parallel()
+	committed := externalLockfileWithHash("same-hash")
+	version, err := LockfileVersion(committed.RootChildName, committed.Members)
+	if err != nil {
+		t.Fatalf("LockfileVersion: %v", err)
+	}
+	committed.Version = version
+
+	recomputed := committed
+	recomputed.Members = append([]LockfileMember(nil), committed.Members...)
+	if err := CompareLockfiles(committed, recomputed); err != nil {
+		t.Fatalf("CompareLockfiles matching external hash: %v", err)
 	}
 }
 

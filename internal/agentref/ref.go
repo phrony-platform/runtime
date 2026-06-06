@@ -44,6 +44,11 @@ func FormatVersioned(namespace, name, version string) string {
 	return base + "@" + version
 }
 
+// IsLockHashVersion reports whether label is a bundle lock hash reference (sha256:…).
+func IsLockHashVersion(label string) bool {
+	return strings.HasPrefix(label, "sha256:")
+}
+
 // Format returns the canonical string form of an agent reference.
 func Format(namespace, name string) string {
 	if namespace == "" {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
@@ -18,17 +19,17 @@ import (
 )
 
 type bundleMemberPlan struct {
-	pkg           *runtimev1.BundleMemberPackage
-	childName     string
-	origin        string
-	authoringRef  string
-	isRoot        bool
-	contentHash   string
-	versionID     string
-	namespace     string
-	name          string
-	version       string
-	agent         *manifest.Agent
+	pkg            *runtimev1.BundleMemberPackage
+	childName      string
+	origin         string
+	authoringRef   string
+	isRoot         bool
+	contentHash    string
+	versionID      string
+	namespace      string
+	name           string
+	version        string
+	agent          *manifest.Agent
 	storedManifest json.RawMessage
 }
 
@@ -44,7 +45,7 @@ func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.Publis
 
 	committedLockRaw := bytes.TrimSpace(req.GetCommittedLock())
 	if len(committedLockRaw) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "committed_lock is required; run phrony bundle lock")
+		return nil, status.Error(codes.InvalidArgument, "committed_lock is required; run phrony bundles lock")
 	}
 	committedLock, err := manifest.ParseLockfileJSON(committedLockRaw)
 	if err != nil {
@@ -82,6 +83,9 @@ func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.Publis
 	if err := manifest.CompareLockfiles(*committedLock, verificationLock); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "committed_lock drift: %v", err)
 	}
+	if _, err := manifest.UnionAgentSecrets(bundleMemberPlansToSecretMembers(plans)); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
 
 	lockHash := committedLock.Version
 	lockJSON := json.RawMessage(committedLockRaw)
@@ -113,7 +117,13 @@ func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.Publis
 		return nil, status.Errorf(codes.Internal, "persist bundle: %v", err)
 	}
 
+	bundleRef := agentref.Format(bundle.Metadata.Namespace, bundle.Metadata.Name)
+	bundleSemver := strings.TrimSpace(bundle.Metadata.Version)
+
 	if err := rejectImmutableBundleRedeploy(ctx, txQ, bundleID, lockHash, lockJSON); err != nil {
+		return nil, err
+	}
+	if err := rejectImmutableBundleVersionRedeploy(ctx, txQ, bundleID, bundleRef, bundleSemver, lockHash); err != nil {
 		return nil, err
 	}
 
@@ -123,6 +133,7 @@ func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.Publis
 	if _, err := txQ.InsertBundleVersion(ctx, store.InsertBundleVersionParams{
 		ID:                  bundleVersionID,
 		BundleID:            bundleID,
+		Version:             bundleSemver,
 		LockHash:            lockHash,
 		Lock:                lockJSON,
 		RootMemberVersionID: "",
@@ -193,6 +204,7 @@ func (s *runtimeServer) PublishBundle(ctx context.Context, req *runtimev1.Publis
 		Namespace:       bundle.Metadata.Namespace,
 		Name:            bundle.Metadata.Name,
 		Lock:            lockJSON,
+		Version:         bundleSemver,
 	}, nil
 }
 
@@ -354,6 +366,7 @@ func buildVerificationLockFromPlans(rootChildName string, plans []bundleMemberPl
 			entry.Namespace = plan.namespace
 			entry.Name = plan.name
 			entry.Version = plan.version
+			entry.ContentHash = plan.contentHash
 		}
 		members = append(members, entry)
 	}
@@ -404,9 +417,45 @@ func rejectImmutableBundleRedeploy(ctx context.Context, q *store.Queries, bundle
 	if err != nil {
 		return status.Errorf(codes.Internal, "lookup bundle version: %v", err)
 	}
-	msg := fmt.Sprintf("bundle version %q is already published and cannot be changed", lockHash)
+	msg := fmt.Sprintf("bundle lock hash %q is already published and cannot be changed", lockHash)
+	if existing.Version != "" {
+		msg = fmt.Sprintf("bundle lock hash %q is already published as version %q and cannot be changed", lockHash, existing.Version)
+	}
 	if !bytes.Equal(bytes.TrimSpace(existing.Lock), bytes.TrimSpace(lockJSON)) {
 		msg += " (lockfile content differs)"
+	}
+	return status.Error(codes.AlreadyExists, msg)
+}
+
+func bundleMemberPlansToSecretMembers(plans []bundleMemberPlan) []manifest.SecretMember {
+	out := make([]manifest.SecretMember, 0, len(plans))
+	for _, plan := range plans {
+		if plan.agent == nil {
+			continue
+		}
+		out = append(out, manifest.SecretMember{
+			ChildName: plan.childName,
+			Agent:     plan.agent,
+		})
+	}
+	return out
+}
+
+func rejectImmutableBundleVersionRedeploy(ctx context.Context, q *store.Queries, bundleID, bundleRef, semver, lockHash string) error {
+	existing, err := q.BundleVersionBySemver(ctx, bundleID, semver)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return status.Errorf(codes.Internal, "lookup bundle version: %v", err)
+	}
+	msg := fmt.Sprintf(
+		"bundle %s version %q is already published and cannot be changed; increment metadata.version to publish configuration updates",
+		bundleRef,
+		semver,
+	)
+	if existing.LockHash != lockHash {
+		msg += fmt.Sprintf(" (published lock hash %s, manifest lock hash %s)", existing.LockHash, lockHash)
 	}
 	return status.Error(codes.AlreadyExists, msg)
 }

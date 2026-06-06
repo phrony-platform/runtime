@@ -94,6 +94,15 @@ func TestParseRef_emptyVersion(t *testing.T) {
 	}
 }
 
+func TestIsLockHashVersion(t *testing.T) {
+	if !IsLockHashVersion("sha256:abc") {
+		t.Fatal("expected lock hash version")
+	}
+	if IsLockHashVersion("1.0.0") {
+		t.Fatal("semver should not be treated as lock hash")
+	}
+}
+
 func TestFormatVersioned(t *testing.T) {
 	if got := FormatVersioned("demo", "echo", "1.0.0"); got != "demo/echo@1.0.0" {
 		t.Fatalf("FormatVersioned = %q, want demo/echo@1.0.0", got)

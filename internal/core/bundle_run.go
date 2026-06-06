@@ -63,9 +63,13 @@ func resolveBundleSessionTarget(ctx context.Context, db store.DBTX, ref *runtime
 	}
 
 	if active, activeErr := q.ActiveBundleVersion(ctx, ref.GetNamespace(), ref.GetName()); activeErr == nil {
-		if active.LockHash != ref.GetVersion() {
+		if lookup.ID != active.BundleVersionID {
+			activeLabel := active.Version
+			if activeLabel == "" {
+				activeLabel = active.LockHash
+			}
 			return bundleSessionTarget{}, status.Errorf(codes.FailedPrecondition,
-				"version %q is not the active bundle deployment (active: %q)", ref.GetVersion(), active.LockHash)
+				"version %q is not the active bundle deployment (active: %q)", ref.GetVersion(), activeLabel)
 		}
 	} else if !errors.Is(activeErr, sql.ErrNoRows) {
 		return bundleSessionTarget{}, status.Errorf(codes.Internal, "resolve active bundle deployment: %v", activeErr)
@@ -74,6 +78,6 @@ func resolveBundleSessionTarget(ctx context.Context, db store.DBTX, ref *runtime
 	return bundleSessionTarget{
 		agentVersionID:  lookup.RootMemberVersionID,
 		bundleVersionID: lookup.ID,
-		lockHash:        ref.GetVersion(),
+		lockHash:        lookup.LockHash,
 	}, nil
 }

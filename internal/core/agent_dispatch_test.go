@@ -269,12 +269,20 @@ func TestInheritSessionSecrets_copiesByName(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	srv := &runtimeServer{db: db, secretsEnc: enc}
 
-	sealed, err := enc.Encrypt("parent-sess", "openai", []byte("sk-secret"))
+	sealed, err := enc.Encrypt("root-sess", "openai", []byte("sk-secret"))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
+	mock.ExpectQuery(`SELECT parent_session_id, bundle_version_id, depth`).
+		WithArgs("parent-sess").
+		WillReturnRows(sqlmock.NewRows([]string{"parent_session_id", "bundle_version_id", "depth"}).
+			AddRow("root-sess", nil, 1))
+	mock.ExpectQuery(`SELECT parent_session_id, bundle_version_id, depth`).
+		WithArgs("root-sess").
+		WillReturnRows(sqlmock.NewRows([]string{"parent_session_id", "bundle_version_id", "depth"}).
+			AddRow(nil, "bundle-ver", 0))
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
-		WithArgs("parent-sess", "openai").
+		WithArgs("root-sess", "openai").
 		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
 			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
 
@@ -296,6 +304,10 @@ func TestInheritSessionSecrets_missingParentSecret(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	srv := &runtimeServer{db: db, secretsEnc: enc}
 
+	mock.ExpectQuery(`SELECT parent_session_id, bundle_version_id, depth`).
+		WithArgs("parent-sess").
+		WillReturnRows(sqlmock.NewRows([]string{"parent_session_id", "bundle_version_id", "depth"}).
+			AddRow(nil, "bundle-ver", 0))
 	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
 		WithArgs("parent-sess", "openai").
 		WillReturnError(context.DeadlineExceeded)
@@ -373,6 +385,51 @@ func TestRunChildSessionToCompletion_drivesChildToCompleted(t *testing.T) {
 	if srv.sessionIsActive("child-sess") {
 		t.Fatal("child session should be unregistered after completion")
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestInheritSessionSecrets_rootPoolWithMiddleHop(t *testing.T) {
+	enc := mustTestEncryptor(t)
+	db, mock := testSQLxDB(t)
+	srv := &runtimeServer{db: db, secretsEnc: enc}
+
+	sealedOpenAI, err := enc.Encrypt("root-sess", "openai", []byte("sk-openai"))
+	if err != nil {
+		t.Fatalf("Encrypt openai: %v", err)
+	}
+	sealedAnthropic, err := enc.Encrypt("root-sess", "anthropic", []byte("sk-anthropic"))
+	if err != nil {
+		t.Fatalf("Encrypt anthropic: %v", err)
+	}
+
+	mock.ExpectQuery(`SELECT parent_session_id, bundle_version_id, depth`).
+		WithArgs("leaf-parent").
+		WillReturnRows(sqlmock.NewRows([]string{"parent_session_id", "bundle_version_id", "depth"}).
+			AddRow("middle-sess", nil, 2))
+	mock.ExpectQuery(`SELECT parent_session_id, bundle_version_id, depth`).
+		WithArgs("middle-sess").
+		WillReturnRows(sqlmock.NewRows([]string{"parent_session_id", "bundle_version_id", "depth"}).
+			AddRow("root-sess", "bundle-ver", 1))
+	mock.ExpectQuery(`SELECT parent_session_id, bundle_version_id, depth`).
+		WithArgs("root-sess").
+		WillReturnRows(sqlmock.NewRows([]string{"parent_session_id", "bundle_version_id", "depth"}).
+			AddRow(nil, "bundle-ver", 0))
+	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
+		WithArgs("root-sess", "anthropic").
+		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
+			AddRow(sealedAnthropic.KeyVersion, sealedAnthropic.Nonce, sealedAnthropic.Ciphertext))
+
+	agent := &manifest.Agent{Secrets: map[string]manifest.SecretDefinition{"anthropic": {}}}
+	resolved, err := srv.inheritSessionSecrets(context.Background(), store.New(db), "leaf-parent", agent)
+	if err != nil {
+		t.Fatalf("inheritSessionSecrets: %v", err)
+	}
+	if string(resolved["anthropic"]) != "sk-anthropic" {
+		t.Fatalf("anthropic = %q, want sk-anthropic", resolved["anthropic"])
+	}
+	_ = sealedOpenAI
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}

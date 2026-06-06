@@ -18,6 +18,10 @@ service Runtime {
   rpc Rollback(RollbackRequest) returns (RollbackResponse);
   rpc GetActiveVersion(GetActiveVersionRequest) returns (GetActiveVersionResponse);
   rpc GetActiveBundle(GetActiveBundleRequest) returns (GetActiveBundleResponse);
+  rpc GetBundleSecretRequirements(GetBundleSecretRequirementsRequest) returns (GetBundleSecretRequirementsResponse);
+  rpc ListBundles(ListBundlesRequest) returns (ListBundlesResponse);
+  rpc ListBundleVersions(ListBundleVersionsRequest) returns (ListBundleVersionsResponse);
+  rpc ListBundleDeployments(ListBundleDeploymentsRequest) returns (ListBundleDeploymentsResponse);
   rpc ListDeployments(ListDeploymentsRequest) returns (ListDeploymentsResponse);
   rpc GetAgentVersion(GetAgentVersionRequest) returns (GetAgentVersionResponse);
   rpc RetireAgentVersion(RetireAgentVersionRequest) returns (RetireAgentVersionResponse);
@@ -52,7 +56,7 @@ message AgentRef {
   string version = 3;
 }
 
-// BundleRef identifies a published bundle. version is the lockfile hash (sha256:…).
+// BundleRef identifies a published bundle. version is semver (for example 1.2.0) or lock hash (sha256:…).
 // For run/deploy, an empty version resolves the active bundle deployment.
 message BundleRef {
   string namespace = 1;
@@ -295,6 +299,8 @@ message PublishBundleResponse {
   string name = 5;
   // Canonical lockfile JSON emitted at publish.
   bytes lock = 6;
+  // Semver release label from bundle manifest metadata.version.
+  string version = 7;
 }
 
 message DeployRequest {
@@ -321,11 +327,13 @@ message DeployBundleRequest {
 message DeployBundleResponse {
   string namespace = 1;
   string name = 2;
-  // Lockfile hash of the deployed bundle version.
+  // Semver of the deployed bundle version.
   string version = 3;
-  // Lock hash that was active before this deployment; empty on first deploy.
+  // Semver that was active before this deployment; empty on first deploy.
   string previous_version = 4;
   string deployed_at = 5;  // RFC3339
+  string lock_hash = 6;
+  string previous_lock_hash = 7;
 }
 
 message RollbackRequest {
@@ -355,10 +363,66 @@ message GetActiveBundleRequest {
 }
 
 message GetActiveBundleResponse {
-  // Lockfile hash of the active bundle deployment.
+  // Semver of the active bundle deployment.
   string version = 1;
   string deployed_at = 2;  // RFC3339
   string actor = 3;
+  string lock_hash = 4;
+}
+
+message GetBundleSecretRequirementsRequest {
+  BundleRef bundle_ref = 1;
+}
+
+message GetBundleSecretRequirementsResponse {
+  // Union across frozen closure members; keyed by secret name.
+  map<string, SecretRequirement> secrets = 1;
+}
+
+message SecretRequirement {
+  string from_env = 1;
+  repeated string declared_by = 2;
+}
+
+message ListBundlesRequest {
+  // When set, only bundles in this namespace are returned.
+  string namespace = 1;
+}
+
+message BundleSummary {
+  string id = 1;
+  string namespace = 2;
+  string name = 3;
+  string owner = 4;
+}
+
+message ListBundlesResponse {
+  repeated BundleSummary bundles = 1;
+}
+
+message ListBundleVersionsRequest {
+  BundleRef bundle_ref = 1;
+}
+
+message BundleVersionSummary {
+  string id = 1;
+  // Semver release label.
+  string version = 2;
+  // RFC3339 (bundle_versions.created_at).
+  string published_at = 3;
+  string lock_hash = 4;
+}
+
+message ListBundleVersionsResponse {
+  repeated BundleVersionSummary versions = 1;
+}
+
+message ListBundleDeploymentsRequest {
+  BundleRef bundle_ref = 1;
+}
+
+message ListBundleDeploymentsResponse {
+  repeated DeploymentEntry deployments = 1;
 }
 
 message ListDeploymentsRequest {
@@ -370,6 +434,8 @@ message DeploymentEntry {
   string action = 2;
   string actor = 3;
   string created_at = 4;  // RFC3339
+  // Lock hash for bundle deployment history; empty for agent deployments.
+  string lock_hash = 5;
 }
 
 message ListDeploymentsResponse {

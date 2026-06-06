@@ -342,6 +342,30 @@ func TestValidate_compiledAgentBindingShape(t *testing.T) {
 	}
 }
 
+func TestValidateBundle_requiresSemver(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	bundle := &BundleManifest{
+		APIVersion: APIVersionV1,
+		Kind:       KindBundle,
+		Metadata: BundleMetadata{
+			Name:      "support",
+			Namespace: "support",
+		},
+		Spec: BundleManifestSpec{
+			Root: "./orchestrator.yaml",
+		},
+	}
+	err := ValidateBundle(bundle, root)
+	if err == nil {
+		t.Fatal("ValidateBundle() = nil, want missing version error")
+	}
+	valErrs, ok := err.(ValidationErrors)
+	if !ok || !pathInErrors(valErrs, "metadata.version") {
+		t.Fatalf("error = %v, want metadata.version path", err)
+	}
+}
+
 func TestValidateBundle(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -351,6 +375,7 @@ func TestValidateBundle(t *testing.T) {
 		Metadata: BundleMetadata{
 			Name:      "support",
 			Namespace: "support",
+			Version:   "1.0.0",
 		},
 		Spec: BundleManifestSpec{
 			Root: "./orchestrator.yaml",

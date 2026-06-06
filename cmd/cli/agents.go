@@ -10,23 +10,44 @@ import (
 )
 
 func newAgentsCommand(runtimeAddr *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "agents",
+		Short: "Manage agent manifests and registry",
+	}
+
+	cmd.AddCommand(
+		newAgentsLsCommand(runtimeAddr),
+		newAgentsArchiveCommand(runtimeAddr),
+		newAgentValidateCommand(runtimeAddr),
+		newAgentDiffCommand(runtimeAddr),
+		newAgentPublishCommand(runtimeAddr),
+		newAgentVersionsCommand(runtimeAddr),
+		newAgentInspectCommand(runtimeAddr),
+		newAgentDeprecateCommand(runtimeAddr),
+		newAgentRetireCommand(runtimeAddr),
+		newAgentDeployCommand(runtimeAddr),
+		newAgentActiveCommand(runtimeAddr),
+		newAgentHistoryCommand(runtimeAddr),
+	)
+	return cmd
+}
+
+func newAgentsLsCommand(runtimeAddr *string) *cobra.Command {
 	var namespace string
 
 	cmd := &cobra.Command{
-		Use:   "agents",
-		Short: "List and manage agents",
-	}
-
-	ls := &cobra.Command{
 		Use:   "ls",
 		Short: "List agents",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAgentsList(cmd, runtimeAddr, namespace)
 		},
 	}
-	ls.Flags().StringVarP(&namespace, "namespace", "n", "", "filter by namespace")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "filter by namespace")
+	return cmd
+}
 
-	archive := &cobra.Command{
+func newAgentsArchiveCommand(runtimeAddr *string) *cobra.Command {
+	return &cobra.Command{
 		Use:   "archive AGENT",
 		Short: "Archive an agent and deprecate all of its versions",
 		Args:  cobra.ExactArgs(1),
@@ -34,9 +55,6 @@ func newAgentsCommand(runtimeAddr *string) *cobra.Command {
 			return runAgentArchive(cmd, runtimeAddr, args[0])
 		},
 	}
-
-	cmd.AddCommand(ls, archive)
-	return cmd
 }
 
 func runAgentsList(cmd *cobra.Command, runtimeAddr *string, namespace string) error {

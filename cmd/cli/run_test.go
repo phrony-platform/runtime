@@ -44,6 +44,18 @@ func (c *recordingRuntimeClient) GetActiveVersion(context.Context, *runtimev1.Ge
 	return &runtimev1.GetActiveVersionResponse{Version: "1.2.0"}, nil
 }
 func (c *recordingRuntimeClient) GetActiveBundle(context.Context, *runtimev1.GetActiveBundleRequest, ...grpc.CallOption) (*runtimev1.GetActiveBundleResponse, error) {
+	return &runtimev1.GetActiveBundleResponse{Version: "sha256:abc"}, nil
+}
+func (c *recordingRuntimeClient) GetBundleSecretRequirements(context.Context, *runtimev1.GetBundleSecretRequirementsRequest, ...grpc.CallOption) (*runtimev1.GetBundleSecretRequirementsResponse, error) {
+	return &runtimev1.GetBundleSecretRequirementsResponse{}, nil
+}
+func (c *recordingRuntimeClient) ListBundles(context.Context, *runtimev1.ListBundlesRequest, ...grpc.CallOption) (*runtimev1.ListBundlesResponse, error) {
+	return nil, c.unexpected()
+}
+func (c *recordingRuntimeClient) ListBundleVersions(context.Context, *runtimev1.ListBundleVersionsRequest, ...grpc.CallOption) (*runtimev1.ListBundleVersionsResponse, error) {
+	return nil, c.unexpected()
+}
+func (c *recordingRuntimeClient) ListBundleDeployments(context.Context, *runtimev1.ListBundleDeploymentsRequest, ...grpc.CallOption) (*runtimev1.ListBundleDeploymentsResponse, error) {
 	return nil, c.unexpected()
 }
 func (c *recordingRuntimeClient) ListDeployments(context.Context, *runtimev1.ListDeploymentsRequest, ...grpc.CallOption) (*runtimev1.ListDeploymentsResponse, error) {
@@ -155,6 +167,60 @@ func TestRunAttachedSession_callsRunSessionThenAttachBySessionID(t *testing.T) {
 	}
 	if got := agentref.Format(rec.runSessionReq.GetAgentRef().GetNamespace(), rec.runSessionReq.GetAgentRef().GetName()); got != "demo/echo-agent" {
 		t.Fatalf("agent ref = %q, want demo/echo-agent", got)
+	}
+	if !bytes.Equal(rec.runSessionReq.GetInput(), input) {
+		t.Fatalf("RunSession input = %q, want %q", rec.runSessionReq.GetInput(), input)
+	}
+	if len(rec.interactiveStarts) != 1 {
+		t.Fatalf("interactive starts = %d, want 1", len(rec.interactiveStarts))
+	}
+	start := rec.interactiveStarts[0]
+	if start.GetSessionId() != "run_test_sess" {
+		t.Fatalf("attach session_id = %q, want run_test_sess", start.GetSessionId())
+	}
+	if start.GetAgentRef() != nil {
+		t.Fatal("attach start must not include agent_ref")
+	}
+	if len(start.GetInput()) != 0 {
+		t.Fatal("attach start must not include input")
+	}
+}
+
+func TestRunAttachedBundleSession_callsRunSessionThenAttachBySessionID(t *testing.T) {
+	t.Setenv("PHRONY_NO_TUI", "1")
+
+	rec := &recordingRuntimeClient{}
+	origHook := testWithRuntimeClientHook
+	testWithRuntimeClientHook = func(fn func(runtimev1.RuntimeClient) error) error {
+		return fn(rec)
+	}
+	t.Cleanup(func() { testWithRuntimeClientHook = origHook })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetIn(bytes.NewReader(nil))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	ref, err := parseBundleRef("demo/payment-desk-hitl")
+	if err != nil {
+		t.Fatalf("parseBundleRef: %v", err)
+	}
+	input := []byte(`{"message":"hi"}`)
+
+	err = runAttachedBundleSession(cmd, ptr("test-addr"), ref, input, nil)
+	if err != nil {
+		t.Fatalf("runAttachedBundleSession: %v", err)
+	}
+	if rec.runSessionReq == nil {
+		t.Fatal("RunSession was not called")
+	}
+	if rec.runSessionReq.GetAgentRef() != nil {
+		t.Fatal("RunSession must use BundleRef, not AgentRef")
+	}
+	bundleRef := rec.runSessionReq.GetBundleRef()
+	if got := agentref.Format(bundleRef.GetNamespace(), bundleRef.GetName()); got != "demo/payment-desk-hitl" {
+		t.Fatalf("bundle ref = %q, want demo/payment-desk-hitl", got)
 	}
 	if !bytes.Equal(rec.runSessionReq.GetInput(), input) {
 		t.Fatalf("RunSession input = %q, want %q", rec.runSessionReq.GetInput(), input)

@@ -62,7 +62,7 @@ func TestPersistSessionSecrets_noEncryptor(t *testing.T) {
 		},
 	}
 	srv := &runtimeServer{}
-	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", agent, map[string][]byte{
+	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", agent, nil, map[string][]byte{
 		"anthropic": []byte("sk-test"),
 	})
 	assertGRPCCode(t, err, codes.FailedPrecondition)
@@ -95,7 +95,7 @@ func TestValidateResolvedSecrets_emptyValue(t *testing.T) {
 
 func TestPersistSessionSecrets_resolvedWithoutManifestSecrets(t *testing.T) {
 	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t)}
-	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", &manifest.Agent{}, map[string][]byte{
+	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", &manifest.Agent{}, nil, map[string][]byte{
 		"anthropic": []byte("sk-test"),
 	})
 	assertGRPCCode(t, err, codes.InvalidArgument)
@@ -103,7 +103,7 @@ func TestPersistSessionSecrets_resolvedWithoutManifestSecrets(t *testing.T) {
 
 func TestPersistSessionSecrets_noSecretsBlock(t *testing.T) {
 	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t)}
-	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", &manifest.Agent{}, nil)
+	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", &manifest.Agent{}, nil, nil)
 	if err != nil {
 		t.Fatalf("persistSessionSecrets: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestPersistSessionSecrets_encryptsAndInserts(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t), db: db}
-	err := srv.persistSessionSecrets(context.Background(), store.New(db), "session-id", agent, map[string][]byte{
+	err := srv.persistSessionSecrets(context.Background(), store.New(db), "session-id", agent, nil, map[string][]byte{
 		"anthropic": []byte("sk-test-key"),
 	})
 	if err != nil {
@@ -139,7 +139,18 @@ func TestPersistSessionSecrets_missingResolved(t *testing.T) {
 		},
 	}
 	srv := &runtimeServer{secretsEnc: mustTestEncryptor(t)}
-	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", agent, nil)
+	err := srv.persistSessionSecrets(context.Background(), nil, "session-id", agent, nil, nil)
+	assertGRPCCode(t, err, codes.InvalidArgument)
+}
+
+func TestValidateBundleRunSecrets_requiresUnionKeys(t *testing.T) {
+	union := map[string]manifest.SecretDefinition{
+		"openai":    {FromEnv: "OPENAI_API_KEY"},
+		"anthropic": {FromEnv: "ANTHROPIC_API_KEY"},
+	}
+	err := validateBundleRunSecrets(union, map[string][]byte{
+		"openai": []byte("sk-openai"),
+	})
 	assertGRPCCode(t, err, codes.InvalidArgument)
 }
 

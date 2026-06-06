@@ -78,6 +78,22 @@ func ValidateAgent(agent *Agent, opts *ValidateOptions) error {
 	return nil
 }
 
+func validateBundleMetadata(m *BundleMetadata) []FieldError {
+	var errs []FieldError
+	if strings.TrimSpace(m.Name) == "" {
+		errs = append(errs, FieldError{Path: "metadata.name", Message: "is required"})
+	}
+	if strings.TrimSpace(m.Namespace) == "" {
+		errs = append(errs, FieldError{Path: "metadata.namespace", Message: "is required"})
+	}
+	if strings.TrimSpace(m.Version) == "" {
+		errs = append(errs, FieldError{Path: "metadata.version", Message: "is required"})
+	} else if !isValidSemver(m.Version) {
+		errs = append(errs, FieldError{Path: "metadata.version", Message: "must be valid semver"})
+	}
+	return errs
+}
+
 func validateMetadata(m *AgentMetadata) []FieldError {
 	var errs []FieldError
 	if strings.TrimSpace(m.Name) == "" {

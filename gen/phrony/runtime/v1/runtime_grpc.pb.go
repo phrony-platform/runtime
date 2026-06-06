@@ -19,30 +19,34 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Runtime_GetVersion_FullMethodName            = "/phrony.runtime.v1.Runtime/GetVersion"
-	Runtime_RunSession_FullMethodName            = "/phrony.runtime.v1.Runtime/RunSession"
-	Runtime_RunSessionInteractive_FullMethodName = "/phrony.runtime.v1.Runtime/RunSessionInteractive"
-	Runtime_Publish_FullMethodName               = "/phrony.runtime.v1.Runtime/Publish"
-	Runtime_PublishBundle_FullMethodName         = "/phrony.runtime.v1.Runtime/PublishBundle"
-	Runtime_Deploy_FullMethodName                = "/phrony.runtime.v1.Runtime/Deploy"
-	Runtime_DeployBundle_FullMethodName          = "/phrony.runtime.v1.Runtime/DeployBundle"
-	Runtime_Rollback_FullMethodName              = "/phrony.runtime.v1.Runtime/Rollback"
-	Runtime_GetActiveVersion_FullMethodName      = "/phrony.runtime.v1.Runtime/GetActiveVersion"
-	Runtime_GetActiveBundle_FullMethodName       = "/phrony.runtime.v1.Runtime/GetActiveBundle"
-	Runtime_ListDeployments_FullMethodName       = "/phrony.runtime.v1.Runtime/ListDeployments"
-	Runtime_GetAgentVersion_FullMethodName       = "/phrony.runtime.v1.Runtime/GetAgentVersion"
-	Runtime_RetireAgentVersion_FullMethodName    = "/phrony.runtime.v1.Runtime/RetireAgentVersion"
-	Runtime_CancelSession_FullMethodName         = "/phrony.runtime.v1.Runtime/CancelSession"
-	Runtime_CompleteSession_FullMethodName       = "/phrony.runtime.v1.Runtime/CompleteSession"
-	Runtime_ListAgents_FullMethodName            = "/phrony.runtime.v1.Runtime/ListAgents"
-	Runtime_ListAgentVersions_FullMethodName     = "/phrony.runtime.v1.Runtime/ListAgentVersions"
-	Runtime_ListSessions_FullMethodName          = "/phrony.runtime.v1.Runtime/ListSessions"
-	Runtime_GetApproval_FullMethodName           = "/phrony.runtime.v1.Runtime/GetApproval"
-	Runtime_ListApprovals_FullMethodName         = "/phrony.runtime.v1.Runtime/ListApprovals"
-	Runtime_DecideApproval_FullMethodName        = "/phrony.runtime.v1.Runtime/DecideApproval"
-	Runtime_DeprecateAgentVersion_FullMethodName = "/phrony.runtime.v1.Runtime/DeprecateAgentVersion"
-	Runtime_ArchiveAgent_FullMethodName          = "/phrony.runtime.v1.Runtime/ArchiveAgent"
-	Runtime_Work_FullMethodName                  = "/phrony.runtime.v1.Runtime/Work"
+	Runtime_GetVersion_FullMethodName                  = "/phrony.runtime.v1.Runtime/GetVersion"
+	Runtime_RunSession_FullMethodName                  = "/phrony.runtime.v1.Runtime/RunSession"
+	Runtime_RunSessionInteractive_FullMethodName       = "/phrony.runtime.v1.Runtime/RunSessionInteractive"
+	Runtime_Publish_FullMethodName                     = "/phrony.runtime.v1.Runtime/Publish"
+	Runtime_PublishBundle_FullMethodName               = "/phrony.runtime.v1.Runtime/PublishBundle"
+	Runtime_Deploy_FullMethodName                      = "/phrony.runtime.v1.Runtime/Deploy"
+	Runtime_DeployBundle_FullMethodName                = "/phrony.runtime.v1.Runtime/DeployBundle"
+	Runtime_Rollback_FullMethodName                    = "/phrony.runtime.v1.Runtime/Rollback"
+	Runtime_GetActiveVersion_FullMethodName            = "/phrony.runtime.v1.Runtime/GetActiveVersion"
+	Runtime_GetActiveBundle_FullMethodName             = "/phrony.runtime.v1.Runtime/GetActiveBundle"
+	Runtime_GetBundleSecretRequirements_FullMethodName = "/phrony.runtime.v1.Runtime/GetBundleSecretRequirements"
+	Runtime_ListBundles_FullMethodName                 = "/phrony.runtime.v1.Runtime/ListBundles"
+	Runtime_ListBundleVersions_FullMethodName          = "/phrony.runtime.v1.Runtime/ListBundleVersions"
+	Runtime_ListBundleDeployments_FullMethodName       = "/phrony.runtime.v1.Runtime/ListBundleDeployments"
+	Runtime_ListDeployments_FullMethodName             = "/phrony.runtime.v1.Runtime/ListDeployments"
+	Runtime_GetAgentVersion_FullMethodName             = "/phrony.runtime.v1.Runtime/GetAgentVersion"
+	Runtime_RetireAgentVersion_FullMethodName          = "/phrony.runtime.v1.Runtime/RetireAgentVersion"
+	Runtime_CancelSession_FullMethodName               = "/phrony.runtime.v1.Runtime/CancelSession"
+	Runtime_CompleteSession_FullMethodName             = "/phrony.runtime.v1.Runtime/CompleteSession"
+	Runtime_ListAgents_FullMethodName                  = "/phrony.runtime.v1.Runtime/ListAgents"
+	Runtime_ListAgentVersions_FullMethodName           = "/phrony.runtime.v1.Runtime/ListAgentVersions"
+	Runtime_ListSessions_FullMethodName                = "/phrony.runtime.v1.Runtime/ListSessions"
+	Runtime_GetApproval_FullMethodName                 = "/phrony.runtime.v1.Runtime/GetApproval"
+	Runtime_ListApprovals_FullMethodName               = "/phrony.runtime.v1.Runtime/ListApprovals"
+	Runtime_DecideApproval_FullMethodName              = "/phrony.runtime.v1.Runtime/DecideApproval"
+	Runtime_DeprecateAgentVersion_FullMethodName       = "/phrony.runtime.v1.Runtime/DeprecateAgentVersion"
+	Runtime_ArchiveAgent_FullMethodName                = "/phrony.runtime.v1.Runtime/ArchiveAgent"
+	Runtime_Work_FullMethodName                        = "/phrony.runtime.v1.Runtime/Work"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -63,6 +67,10 @@ type RuntimeClient interface {
 	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
 	GetActiveVersion(ctx context.Context, in *GetActiveVersionRequest, opts ...grpc.CallOption) (*GetActiveVersionResponse, error)
 	GetActiveBundle(ctx context.Context, in *GetActiveBundleRequest, opts ...grpc.CallOption) (*GetActiveBundleResponse, error)
+	GetBundleSecretRequirements(ctx context.Context, in *GetBundleSecretRequirementsRequest, opts ...grpc.CallOption) (*GetBundleSecretRequirementsResponse, error)
+	ListBundles(ctx context.Context, in *ListBundlesRequest, opts ...grpc.CallOption) (*ListBundlesResponse, error)
+	ListBundleVersions(ctx context.Context, in *ListBundleVersionsRequest, opts ...grpc.CallOption) (*ListBundleVersionsResponse, error)
+	ListBundleDeployments(ctx context.Context, in *ListBundleDeploymentsRequest, opts ...grpc.CallOption) (*ListBundleDeploymentsResponse, error)
 	ListDeployments(ctx context.Context, in *ListDeploymentsRequest, opts ...grpc.CallOption) (*ListDeploymentsResponse, error)
 	GetAgentVersion(ctx context.Context, in *GetAgentVersionRequest, opts ...grpc.CallOption) (*GetAgentVersionResponse, error)
 	RetireAgentVersion(ctx context.Context, in *RetireAgentVersionRequest, opts ...grpc.CallOption) (*RetireAgentVersionResponse, error)
@@ -187,6 +195,46 @@ func (c *runtimeClient) GetActiveBundle(ctx context.Context, in *GetActiveBundle
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetActiveBundleResponse)
 	err := c.cc.Invoke(ctx, Runtime_GetActiveBundle_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) GetBundleSecretRequirements(ctx context.Context, in *GetBundleSecretRequirementsRequest, opts ...grpc.CallOption) (*GetBundleSecretRequirementsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBundleSecretRequirementsResponse)
+	err := c.cc.Invoke(ctx, Runtime_GetBundleSecretRequirements_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListBundles(ctx context.Context, in *ListBundlesRequest, opts ...grpc.CallOption) (*ListBundlesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBundlesResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListBundles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListBundleVersions(ctx context.Context, in *ListBundleVersionsRequest, opts ...grpc.CallOption) (*ListBundleVersionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBundleVersionsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListBundleVersions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListBundleDeployments(ctx context.Context, in *ListBundleDeploymentsRequest, opts ...grpc.CallOption) (*ListBundleDeploymentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBundleDeploymentsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListBundleDeployments_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -354,6 +402,10 @@ type RuntimeServer interface {
 	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
 	GetActiveVersion(context.Context, *GetActiveVersionRequest) (*GetActiveVersionResponse, error)
 	GetActiveBundle(context.Context, *GetActiveBundleRequest) (*GetActiveBundleResponse, error)
+	GetBundleSecretRequirements(context.Context, *GetBundleSecretRequirementsRequest) (*GetBundleSecretRequirementsResponse, error)
+	ListBundles(context.Context, *ListBundlesRequest) (*ListBundlesResponse, error)
+	ListBundleVersions(context.Context, *ListBundleVersionsRequest) (*ListBundleVersionsResponse, error)
+	ListBundleDeployments(context.Context, *ListBundleDeploymentsRequest) (*ListBundleDeploymentsResponse, error)
 	ListDeployments(context.Context, *ListDeploymentsRequest) (*ListDeploymentsResponse, error)
 	GetAgentVersion(context.Context, *GetAgentVersionRequest) (*GetAgentVersionResponse, error)
 	RetireAgentVersion(context.Context, *RetireAgentVersionRequest) (*RetireAgentVersionResponse, error)
@@ -410,6 +462,18 @@ func (UnimplementedRuntimeServer) GetActiveVersion(context.Context, *GetActiveVe
 }
 func (UnimplementedRuntimeServer) GetActiveBundle(context.Context, *GetActiveBundleRequest) (*GetActiveBundleResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetActiveBundle not implemented")
+}
+func (UnimplementedRuntimeServer) GetBundleSecretRequirements(context.Context, *GetBundleSecretRequirementsRequest) (*GetBundleSecretRequirementsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBundleSecretRequirements not implemented")
+}
+func (UnimplementedRuntimeServer) ListBundles(context.Context, *ListBundlesRequest) (*ListBundlesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBundles not implemented")
+}
+func (UnimplementedRuntimeServer) ListBundleVersions(context.Context, *ListBundleVersionsRequest) (*ListBundleVersionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBundleVersions not implemented")
+}
+func (UnimplementedRuntimeServer) ListBundleDeployments(context.Context, *ListBundleDeploymentsRequest) (*ListBundleDeploymentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBundleDeployments not implemented")
 }
 func (UnimplementedRuntimeServer) ListDeployments(context.Context, *ListDeploymentsRequest) (*ListDeploymentsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDeployments not implemented")
@@ -639,6 +703,78 @@ func _Runtime_GetActiveBundle_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).GetActiveBundle(ctx, req.(*GetActiveBundleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_GetBundleSecretRequirements_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBundleSecretRequirementsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).GetBundleSecretRequirements(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_GetBundleSecretRequirements_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).GetBundleSecretRequirements(ctx, req.(*GetBundleSecretRequirementsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListBundles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBundlesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListBundles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListBundles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListBundles(ctx, req.(*ListBundlesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListBundleVersions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBundleVersionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListBundleVersions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListBundleVersions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListBundleVersions(ctx, req.(*ListBundleVersionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListBundleDeployments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBundleDeploymentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListBundleDeployments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListBundleDeployments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListBundleDeployments(ctx, req.(*ListBundleDeploymentsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -926,6 +1062,22 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetActiveBundle",
 			Handler:    _Runtime_GetActiveBundle_Handler,
+		},
+		{
+			MethodName: "GetBundleSecretRequirements",
+			Handler:    _Runtime_GetBundleSecretRequirements_Handler,
+		},
+		{
+			MethodName: "ListBundles",
+			Handler:    _Runtime_ListBundles_Handler,
+		},
+		{
+			MethodName: "ListBundleVersions",
+			Handler:    _Runtime_ListBundleVersions_Handler,
+		},
+		{
+			MethodName: "ListBundleDeployments",
+			Handler:    _Runtime_ListBundleDeployments_Handler,
 		},
 		{
 			MethodName: "ListDeployments",

@@ -1,32 +1,32 @@
 package main
 
 import (
-	"fmt"
+	"context"
 
+	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/clierr"
 	"github.com/phrony-platform/runtime/internal/envfile"
 	"github.com/phrony-platform/runtime/internal/manifest"
 )
 
-func prepareBundleRunSecrets(fromBundle string, envFiles []string) (map[string][]byte, error) {
+func prepareBundleRunSecrets(ctx context.Context, rt runtimev1.RuntimeClient, bundleRef *runtimev1.BundleRef, envFiles []string) (map[string][]byte, error) {
 	if err := envfile.ApplyFiles(envFiles); err != nil {
 		return nil, err
 	}
-	if fromBundle == "" {
+	if bundleRef == nil || bundleRef.GetNamespace() == "" || bundleRef.GetName() == "" {
 		return nil, nil
 	}
-	resolved, err := loadResolvedBundle(fromBundle)
+
+	resp, err := rt.GetBundleSecretRequirements(ctx, &runtimev1.GetBundleSecretRequirementsRequest{
+		BundleRef: bundleRef,
+	})
 	if err != nil {
-		return nil, err
+		return nil, clierr.WrapRPC("get bundle secret requirements", err)
 	}
-	var root *manifest.Agent
-	for _, member := range resolved.Closure.Members {
-		if member.IsRoot && member.Resolved != nil {
-			root = member.Resolved.Agent
-			break
-		}
+
+	defs := make(map[string]manifest.SecretDefinition, len(resp.GetSecrets()))
+	for name, req := range resp.GetSecrets() {
+		defs[name] = manifest.SecretDefinition{FromEnv: req.GetFromEnv()}
 	}
-	if root == nil {
-		return nil, fmt.Errorf("bundle %q has no root member for secret resolution", fromBundle)
-	}
-	return manifest.ResolveSecretsFromEnv(root)
+	return manifest.ResolveSecretsFromDefinitions(defs)
 }

@@ -40,8 +40,11 @@ func TestRuntime_PublishBundle_vendoredClosure(t *testing.T) {
 	mock.ExpectQuery(`FROM bundle_versions bv`).
 		WithArgs("bundle-1", sqlmock.AnyArg()).
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`FROM bundle_versions bv`).
+		WithArgs("bundle-1", "1.0.0").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`INSERT INTO bundle_versions`).
-		WithArgs(sqlmock.AnyArg(), "bundle-1", sqlmock.AnyArg(), sqlmock.AnyArg(), "").
+		WithArgs(sqlmock.AnyArg(), "bundle-1", "1.0.0", sqlmock.AnyArg(), sqlmock.AnyArg(), "").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("bv-1"))
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
@@ -75,7 +78,7 @@ func TestRuntime_PublishBundle_vendoredClosure(t *testing.T) {
 			ResolvedManifest: billing,
 		},
 	}
-	committedLock := committedLockJSON(t, "orchestrator", members)
+	committedLock := committedLockJSON(t, "orchestrator", members, nil)
 
 	srv := &runtimeServer{db: db}
 	resp, err := srv.PublishBundle(context.Background(), &runtimev1.PublishBundleRequest{
@@ -105,6 +108,9 @@ func TestRuntime_PublishBundle_vendoredClosure(t *testing.T) {
 	if resp.GetNamespace() != "support" || resp.GetName() != "helpdesk" {
 		t.Fatalf("identity = %s/%s", resp.GetNamespace(), resp.GetName())
 	}
+	if resp.GetVersion() != "1.0.0" {
+		t.Fatalf("version = %q, want 1.0.0", resp.GetVersion())
+	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}
@@ -121,7 +127,7 @@ func TestRuntime_PublishBundle_rejectsDuplicateLockHash(t *testing.T) {
 	lock := json.RawMessage(`{"version":"sha256:abc"}`)
 	mock.ExpectQuery(`FROM bundle_versions bv`).
 		WithArgs("bundle-1", sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "lock"}).AddRow("bv-old", lock))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "lock", "version"}).AddRow("bv-old", lock, "1.0.0"))
 	mock.ExpectRollback()
 
 	members := []*runtimev1.BundleMemberPackage{{
@@ -131,7 +137,7 @@ func TestRuntime_PublishBundle_rejectsDuplicateLockHash(t *testing.T) {
 		ResolvedManifest: orchestrator,
 		IsRoot:           true,
 	}}
-	committedLock := committedLockJSON(t, "orchestrator", members)
+	committedLock := committedLockJSON(t, "orchestrator", members, nil)
 
 	srv := &runtimeServer{db: db}
 	_, err := srv.PublishBundle(context.Background(), &runtimev1.PublishBundleRequest{
@@ -140,6 +146,47 @@ func TestRuntime_PublishBundle_rejectsDuplicateLockHash(t *testing.T) {
 		CommittedLock:  committedLock,
 	})
 	assertGRPCCode(t, err, codes.AlreadyExists)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestRuntime_PublishBundle_rejectsDuplicateSemverDifferentHash(t *testing.T) {
+	bundleManifest := bundleManifestJSON(t)
+	orchestrator := bundleMemberManifestJSON(t, "orchestrator", "support", nil)
+
+	db, mock := testSQLxDB(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO bundles`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("bundle-1"))
+	mock.ExpectQuery(`FROM bundle_versions bv`).
+		WithArgs("bundle-1", sqlmock.AnyArg()).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`FROM bundle_versions bv`).
+		WithArgs("bundle-1", "1.0.0").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "lock_hash"}).
+			AddRow("bv-old", "sha256:existing"))
+	mock.ExpectRollback()
+
+	members := []*runtimev1.BundleMemberPackage{{
+		ChildName:        "orchestrator",
+		Origin:           manifest.ClosureMemberOriginVendored,
+		AuthoringRef:     "./orchestrator.yaml",
+		ResolvedManifest: orchestrator,
+		IsRoot:           true,
+	}}
+	committedLock := committedLockJSON(t, "orchestrator", members, nil)
+
+	srv := &runtimeServer{db: db}
+	_, err := srv.PublishBundle(context.Background(), &runtimev1.PublishBundleRequest{
+		BundleManifest: bundleManifest,
+		Members:        members,
+		CommittedLock:  committedLock,
+	})
+	assertGRPCCode(t, err, codes.AlreadyExists)
+	if err != nil && !strings.Contains(err.Error(), "increment metadata.version") {
+		t.Fatalf("error = %v, want increment metadata.version hint", err)
+	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}
@@ -161,8 +208,8 @@ func TestRuntime_PublishBundle_rejectsMissingCommittedLock(t *testing.T) {
 		}},
 	})
 	assertGRPCCode(t, err, codes.InvalidArgument)
-	if err != nil && !strings.Contains(err.Error(), "bundle lock") {
-		t.Fatalf("error = %v, want bundle lock hint", err)
+	if err != nil && !strings.Contains(err.Error(), "bundles lock") {
+		t.Fatalf("error = %v, want bundles lock hint", err)
 	}
 }
 
@@ -190,8 +237,11 @@ func TestRuntime_PublishBundle_externalClosure(t *testing.T) {
 	mock.ExpectQuery(`FROM bundle_versions bv`).
 		WithArgs("bundle-1", sqlmock.AnyArg()).
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`FROM bundle_versions bv`).
+		WithArgs("bundle-1", "1.0.0").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`INSERT INTO bundle_versions`).
-		WithArgs(sqlmock.AnyArg(), "bundle-1", sqlmock.AnyArg(), sqlmock.AnyArg(), "").
+		WithArgs(sqlmock.AnyArg(), "bundle-1", "1.0.0", sqlmock.AnyArg(), sqlmock.AnyArg(), "").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("bv-1"))
 	mock.ExpectQuery(`INSERT INTO agent_versions`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
@@ -221,7 +271,9 @@ func TestRuntime_PublishBundle_externalClosure(t *testing.T) {
 			AuthoringRef: "support.billing@1.2.0",
 		},
 	}
-	committedLock := committedLockJSON(t, "orchestrator", members)
+	committedLock := committedLockJSON(t, "orchestrator", members, map[string]string{
+		"billing": "ext-hash",
+	})
 
 	srv := &runtimeServer{db: db}
 	resp, err := srv.PublishBundle(context.Background(), &runtimev1.PublishBundleRequest{
@@ -264,7 +316,7 @@ func TestRuntime_PublishBundle_externalMemberNotFound(t *testing.T) {
 			AuthoringRef: "support.billing@9.9.9",
 		},
 	}
-	committedLock := committedLockJSON(t, "orchestrator", members)
+	committedLock := committedLockJSON(t, "orchestrator", members, nil)
 
 	db, mock := testSQLxDB(t)
 	mock.ExpectQuery(`FROM agent_versions av`).
@@ -303,7 +355,7 @@ func TestRuntime_PublishBundle_externalMemberRetired(t *testing.T) {
 			AuthoringRef: "support.billing@1.2.0",
 		},
 	}
-	committedLock := committedLockJSON(t, "orchestrator", members)
+	committedLock := committedLockJSON(t, "orchestrator", members, nil)
 
 	db, mock := testSQLxDB(t)
 	retiredAt := time.Now()
@@ -337,7 +389,7 @@ func TestRuntime_PublishBundle_rejectsInvalidCommittedLockVersion(t *testing.T) 
 		ResolvedManifest: orchestrator,
 		IsRoot:           true,
 	}}
-	committedLock := committedLockJSON(t, "orchestrator", members)
+	committedLock := committedLockJSON(t, "orchestrator", members, nil)
 	var lock manifest.Lockfile
 	if err := json.Unmarshal(committedLock, &lock); err != nil {
 		t.Fatalf("Unmarshal lock: %v", err)
@@ -357,6 +409,55 @@ func TestRuntime_PublishBundle_rejectsInvalidCommittedLockVersion(t *testing.T) 
 	assertGRPCCode(t, err, codes.InvalidArgument)
 	if err != nil && !strings.Contains(err.Error(), "does not match body hash") {
 		t.Fatalf("error = %v, want version mismatch", err)
+	}
+}
+
+func TestRuntime_PublishBundle_rejectsExternalContentHashDrift(t *testing.T) {
+	bundleManifest := bundleManifestJSON(t)
+	orchestrator := bundleMemberManifestJSON(t, "orchestrator", "support", nil)
+	members := []*runtimev1.BundleMemberPackage{
+		{
+			ChildName:        "orchestrator",
+			Origin:           manifest.ClosureMemberOriginVendored,
+			AuthoringRef:     "./orchestrator.yaml",
+			ResolvedManifest: orchestrator,
+			IsRoot:           true,
+		},
+		{
+			ChildName:    "billing",
+			Origin:       manifest.ClosureMemberOriginExternal,
+			AuthoringRef: "support.billing@1.2.0",
+		},
+	}
+	committedLock := committedLockJSON(t, "orchestrator", members, map[string]string{
+		"billing": "wrong-hash",
+	})
+
+	db, mock := testSQLxDB(t)
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("support", "billing", "1.2.0").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "deprecated_at", "retired_at", "archived_at"}).
+			AddRow("bill-ext-ver", nil, nil, nil))
+	publishedAt := time.Now()
+	externalManifest := bundleMemberManifestJSON(t, "billing", "support", nil)
+	mock.ExpectQuery(`FROM agent_versions av`).
+		WithArgs("support", "billing", "1.2.0").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "version", "content_hash", "manifest", "deployed_at", "deprecated_at", "retired_at",
+		}).AddRow("bill-ext-ver", "1.2.0", "db-hash", externalManifest, publishedAt, nil, nil))
+
+	srv := &runtimeServer{db: db}
+	_, err := srv.PublishBundle(context.Background(), &runtimev1.PublishBundleRequest{
+		BundleManifest: bundleManifest,
+		Members:        members,
+		CommittedLock:  committedLock,
+	})
+	assertGRPCCode(t, err, codes.InvalidArgument)
+	if err != nil && !strings.Contains(err.Error(), "content_hash drift") {
+		t.Fatalf("error = %v, want content_hash drift", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
 	}
 }
 
@@ -399,7 +500,7 @@ func TestRuntime_PublishBundle_rejectsLockDrift(t *testing.T) {
 	}
 }
 
-func committedLockJSON(t *testing.T, rootChildName string, pkgs []*runtimev1.BundleMemberPackage) []byte {
+func committedLockJSON(t *testing.T, rootChildName string, pkgs []*runtimev1.BundleMemberPackage, externalContentHashes map[string]string) []byte {
 	t.Helper()
 	members := make([]manifest.LockfileMember, 0, len(pkgs))
 	for _, pkg := range pkgs {
@@ -420,6 +521,9 @@ func committedLockJSON(t *testing.T, rootChildName string, pkgs []*runtimev1.Bun
 			entry.Namespace = edge.External.Namespace
 			entry.Name = edge.External.Name
 			entry.Version = edge.External.Constraint
+			if externalContentHashes != nil {
+				entry.ContentHash = externalContentHashes[pkg.GetChildName()]
+			}
 		}
 		members = append(members, entry)
 	}
@@ -442,6 +546,7 @@ func bundleManifestJSON(t *testing.T) []byte {
 		Metadata: manifest.BundleMetadata{
 			Name:      "helpdesk",
 			Namespace: "support",
+			Version:   "1.0.0",
 		},
 		Spec: manifest.BundleManifestSpec{
 			Root: "./orchestrator.yaml",

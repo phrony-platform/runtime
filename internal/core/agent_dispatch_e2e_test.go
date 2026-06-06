@@ -69,7 +69,7 @@ func writeBundleStubAgent(t *testing.T, dir, relPath, namespace, name, script st
 	}
 }
 
-func writeBundleManifest(t *testing.T, dir, namespace, name, root string) {
+func writeBundleManifest(t *testing.T, dir, namespace, name, root, version string) {
 	t.Helper()
 	bundle := &manifest.BundleManifest{
 		APIVersion: manifest.APIVersionV1,
@@ -77,6 +77,7 @@ func writeBundleManifest(t *testing.T, dir, namespace, name, root string) {
 		Metadata: manifest.BundleMetadata{
 			Namespace: namespace,
 			Name:      name,
+			Version:   version,
 		},
 		Spec: manifest.BundleManifestSpec{Root: root},
 	}
@@ -304,7 +305,7 @@ func TestAgentDelegationE2E_closurePinRunsFrozenChild(t *testing.T) {
 	writeBundleStubAgent(t, dir, "orchestrator/agent.yaml", ns, "orchestrator",
 		`{"turns":[[{"type":"tool_call","name":"ask_specialist","args":{"task":"help"}},{"type":"completed","stop_reason":"tool_use"}],[{"type":"text_delta","text":"orchestrator done"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 		[]manifest.SubagentBinding{{Ref: "./specialist/agent.yaml", As: "ask_specialist"}})
-	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml")
+	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml", "1.0.0")
 
 	srv := newAgentDelegationServer(db)
 	v1 := publishStubBundle(t, srv, dir, ns, bundleName)
@@ -313,6 +314,7 @@ func TestAgentDelegationE2E_closurePinRunsFrozenChild(t *testing.T) {
 	// Change the vendored specialist and publish a new bundle version.
 	writeBundleStubAgent(t, dir, "specialist/agent.yaml", ns, "specialist",
 		`{"turns":[[{"type":"text_delta","text":"answer from v2"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil)
+	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml", "1.0.1")
 	v2 := publishStubBundle(t, srv, dir, ns, bundleName)
 	if v1.lockHash == v2.lockHash {
 		t.Fatal("child change should bump bundle lock hash")
@@ -364,7 +366,7 @@ func TestAgentDelegationE2E_happyPath(t *testing.T) {
 	writeBundleStubAgent(t, dir, "orchestrator/agent.yaml", ns, "orchestrator",
 		`{"turns":[[{"type":"tool_call","name":"ask_specialist","args":{"task":"help"}},{"type":"completed","stop_reason":"tool_use"}],[{"type":"text_delta","text":"orchestrator done"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 		[]manifest.SubagentBinding{{Ref: "./specialist/agent.yaml", As: "ask_specialist"}})
-	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml")
+	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml", "1.0.0")
 
 	srv := newAgentDelegationServer(db)
 	published := publishStubBundle(t, srv, dir, ns, bundleName)
@@ -426,7 +428,7 @@ func TestAgentDelegationE2E_recursionDepthTwo(t *testing.T) {
 	writeBundleStubAgent(t, dir, "root/agent.yaml", ns, "root",
 		`{"turns":[[{"type":"tool_call","name":"ask_middle","args":{"task":"x"}},{"type":"completed","stop_reason":"tool_use"}],[{"type":"text_delta","text":"root answer"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 		[]manifest.SubagentBinding{{Ref: "./middle/agent.yaml", As: "ask_middle"}})
-	writeBundleManifest(t, dir, ns, bundleName, "./root/agent.yaml")
+	writeBundleManifest(t, dir, ns, bundleName, "./root/agent.yaml", "1.0.0")
 
 	srv := newAgentDelegationServer(db)
 	published := publishStubBundle(t, srv, dir, ns, bundleName)
@@ -479,7 +481,7 @@ func TestAgentDelegationE2E_recoveryResumesDelegation(t *testing.T) {
 	writeBundleStubAgent(t, dir, "orchestrator/agent.yaml", ns, "orchestrator",
 		`{"turns":[[{"type":"text_delta","text":"orchestrator recovered"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 		[]manifest.SubagentBinding{{Ref: "./specialist/agent.yaml", As: "ask_specialist"}})
-	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml")
+	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml", "1.0.0")
 
 	srv := newAgentDelegationServer(db)
 	published := publishStubBundle(t, srv, dir, ns, bundleName)
@@ -548,7 +550,7 @@ func TestAgentDelegationE2E_recoveryResumesChildStoredVersionAfterRepublish(t *t
 	writeBundleStubAgent(t, dir, "orchestrator/agent.yaml", ns, "orchestrator",
 		`{"turns":[[{"type":"text_delta","text":"orchestrator recovered"},{"type":"completed","stop_reason":"end_turn"}]]}`,
 		[]manifest.SubagentBinding{{Ref: "./specialist/agent.yaml", As: "ask_specialist"}})
-	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml")
+	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml", "1.0.0")
 
 	srv := newAgentDelegationServer(db)
 	v1 := publishStubBundle(t, srv, dir, ns, bundleName)
@@ -583,6 +585,7 @@ func TestAgentDelegationE2E_recoveryResumesChildStoredVersionAfterRepublish(t *t
 
 	writeBundleStubAgent(t, dir, "specialist/agent.yaml", ns, "specialist",
 		`{"turns":[[{"type":"text_delta","text":"answer from v2"},{"type":"completed","stop_reason":"end_turn"}]]}`, nil)
+	writeBundleManifest(t, dir, ns, bundleName, "./orchestrator/agent.yaml", "1.0.1")
 	v2 := publishStubBundle(t, srv, dir, ns, bundleName)
 	deployStubBundle(t, srv, ns, bundleName, v2.lockHash)
 

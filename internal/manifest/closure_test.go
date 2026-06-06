@@ -1,6 +1,8 @@
 package manifest
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +10,17 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+type stubExternalResolver map[string]string
+
+func (r stubExternalResolver) ResolveExternal(_ context.Context, namespace, name, version string) (string, error) {
+	key := LogicalID(namespace, name) + "@" + version
+	hash, ok := r[key]
+	if !ok {
+		return "", fmt.Errorf("not found: %s", key)
+	}
+	return hash, nil
+}
 
 func writeClosureAgent(t *testing.T, dir, name, relPath, instructions string, agents []SubagentBinding) {
 	t.Helper()
@@ -50,6 +63,7 @@ func writeBundleManifest(t *testing.T, dir, root string) *BundleManifest {
 		Metadata: BundleMetadata{
 			Name:      "support",
 			Namespace: "support",
+			Version:   "1.0.0",
 		},
 		Spec: BundleManifestSpec{Root: root},
 	}
@@ -220,6 +234,55 @@ func TestWalkBundle_includesPinnedExternal(t *testing.T) {
 	if lockExt.Namespace != "support" || lockExt.Name != "billing" || lockExt.Version != "1.2.0" {
 		t.Fatalf("lock external identity = %s/%s@%s, want support/billing@1.2.0",
 			lockExt.Namespace, lockExt.Name, lockExt.Version)
+	}
+}
+
+func TestEnrichExternalMembers_requiresResolver(t *testing.T) {
+	t.Parallel()
+	pkg := &ClosurePackage{
+		Members: []ClosureMember{{
+			ChildName: "billing",
+			Origin:    ClosureMemberOriginExternal,
+			Namespace: "support",
+			Name:      "billing",
+			Version:   "1.2.0",
+		}},
+	}
+	if err := EnrichExternalMembers(context.Background(), pkg, nil); err == nil {
+		t.Fatal("EnrichExternalMembers() error = nil, want missing resolver error")
+	}
+}
+
+func TestEnrichExternalMembers_resolvesContentHash(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeClosureAgent(t, dir, "orchestrator", "orchestrator.yaml", "Route.", []SubagentBinding{{
+		Ref: "support.billing@1.2.0",
+	}})
+	bundle := writeBundleManifest(t, dir, "./orchestrator.yaml")
+
+	pkg, err := WalkBundle(dir, bundle)
+	if err != nil {
+		t.Fatalf("WalkBundle() error = %v", err)
+	}
+	beforeVersion := pkg.Version
+
+	resolver := stubExternalResolver{"support.billing@1.2.0": "resolved-hash"}
+	if err := EnrichExternalMembers(context.Background(), pkg, resolver); err != nil {
+		t.Fatalf("EnrichExternalMembers() error = %v", err)
+	}
+	ext := pkg.Members[1]
+	if ext.ContentHash != "resolved-hash" {
+		t.Fatalf("external content_hash = %q, want resolved-hash", ext.ContentHash)
+	}
+	if pkg.Lockfile.Members[1].ContentHash != "resolved-hash" {
+		t.Fatalf("lock external content_hash = %q, want resolved-hash", pkg.Lockfile.Members[1].ContentHash)
+	}
+	if pkg.Version == beforeVersion {
+		t.Fatal("bundle version unchanged after enriching external content_hash")
+	}
+	if pkg.Lockfile.Version != pkg.Version {
+		t.Fatalf("lockfile.version = %q, want %q", pkg.Lockfile.Version, pkg.Version)
 	}
 }
 

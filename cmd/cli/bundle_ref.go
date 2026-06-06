@@ -25,7 +25,7 @@ func parseBundleRefVersionRequired(s string) (*runtimev1.BundleRef, error) {
 		return nil, err
 	}
 	if ref.GetVersion() == "" {
-		return nil, fmt.Errorf("bundle reference must include @version (lock hash), got %q", s)
+		return nil, fmt.Errorf("bundle reference must include @version (semver or lock hash), got %q", s)
 	}
 	return ref, nil
 }

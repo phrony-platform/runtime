@@ -78,6 +78,14 @@ func (s *runtimeServer) persistNewSession(ctx context.Context, row newSessionRow
 		return "", err
 	}
 
+	var bundleUnion map[string]manifest.SecretDefinition
+	if row.bundleVersionID != nil && row.depth == 0 {
+		bundleUnion, _, err = loadBundleSecretUnion(ctx, q, *row.bundleVersionID)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	tx, err := s.db.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "begin transaction: %v", err)
@@ -98,7 +106,7 @@ func (s *runtimeServer) persistNewSession(ctx context.Context, row newSessionRow
 		return "", status.Errorf(codes.Internal, "persist session: %v", err)
 	}
 
-	if err := s.persistSessionSecrets(ctx, txQ, row.sessionID, agent, row.resolved); err != nil {
+	if err := s.persistSessionSecrets(ctx, txQ, row.sessionID, agent, bundleUnion, row.resolved); err != nil {
 		return "", err
 	}
 
@@ -138,14 +146,34 @@ func validateResolvedSecrets(agent *manifest.Agent, resolved map[string][]byte) 
 	return nil
 }
 
+func validateBundleRunSecrets(union map[string]manifest.SecretDefinition, resolved map[string][]byte) error {
+	for name := range union {
+		val, ok := resolved[name]
+		if !ok || len(val) == 0 {
+			return status.Errorf(codes.InvalidArgument, "missing resolved secret %q", name)
+		}
+	}
+	for name := range resolved {
+		if _, ok := union[name]; !ok {
+			return status.Errorf(codes.InvalidArgument, "unknown resolved secret %q", name)
+		}
+	}
+	return nil
+}
+
 func (s *runtimeServer) persistSessionSecrets(
 	ctx context.Context,
 	q *store.Queries,
 	sessionID string,
 	agent *manifest.Agent,
+	bundleUnion map[string]manifest.SecretDefinition,
 	resolved map[string][]byte,
 ) error {
-	if len(agent.Secrets) == 0 {
+	required := agent.Secrets
+	if len(bundleUnion) > 0 {
+		required = bundleUnion
+	}
+	if len(required) == 0 {
 		if len(resolved) > 0 {
 			return status.Error(codes.InvalidArgument, "resolved_secrets provided but manifest has no secrets section")
 		}
@@ -155,7 +183,11 @@ func (s *runtimeServer) persistSessionSecrets(
 		return status.Error(codes.FailedPrecondition,
 			"RUNTIME_SECRETS_ENCRYPTION_KEY must be set on the runtime to run agents with secrets")
 	}
-	if err := validateResolvedSecrets(agent, resolved); err != nil {
+	if len(bundleUnion) > 0 {
+		if err := validateBundleRunSecrets(bundleUnion, resolved); err != nil {
+			return err
+		}
+	} else if err := validateResolvedSecrets(agent, resolved); err != nil {
 		return err
 	}
 	if err := s.secretsEnc.PersistSessionSecrets(ctx, q, sessionID, resolved); err != nil {

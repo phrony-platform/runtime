@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/phrony-platform/runtime/internal/manifest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,12 +19,4 @@ func readManifestKind(manifestPath string) (string, error) {
 		return "", fmt.Errorf("parse manifest: %w", err)
 	}
 	return header.Kind, nil
-}
-
-func isBundleManifestPath(manifestPath string) (bool, error) {
-	kind, err := readManifestKind(manifestPath)
-	if err != nil {
-		return false, err
-	}
-	return kind == manifest.KindBundle, nil
 }

@@ -305,6 +305,23 @@ func expectRunAttachSessionMocks(mock sqlmock.Sqlmock, versionID string, input a
 		WillReturnError(sql.ErrNoRows)
 }
 
+func startTestRuntimeAddrForBundlesList(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM bundles`).
+		WithArgs("").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name", "owner", "created_at"}).
+			AddRow("bundle-uuid", "demo", "payment-desk-hitl", "team", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
 func startTestRuntimeAddrForAgentsList(t *testing.T) string {
 	t.Helper()
 
@@ -429,6 +446,139 @@ func startTestRuntimeAddrForHistory(t *testing.T) string {
 		WillReturnRows(sqlmock.NewRows([]string{"version", "action", "actor", "created_at"}).
 			AddRow("1.2.0", "deploy", "alice", now).
 			AddRow("1.0.0", "rollback", "bob", now.Add(-time.Hour)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForBundleVersionsList(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	bundleID := "bundle-uuid"
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM bundles`).
+		WithArgs("demo", "payment-desk-hitl").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name"}).
+			AddRow(bundleID, "demo", "payment-desk-hitl"))
+	mock.ExpectQuery(`FROM bundle_versions`).
+		WithArgs(bundleID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "version", "lock_hash", "created_at"}).
+			AddRow("bv-1", "1.0.0", "sha256:abc", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForBundleActive(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	deployed := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM bundle_deployments bd`).
+		WithArgs("demo", "payment-desk-hitl").
+		WillReturnRows(sqlmock.NewRows([]string{"version", "lock_hash", "created_at", "actor"}).
+			AddRow("1.0.0", "sha256:abc", deployed, "alice"))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForBundleHistory(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	bundleID := "bundle-uuid"
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`FROM bundles`).
+		WithArgs("demo", "payment-desk-hitl").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name"}).
+			AddRow(bundleID, "demo", "payment-desk-hitl"))
+	mock.ExpectQuery(`FROM bundle_deployments bd`).
+		WithArgs(bundleID).
+		WillReturnRows(sqlmock.NewRows([]string{"version", "lock_hash", "action", "actor", "created_at"}).
+			AddRow("1.0.1", "sha256:def", "deploy", "alice", now).
+			AddRow("1.0.0", "sha256:abc", "deploy", "bob", now.Add(-time.Hour)))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForBundleVersionsEmpty(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	bundleID := "bundle-uuid"
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM bundles`).
+		WithArgs("demo", "payment-desk-hitl").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "namespace", "name"}).
+			AddRow(bundleID, "demo", "payment-desk-hitl"))
+	mock.ExpectQuery(`FROM bundle_versions`).
+		WithArgs(bundleID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "version", "lock_hash", "created_at"}))
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForBundleVersionsNotFound(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM bundles`).
+		WithArgs("demo", "missing").
+		WillReturnError(sql.ErrNoRows)
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForBundleActiveNoDeployment(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM bundle_deployments bd`).
+		WithArgs("demo", "payment-desk-hitl").
+		WillReturnError(sql.ErrNoRows)
+
+	return startRuntimeOnDB(t, sqlDB)
+}
+
+func startTestRuntimeAddrForBundleHistoryNotFound(t *testing.T) string {
+	t.Helper()
+
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	mock.ExpectExec(`SELECT 1`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`FROM bundles`).
+		WithArgs("demo", "missing").
+		WillReturnError(sql.ErrNoRows)
 
 	return startRuntimeOnDB(t, sqlDB)
 }

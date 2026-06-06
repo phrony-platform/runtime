@@ -13,10 +13,10 @@ const KindBundle = "Bundle"
 // BundleManifest is the v1 Bundle packaging document (kind: Bundle). It declares
 // the root agent for a multi-agent closure; bundle.lock.json is a committed sidecar.
 type BundleManifest struct {
-	APIVersion string              `yaml:"apiVersion" json:"apiVersion"`
-	Kind       string              `yaml:"kind" json:"kind"`
-	Metadata   BundleMetadata      `yaml:"metadata" json:"metadata"`
-	Spec       BundleManifestSpec  `yaml:"spec" json:"spec"`
+	APIVersion string             `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string             `yaml:"kind" json:"kind"`
+	Metadata   BundleMetadata     `yaml:"metadata" json:"metadata"`
+	Spec       BundleManifestSpec `yaml:"spec" json:"spec"`
 }
 
 // DocumentKind returns the manifest kind.
@@ -31,6 +31,7 @@ func (b *BundleManifest) DocumentKind() string {
 type BundleMetadata struct {
 	Name      string            `yaml:"name" json:"name"`
 	Namespace string            `yaml:"namespace" json:"namespace"`
+	Version   string            `yaml:"version" json:"version"`
 	Labels    map[string]string `yaml:"labels,omitempty" json:"labels,omitempty"`
 }
 
@@ -76,12 +77,7 @@ func ValidateBundle(bundle *BundleManifest, bundleRoot string) error {
 		})
 	}
 
-	if strings.TrimSpace(bundle.Metadata.Name) == "" {
-		errs = append(errs, FieldError{Path: "metadata.name", Message: "is required"})
-	}
-	if strings.TrimSpace(bundle.Metadata.Namespace) == "" {
-		errs = append(errs, FieldError{Path: "metadata.namespace", Message: "is required"})
-	}
+	errs = append(errs, validateBundleMetadata(&bundle.Metadata)...)
 
 	root := strings.TrimSpace(bundle.Spec.Root)
 	if root == "" {

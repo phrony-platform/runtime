@@ -15,7 +15,7 @@ import (
 	"golang.org/x/term"
 )
 
-func newDiffCommand(runtimeAddr *string) *cobra.Command {
+func newAgentDiffCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "diff MANIFEST AGENT@VERSION",
 		Short: "Diff a local manifest against a published version",

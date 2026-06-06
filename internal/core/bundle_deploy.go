@@ -22,7 +22,7 @@ func (s *runtimeServer) DeployBundle(ctx context.Context, req *runtimev1.DeployB
 		return nil, err
 	}
 
-	ns, name, lockHash, err := bundleRefFromProto(req.GetBundleRef())
+	ns, name, versionLabel, err := bundleRefFromProto(req.GetBundleRef())
 	if err != nil {
 		return nil, err
 	}
@@ -36,20 +36,22 @@ func (s *runtimeServer) DeployBundle(ctx context.Context, req *runtimev1.DeployB
 		return nil, status.Errorf(codes.Internal, "lookup bundle: %v", err)
 	}
 
-	lookup, err := q.BundleVersionIDByLabel(ctx, ns, name, lockHash)
+	lookup, err := q.BundleVersionIDByLabel(ctx, ns, name, versionLabel)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, status.Errorf(codes.NotFound, "no published version %q for bundle %s", lockHash, bundleRef)
+		return nil, status.Errorf(codes.NotFound, "no published version %q for bundle %s", versionLabel, bundleRef)
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "resolve bundle version: %v", err)
 	}
 	if lookup.RootMemberVersionID == "" {
-		return nil, status.Errorf(codes.FailedPrecondition, "bundle %s version %q has no root member", bundleRef, lockHash)
+		return nil, status.Errorf(codes.FailedPrecondition, "bundle %s version %q has no root member", bundleRef, versionLabel)
 	}
 
 	previousVersion := ""
+	previousLockHash := ""
 	if active, activeErr := q.ActiveBundleVersion(ctx, ns, name); activeErr == nil {
-		previousVersion = active.LockHash
+		previousVersion = active.Version
+		previousLockHash = active.LockHash
 	} else if !errors.Is(activeErr, sql.ErrNoRows) {
 		return nil, status.Errorf(codes.Internal, "resolve active bundle deployment: %v", activeErr)
 	}
@@ -60,17 +62,19 @@ func (s *runtimeServer) DeployBundle(ctx context.Context, req *runtimev1.DeployB
 	}
 
 	return &runtimev1.DeployBundleResponse{
-		Namespace:       ns,
-		Name:            name,
-		Version:         lockHash,
-		PreviousVersion: previousVersion,
-		DeployedAt:      formatTime(deployedAt),
+		Namespace:          ns,
+		Name:               name,
+		Version:            lookup.Version,
+		PreviousVersion:    previousVersion,
+		DeployedAt:         formatTime(deployedAt),
+		LockHash:           lookup.LockHash,
+		PreviousLockHash:   previousLockHash,
 	}, nil
 }
 
-func bundleRefFromProto(ref *runtimev1.BundleRef) (namespace, name, lockHash string, err error) {
+func bundleRefFromProto(ref *runtimev1.BundleRef) (namespace, name, versionLabel string, err error) {
 	if ref == nil || ref.GetNamespace() == "" || ref.GetName() == "" || ref.GetVersion() == "" {
-		return "", "", "", status.Error(codes.InvalidArgument, "bundle_ref requires namespace, name, and version (lock hash)")
+		return "", "", "", status.Error(codes.InvalidArgument, "bundle_ref requires namespace, name, and version (semver or lock hash)")
 	}
 	return ref.GetNamespace(), ref.GetName(), ref.GetVersion(), nil
 }

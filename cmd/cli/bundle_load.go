@@ -82,7 +82,7 @@ func (s *bundleLockState) compareLockIfPresent() error {
 	}
 	recomputed := manifest.LockfileFromClosure(s.resolved.Closure)
 	if err := manifest.CompareLockfiles(*s.lock, recomputed); err != nil {
-		return fmt.Errorf("bundle.lock.json drift: %w; run phrony bundle lock", err)
+		return fmt.Errorf("bundle.lock.json drift: %w; run phrony bundles lock", err)
 	}
 	return nil
 }

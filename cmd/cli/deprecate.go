@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newDeprecateCommand(runtimeAddr *string) *cobra.Command {
+func newAgentDeprecateCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "deprecate AGENT@VERSION",
 		Short: "Mark a published agent version as not runnable",

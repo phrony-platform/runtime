@@ -6,28 +6,29 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/clierr"
+	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
-func newPublishCommand(runtimeAddr *string) *cobra.Command {
+func newAgentPublishCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "publish MANIFEST",
 		Short: "Publish an agent manifest to the runtime",
-		Long:  "Validate and publish an immutable agent version. Use deploy to activate a published version for sessions.",
+		Long:  "Validate and publish an immutable agent version. Use agents deploy to activate a published version for sessions.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPublish(cmd, runtimeAddr, args[0])
+			return runAgentPublish(cmd, runtimeAddr, args[0])
 		},
 	}
 }
 
-func runPublish(cmd *cobra.Command, runtimeAddr *string, manifestPath string) error {
-	isBundle, err := isBundleManifestPath(manifestPath)
+func runAgentPublish(cmd *cobra.Command, runtimeAddr *string, manifestPath string) error {
+	kind, err := readManifestKind(manifestPath)
 	if err != nil {
 		return err
 	}
-	if isBundle {
-		return runBundlePublish(cmd, runtimeAddr, manifestPath)
+	if kind == manifest.KindBundle {
+		return fmt.Errorf("bundle manifest: use phrony bundles publish instead")
 	}
 
 	resolved, err := loadResolvedManifest(manifestPath)

@@ -27,6 +27,26 @@ func ResolveSecretsFromEnv(agent *Agent) (map[string][]byte, error) {
 	return out, nil
 }
 
+// ResolveSecretsFromDefinitions reads each definition's fromEnv from the process environment.
+func ResolveSecretsFromDefinitions(defs map[string]SecretDefinition) (map[string][]byte, error) {
+	if len(defs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string][]byte, len(defs))
+	for name, def := range defs {
+		varName := strings.TrimSpace(def.FromEnv)
+		val := strings.TrimSpace(os.Getenv(varName))
+		if val == "" {
+			return nil, fmt.Errorf(
+				"secret %q: environment variable %s is not set; set %s and retry run",
+				name, varName, varName,
+			)
+		}
+		out[name] = []byte(val)
+	}
+	return out, nil
+}
+
 // UnsetSecretEnvVars lists fromEnv variables that are unset or empty in the current environment.
 func UnsetSecretEnvVars(agent *Agent) []string {
 	if agent == nil || len(agent.Secrets) == 0 {

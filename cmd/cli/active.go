@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newActiveCommand(runtimeAddr *string) *cobra.Command {
+func newAgentActiveCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "active AGENT",
 		Short: "Show the active deployed version for an agent",

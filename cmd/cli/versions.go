@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newVersionsCommand(runtimeAddr *string) *cobra.Command {
+func newAgentVersionsCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "versions AGENT",
 		Short: "List published versions for an agent",

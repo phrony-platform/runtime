@@ -57,6 +57,39 @@ FROM sessions
 WHERE id = $1
 `
 
+const selectSessionDelegationMeta = `
+SELECT parent_session_id, bundle_version_id, depth
+FROM sessions
+WHERE id = $1
+`
+
+type SessionDelegationMeta struct {
+	ParentSessionID *string
+	BundleVersionID *string
+	Depth           int
+}
+
+func (q *Queries) GetSessionDelegationMeta(ctx context.Context, sessionID string) (SessionDelegationMeta, error) {
+	row := q.db.QueryRowContext(ctx, selectSessionDelegationMeta, sessionID)
+	var out SessionDelegationMeta
+	var parent sql.NullString
+	var bundleVersion sql.NullString
+	err := row.Scan(&parent, &bundleVersion, &out.Depth)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SessionDelegationMeta{}, err
+	}
+	if err != nil {
+		return SessionDelegationMeta{}, err
+	}
+	if parent.Valid {
+		out.ParentSessionID = &parent.String
+	}
+	if bundleVersion.Valid {
+		out.BundleVersionID = &bundleVersion.String
+	}
+	return out, nil
+}
+
 func (q *Queries) GetSession(ctx context.Context, sessionID string) (Session, error) {
 	row := q.db.QueryRowContext(ctx, selectSession, sessionID)
 	var s Session

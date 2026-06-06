@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRetireCommand(runtimeAddr *string) *cobra.Command {
+func newAgentRetireCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "retire AGENT@VERSION",
 		Short: "Retire a published agent version",

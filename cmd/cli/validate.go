@@ -8,27 +8,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newValidateCommand() *cobra.Command {
-	var requireLock bool
-	cmd := &cobra.Command{
+func newAgentValidateCommand(runtimeAddr *string) *cobra.Command {
+	return &cobra.Command{
 		Use:   "validate MANIFEST",
 		Short: "Validate an agent manifest locally (no publish)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runValidate(cmd, args[0], requireLock)
+			return runAgentValidate(cmd, runtimeAddr, args[0])
 		},
 	}
-	cmd.Flags().BoolVar(&requireLock, "require-lock", false, "for bundles: fail when bundle.lock.json is missing (CI gate)")
-	return cmd
 }
 
-func runValidate(cmd *cobra.Command, manifestPath string, requireLock bool) error {
-	isBundle, err := isBundleManifestPath(manifestPath)
+func runAgentValidate(cmd *cobra.Command, runtimeAddr *string, manifestPath string) error {
+	kind, err := readManifestKind(manifestPath)
 	if err != nil {
 		return err
 	}
-	if isBundle {
-		return runBundleValidate(cmd, manifestPath, requireLock)
+	if kind == manifest.KindBundle {
+		return fmt.Errorf("bundle manifest: use phrony bundles validate instead")
 	}
 
 	resolved, err := loadResolvedManifest(manifestPath)

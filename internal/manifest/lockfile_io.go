@@ -115,7 +115,7 @@ func compareLockfileMember(index int, want, got LockfileMember) error {
 	switch want.Origin {
 	case ClosureMemberOriginVendored:
 		if want.ContentHash != got.ContentHash {
-			return fmt.Errorf("%s (%s) content_hash drift: lock is out of date; run phrony bundle lock",
+			return fmt.Errorf("%s (%s) content_hash drift: lock is out of date; run phrony bundles lock",
 				prefix, want.ChildName)
 		}
 	case ClosureMemberOriginExternal:
@@ -128,12 +128,13 @@ func compareLockfileMember(index int, want, got LockfileMember) error {
 		if want.Version != got.Version {
 			return fmt.Errorf("%s version drift: committed %q, recomputed %q", prefix, want.Version, got.Version)
 		}
-		if want.ContentHash != "" {
-			return fmt.Errorf("%s (%s) must not include content_hash in committed lock; run phrony bundle lock",
+		if strings.TrimSpace(want.ContentHash) == "" {
+			return fmt.Errorf("%s (%s) missing content_hash in committed lock; re-run phrony bundles lock with --runtime-addr against the intended catalog",
 				prefix, want.ChildName)
 		}
-		if got.ContentHash != "" {
-			return fmt.Errorf("%s (%s) must not include content_hash in recomputed lock", prefix, want.ChildName)
+		if want.ContentHash != got.ContentHash {
+			return fmt.Errorf("%s (%s) content_hash drift: lock is out of date; run phrony bundles lock with --runtime-addr",
+				prefix, want.ChildName)
 		}
 	default:
 		return fmt.Errorf("%s unsupported origin %q", prefix, want.Origin)

@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newHistoryCommand(runtimeAddr *string) *cobra.Command {
+func newAgentHistoryCommand(runtimeAddr *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "history AGENT",
 		Short: "List deployment history for an agent",

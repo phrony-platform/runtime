@@ -366,7 +366,7 @@ func TestValidateCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"validate", manifest})
+	root.SetArgs([]string{"agents", "validate", manifest})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -385,7 +385,7 @@ func TestValidateCommand_parseManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"validate", manifest})
+	root.SetArgs([]string{"agents", "validate", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -405,7 +405,7 @@ func TestValidateCommand_invalidManifest(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"validate", manifest})
+	root.SetArgs([]string{"agents", "validate", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -424,7 +424,7 @@ func TestValidateCommand_secretEnvWarning(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&errOut)
-	root.SetArgs([]string{"validate", manifest})
+	root.SetArgs([]string{"agents", "validate", manifest})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -446,7 +446,7 @@ func TestValidateCommand_unresolvedBundleRef(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"validate", manifest})
+	root.SetArgs([]string{"agents", "validate", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -461,7 +461,7 @@ func TestValidateCommand_readManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"validate", filepath.Join(t.TempDir(), "missing.json")})
+	root.SetArgs([]string{"agents", "validate", filepath.Join(t.TempDir(), "missing.json")})
 
 	err := root.Execute()
 	if err == nil {
@@ -481,7 +481,7 @@ func TestPublishCommand_withSecretsManifestSucceedsWithoutEnv(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", manifest, "--runtime-addr", addr})
+	root.SetArgs([]string{"agents", "publish", manifest, "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -499,7 +499,7 @@ func TestPublishCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", manifest, "--runtime-addr", addr})
+	root.SetArgs([]string{"agents", "publish", manifest, "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -518,7 +518,7 @@ func TestPublishCommand_successWithSecrets(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", manifest, "--runtime-addr", addr})
+	root.SetArgs([]string{"agents", "publish", manifest, "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -534,7 +534,7 @@ func TestPublishCommand_dialRuntimeFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", manifest, "--runtime-addr", "127.0.0.1:1"})
+	root.SetArgs([]string{"agents", "publish", manifest, "--runtime-addr", "127.0.0.1:1"})
 
 	err := root.Execute()
 	if err == nil {
@@ -554,7 +554,7 @@ func TestPublishCommand_parseManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", manifest})
+	root.SetArgs([]string{"agents", "publish", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -574,7 +574,7 @@ func TestPublishCommand_invalidManifest(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", manifest})
+	root.SetArgs([]string{"agents", "publish", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -594,7 +594,7 @@ func TestPublishCommand_unresolvedBundleRef(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", manifest})
+	root.SetArgs([]string{"agents", "publish", manifest})
 
 	err := root.Execute()
 	if err == nil {
@@ -602,6 +602,27 @@ func TestPublishCommand_unresolvedBundleRef(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "spec.instructions.ref") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBundlesListCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForBundlesList(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "ls", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	outStr := out.String()
+	if !strings.Contains(outStr, "bundle-uuid") || !strings.Contains(outStr, "demo") {
+		t.Fatalf("output = %q, want bundle table row", outStr)
+	}
+	if !strings.Contains(outStr, "NAMESPACE") {
+		t.Fatalf("output = %q, want table headers", outStr)
 	}
 }
 
@@ -633,7 +654,7 @@ func TestVersionsListCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"versions", "demo/echo-agent", "--runtime-addr", addr})
+	root.SetArgs([]string{"agents", "versions", "demo/echo-agent", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -652,7 +673,7 @@ func TestDeprecateCommand_success(t *testing.T) {
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{
-		"deprecate", "demo/echo-agent@1.2.0", "--runtime-addr", addr,
+		"agents", "deprecate", "demo/echo-agent@1.2.0", "--runtime-addr", addr,
 	})
 
 	if err := root.Execute(); err != nil {
@@ -670,7 +691,7 @@ func TestDeployActivateCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"deploy", "demo/echo-agent@1.2.0", "--runtime-addr", addr})
+	root.SetArgs([]string{"agents", "deploy", "demo/echo-agent@1.2.0", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -687,7 +708,7 @@ func TestActiveCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"active", "demo/echo-agent", "--runtime-addr", addr})
+	root.SetArgs([]string{"agents", "active", "demo/echo-agent", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -701,6 +722,158 @@ func TestActiveCommand_success(t *testing.T) {
 	}
 }
 
+func TestBundleVersionsListCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForBundleVersionsList(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "versions", "demo/payment-desk-hitl", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	outStr := out.String()
+	if !strings.Contains(outStr, "1.0.0") || !strings.Contains(outStr, "sha256:abc") || !strings.Contains(outStr, "bv-1") {
+		t.Fatalf("output = %q, want version row", outStr)
+	}
+	if !strings.Contains(outStr, "LOCK_HASH") {
+		t.Fatalf("output = %q, want LOCK_HASH column", outStr)
+	}
+	if !strings.Contains(outStr, "VERSION") {
+		t.Fatalf("output = %q, want table headers", outStr)
+	}
+}
+
+func TestBundleActiveCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForBundleActive(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "active", "demo/payment-desk-hitl", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "demo/payment-desk-hitl@1.0.0") || !strings.Contains(got, "sha256:abc") {
+		t.Fatalf("output = %q, want active bundle version", got)
+	}
+	if !strings.Contains(got, "alice") {
+		t.Fatalf("output = %q, want deploy actor", got)
+	}
+}
+
+func TestBundleVersionsListCommand_invalidBundleName(t *testing.T) {
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "versions", "payment-desk-hitl"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "namespace/name") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBundleVersionsListCommand_bundleNotFound(t *testing.T) {
+	addr := startTestRuntimeAddrForBundleVersionsNotFound(t)
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "versions", "demo/missing", "--runtime-addr", addr})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "bundle demo/missing not found") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBundleVersionsListCommand_empty(t *testing.T) {
+	addr := startTestRuntimeAddrForBundleVersionsEmpty(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "versions", "demo/payment-desk-hitl", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "VERSION") {
+		t.Fatalf("output = %q, want table headers", got)
+	}
+	if strings.Contains(got, "sha256:") {
+		t.Fatalf("output = %q, want no version rows", got)
+	}
+}
+
+func TestBundleActiveCommand_noDeployment(t *testing.T) {
+	addr := startTestRuntimeAddrForBundleActiveNoDeployment(t)
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "active", "demo/payment-desk-hitl", "--runtime-addr", addr})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no active deployment") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBundleHistoryCommand_bundleNotFound(t *testing.T) {
+	addr := startTestRuntimeAddrForBundleHistoryNotFound(t)
+
+	root := NewRootCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "history", "demo/missing", "--runtime-addr", addr})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "bundle demo/missing not found") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBundleHistoryCommand_success(t *testing.T) {
+	addr := startTestRuntimeAddrForBundleHistory(t)
+
+	var out bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"bundles", "history", "demo/payment-desk-hitl", "--runtime-addr", addr})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"1.0.1", "sha256:def", "deploy", "alice", "1.0.0", "sha256:abc", "bob", "VERSION", "LOCK_HASH"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestHistoryCommand_success(t *testing.T) {
 	addr := startTestRuntimeAddrForHistory(t)
 
@@ -708,7 +881,7 @@ func TestHistoryCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"history", "demo/echo-agent", "--runtime-addr", addr})
+	root.SetArgs([]string{"agents", "history", "demo/echo-agent", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -749,7 +922,7 @@ func TestRetireCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"retire", "demo/echo-agent@1.0.0", "--runtime-addr", addr})
+	root.SetArgs([]string{"agents", "retire", "demo/echo-agent@1.0.0", "--runtime-addr", addr})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -832,7 +1005,7 @@ func TestPublishCommand_readManifestFailed(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", filepath.Join(t.TempDir(), "missing.json")})
+	root.SetArgs([]string{"agents", "publish", filepath.Join(t.TempDir(), "missing.json")})
 
 	err := root.Execute()
 	if err == nil {
@@ -886,6 +1059,7 @@ kind: Bundle
 metadata:
   name: helpdesk
   namespace: support
+  version: 1.0.0
 spec:
   root: ./orchestrator.yaml
 `
@@ -908,7 +1082,7 @@ func TestBundleValidateCommand_success(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"bundle", "validate", bundle})
+	root.SetArgs([]string{"bundles", "validate", bundle})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -922,20 +1096,20 @@ func TestBundleValidateCommand_success(t *testing.T) {
 	}
 }
 
-func TestValidateCommand_bundleKind(t *testing.T) {
+func TestAgentValidateCommand_rejectsBundleKind(t *testing.T) {
 	bundle := writeTestSupportBundle(t, t.TempDir())
 
-	var out bytes.Buffer
 	root := NewRootCommand()
-	root.SetOut(&out)
+	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"validate", bundle})
+	root.SetArgs([]string{"agents", "validate", bundle})
 
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(out.String(), "valid: support/helpdesk sha256:") {
-		t.Fatalf("output = %q, want bundle validation via top-level validate", out.String())
+	if !strings.Contains(err.Error(), "phrony bundles validate") {
+		t.Fatalf("error = %v, want bundles validate hint", err)
 	}
 }
 
@@ -946,7 +1120,7 @@ func TestBundleLockCommand_writesLockfile(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"bundle", "lock", bundle})
+	root.SetArgs([]string{"bundles", "lock", bundle})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -981,7 +1155,7 @@ func TestBundleValidateCommand_withLockInSync(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"bundle", "validate", bundle})
+	root.SetArgs([]string{"bundles", "validate", bundle})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -1003,7 +1177,7 @@ func TestBundleValidateCommand_lockDrift(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"bundle", "validate", bundle})
+	root.SetArgs([]string{"bundles", "validate", bundle})
 
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected drift error, got nil")
@@ -1018,13 +1192,13 @@ func TestBundleValidateCommand_requireLock(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"bundle", "validate", bundle, "--require-lock"})
+	root.SetArgs([]string{"bundles", "validate", bundle, "--require-lock"})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "phrony bundle lock") {
+	if !strings.Contains(err.Error(), "phrony bundles lock") {
 		t.Fatalf("error = %v, want bundle lock hint", err)
 	}
 }
@@ -1035,48 +1209,31 @@ func TestBundlePublishCommand_requiresLock(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"bundle", "publish", bundle})
+	root.SetArgs([]string{"bundles", "publish", bundle})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "phrony bundle lock") {
+	if !strings.Contains(err.Error(), "phrony bundles lock") {
 		t.Fatalf("error = %v, want bundle lock hint", err)
 	}
 }
 
-func TestPublishCommand_bundleRequiresLock(t *testing.T) {
+func TestAgentPublishCommand_rejectsBundleKind(t *testing.T) {
 	bundle := writeTestSupportBundle(t, t.TempDir())
 
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"publish", bundle})
+	root.SetArgs([]string{"agents", "publish", bundle})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "phrony bundle lock") {
-		t.Fatalf("error = %v, want bundle lock hint", err)
-	}
-}
-
-func TestValidateCommand_bundleRequireLock(t *testing.T) {
-	bundle := writeTestSupportBundle(t, t.TempDir())
-
-	root := NewRootCommand()
-	root.SetOut(&bytes.Buffer{})
-	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"validate", bundle, "--require-lock"})
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "phrony bundle lock") {
-		t.Fatalf("error = %v, want bundle lock hint", err)
+	if !strings.Contains(err.Error(), "phrony bundles publish") {
+		t.Fatalf("error = %v, want bundles publish hint", err)
 	}
 }
 
@@ -1092,7 +1249,7 @@ func TestBundlePublishCommand_rejectsLockDrift(t *testing.T) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"bundle", "publish", bundle})
+	root.SetArgs([]string{"bundles", "publish", bundle})
 
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected drift error, got nil")
@@ -1117,7 +1274,7 @@ func lockBundle(t *testing.T, bundlePath string) {
 	root := NewRootCommand()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"bundle", "lock", bundlePath})
+	root.SetArgs([]string{"bundles", "lock", bundlePath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("bundle lock: %v", err)
 	}
@@ -1125,7 +1282,7 @@ func lockBundle(t *testing.T, bundlePath string) {
 
 func TestBundleDeployCommand_requiresVersionedRef(t *testing.T) {
 	root := NewRootCommand()
-	root.SetArgs([]string{"bundle", "deploy", "support/helpdesk"})
+	root.SetArgs([]string{"bundles", "deploy", "support/helpdesk"})
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 
