@@ -13,32 +13,37 @@ This repository implements the runtime defined by the Phrony Agent Spec—the op
 
 ## Prerequisites
 
-- Go 1.25+
-- Docker (local Postgres via `docker compose`)
+- Docker (Postgres + runtime via Docker Compose)
+- Go 1.25+ (operator CLI)
 
 ## Getting started
 
-Three steps take you from a clone to a running runtime you can drive with the operator CLI.
+Three steps take you from zero to a running runtime you can drive with the operator CLI.
 
 ### 1. Bring up the runtime
 
-From a clone of this repository, start Postgres and the runtime with one command:
+Use the official Docker image `ghcr.io/phrony-platform/phrony-runtime:latest` (published on each [GitHub release](https://github.com/phrony-platform/runtime/releases)).
+
+Download the Compose file from the [Phrony docs](https://phrony.com/runtime/docker-compose.yml), then start Postgres and the runtime:
 
 ```bash
-make dev-up
+mkdir phrony-runtime && cd phrony-runtime
+curl -fsSLO https://phrony.com/runtime/docker-compose.yml
+docker compose up -d --wait
 ```
 
-Compose starts Postgres, waits until it is healthy, builds `phrony-runtime`, runs migrations on startup, and listens on **gRPC port 7777** (`127.0.0.1:7777` from your machine). Stop the stack with `make dev-down`.
+Compose waits for Postgres to become healthy, pulls `phrony-runtime`, runs migrations on startup, and listens on **gRPC port 7777** (`127.0.0.1:7777` from your machine). Stop the stack with `docker compose down`.
 
 ### 2. Install the operator CLI
 
-Build the `phrony` CLI and add its install directory to your shell `PATH`:
+Install `phrony` with Go and ensure `$(go env GOPATH)/bin` is on your `PATH`:
 
 ```bash
-make install-cli
+go build -o "$(go env GOPATH)/bin/phrony" \
+  github.com/phrony-platform/runtime/cmd/cli@latest
 ```
 
-This installs `phrony` to `$(go env GOPATH)/bin` and `~/.local/bin`, then adds them to your `PATH` in your shell rc. Open a new terminal (or `source` your rc) so `phrony` is on `PATH`.
+From a clone of this repository you can instead run `make install-cli`, which also installs to `~/.local/bin` and updates your shell `PATH`.
 
 ### 3. Use the runtime
 
@@ -56,7 +61,9 @@ Pass `--runtime-addr` to override the default runtime endpoint (`127.0.0.1:7777`
 
 ## Environment variables
 
-`make` targets load `.env` (or `.env.example` as a fallback) automatically. Copy `.env.example` to `.env` to customize. The compose `runtime` service sets its own `RUNTIME_DATABASE_URL` (hostname `postgres`), `RUNTIME_GRPC_ADDR=0.0.0.0:7777`, and a dev `RUNTIME_SECRETS_ENCRYPTION_KEY` in `docker-compose.yml`, so the quickstart above needs no extra configuration.
+The [Compose file](https://phrony.com/runtime/docker-compose.yml) sets `RUNTIME_DATABASE_URL` (hostname `postgres`), `RUNTIME_GRPC_ADDR=0.0.0.0:7777`, and a dev `RUNTIME_SECRETS_ENCRYPTION_KEY` on the runtime service, so the quickstart above needs no extra configuration.
+
+When building from source, `make` targets load `.env` (or `.env.example` as a fallback) automatically. Copy `.env.example` to `.env` to customize host-side settings.
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
@@ -84,6 +91,6 @@ The Node-based Phrony CLI (manifest authoring and packaging) is separate; this r
 
 ## Development
 
-The quickstart above covers running the runtime. For building binaries, tests, migrations, protobuf regeneration, and other workflows, run `make` with no arguments to see the full target list.
+To build the runtime from source instead of pulling the official image, clone this repository and use `make dev-up` (builds the local `Dockerfile`) or `make serve` with Postgres from Compose. For building binaries, tests, migrations, protobuf regeneration, and other workflows, run `make` with no arguments to see the full target list.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for repository layout, code style, the development setup, and pull request guidelines.
