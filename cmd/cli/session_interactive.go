@@ -62,6 +62,7 @@ func runInteractiveSessionCLI(
 			cmd.OutOrStdout(),
 			cmd.ErrOrStderr(),
 			controls,
+			rt,
 		)
 	})
 }

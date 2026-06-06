@@ -220,6 +220,12 @@ message RunSessionInteractiveToolCall {
   string tool = 2;
   string version = 3;
   bytes args = 4;
+  // True when the tool binding delegates to a nested child agent session.
+  bool agent_delegation = 5;
+  // Stable child session id derived from call_id; set when agent_delegation is true.
+  string child_session_id = 6;
+  // Display label for the delegation target (namespace.name@version or wire name).
+  string delegation_target = 7;
 }
 
 message RunSessionInteractiveToolResult {

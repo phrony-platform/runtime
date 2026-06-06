@@ -63,8 +63,12 @@ type runTUI struct {
 	statusHint          string
 	turnStartedAt  time.Time
 
-	transcript strings.Builder
-	streaming  strings.Builder
+	sessions               tuiSessionRegistry
+	focusPane              tuiFocusPane
+	delegationPaneVisible  bool
+	runtimeClient          runtimev1.RuntimeClient
+	childStreams           map[string]*childStreamState
+	delegationChildren     delegationChildren
 
 	status             string
 	awaitingInput      bool
@@ -79,6 +83,8 @@ type runTUI struct {
 
 	// followTail auto-scrolls the transcript on new output while the user is at the bottom.
 	followTail bool
+	// pendingCmd schedules a tea command after handleServerMsg (e.g. child attach).
+	pendingCmd tea.Cmd
 	// historyMetaTurns is the highest assistant turn number rendered from session history metadata.
 	historyMetaTurns int32
 }
@@ -88,8 +94,9 @@ func runInteractiveSessionTUI(
 	stream interactiveStream,
 	start *runtimev1.RunSessionInteractiveStart,
 	controls *sessionControls,
+	rt runtimev1.RuntimeClient,
 ) error {
-	m := newRunTUI(ctx, stream, start)
+	m := newRunTUI(ctx, stream, start, rt)
 	if controls != nil {
 		m.cancel = controls.cancel
 		m.complete = controls.complete
@@ -105,7 +112,7 @@ func runInteractiveSessionTUI(
 	return nil
 }
 
-func newRunTUI(ctx context.Context, stream interactiveStream, start *runtimev1.RunSessionInteractiveStart) *runTUI {
+func newRunTUI(ctx context.Context, stream interactiveStream, start *runtimev1.RunSessionInteractiveStart, rt runtimev1.RuntimeClient) *runTUI {
 	ti := textinput.New()
 	ti.Placeholder = "Type your message…"
 	ti.CharLimit = 0
@@ -121,13 +128,15 @@ func newRunTUI(ctx context.Context, stream interactiveStream, start *runtimev1.R
 	vp.SetContent("Connecting…")
 
 	return &runTUI{
-		ctx:        ctx,
-		stream:     stream,
-		start:      start,
-		input:      ti,
-		viewport:   vp,
-		status:     "connecting",
-		followTail: true,
+		ctx:           ctx,
+		stream:        stream,
+		start:         start,
+		runtimeClient: rt,
+		input:         ti,
+		viewport:      vp,
+		sessions:      newTuiSessionRegistry(),
+		status:        "connecting",
+		followTail:    true,
 	}
 }
 
@@ -332,6 +341,16 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 
+	case tuiChildStreamAttachMsg:
+		return m, m.attachChildStream(msg.childSessionID, msg.stream)
+
+	case tuiChildAttachRetryMsg:
+		return m, m.startChildWatcher(msg.childSessionID)
+
+	case tuiChildStreamMsg:
+		cmd, _ := m.handleChildStreamMsg(msg)
+		return m, cmd
+
 	case streamServerMsg:
 		m.streamRecvInFlight = false
 		if msg.err != nil {
@@ -360,9 +379,20 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.readOnly {
+			if m.pendingCmd != nil {
+				cmd := m.pendingCmd
+				m.pendingCmd = nil
+				return m, cmd
+			}
 			return m, nil
 		}
-		return m, m.scheduleStreamRecv()
+		recv := m.scheduleStreamRecv()
+		if m.pendingCmd != nil {
+			cmd := m.pendingCmd
+			m.pendingCmd = nil
+			return m, tea.Batch(recv, cmd)
+		}
+		return m, recv
 
 	case tuiClockTick:
 		if m.quitting || m.readOnly || m.wallClockFrozen() || m.status == "done" || m.status == "failed" || m.status == "cancelled" || m.status == "error" {
@@ -396,6 +426,34 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.menu.open {
 			return m.handleMenuKey(msg)
+		}
+		if msg.String() == "ctrl+s" && m.delegationPaneVisible {
+			if m.focusPane == tuiFocusSessions {
+				m.focusPane = tuiFocusMain
+			} else {
+				m.focusPane = tuiFocusSessions
+			}
+			m.refreshViewport()
+			return m, nil
+		}
+		if m.focusPane == tuiFocusSessions && m.sessions.hasDelegations() {
+			switch msg.String() {
+			case "up", "k":
+				m.sessions.moveSelection(-1)
+				m.refreshViewport()
+				return m, nil
+			case "down", "j":
+				m.sessions.moveSelection(1)
+				m.refreshViewport()
+				return m, nil
+			case "enter":
+				m.focusPane = tuiFocusMain
+				m.refreshViewport()
+				return m, nil
+			case "esc":
+				m.focusPane = tuiFocusMain
+				return m, nil
+			}
 		}
 		if msg.String() == "ctrl+p" {
 			m.openMenu()
@@ -465,8 +523,9 @@ func (m *runTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *runTUI) sendUserMessage(text string) error {
-	m.transcript.WriteString("\n")
-	m.transcript.WriteString(renderUserBlock(m.messageContentWidth(), text))
+	parent := m.parentEntry()
+	parent.transcript.WriteString("\n")
+	parent.transcript.WriteString(renderUserBlock(m.messageContentWidth(), text))
 
 	if err := m.stream.Send(&runtimev1.RunSessionInteractiveClientMsg{
 		Body: &runtimev1.RunSessionInteractiveClientMsg_UserMessage{
@@ -494,6 +553,9 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 	case msg.GetSessionStarted() != nil:
 		started := msg.GetSessionStarted()
 		m.sessionID = started.GetSessionId()
+		if parent := m.parentEntry(); parent != nil {
+			parent.id = m.sessionID
+		}
 		m.agentVersionID = started.GetAgentVersionId()
 		m.modelProvider = started.GetModelProvider()
 		m.modelName = started.GetModelName()
@@ -511,7 +573,7 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		m.status = "streaming"
 		m.layout()
 	case msg.GetTextDelta() != nil:
-		m.streaming.WriteString(msg.GetTextDelta().GetDelta())
+		m.parentEntry().streaming.WriteString(msg.GetTextDelta().GetDelta())
 		m.refreshViewport()
 	case msg.GetAwaitingInput() != nil:
 		duration := m.turnElapsed()
@@ -524,8 +586,8 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		}
 		m.setLastTurnStats(stats, awaiting.GetStopReason())
 		if !added && meta != nil && stats != nil && stats.GetTurnUsage() != nil && stats.GetTurn() > m.historyMetaTurns {
-			m.transcript.WriteString("\n")
-			m.transcript.WriteString(renderAgentMetaStrip(m.messageContentWidth(), meta))
+			m.parentEntry().transcript.WriteString("\n")
+			m.parentEntry().transcript.WriteString(renderAgentMetaStrip(m.messageContentWidth(), meta))
 		}
 		m.applyAwaitingInputState(awaiting.GetInputBlockedReason())
 		m.layout()
@@ -536,10 +598,13 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		if _, err := m.flushStreamingTurn(meta); err != nil {
 			return err
 		}
-		if m.transcript.Len() == 0 {
+		if m.parentEntry().transcript.Len() == 0 {
 			if err := m.appendCompletedOutput(completed.GetOutput(), meta); err != nil {
 				return err
 			}
+		}
+		if parent := m.parentEntry(); parent != nil {
+			parent.status = "done"
 		}
 		m.setLastTurnStats(completed.GetStats(), completed.GetStopReason())
 		if ms := completed.GetSessionEndedAtUnixMs(); ms > 0 {
@@ -566,18 +631,36 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		if m.status != "streaming" {
 			m.status = "streaming"
 		}
-		m.transcript.WriteString("\n")
-		m.transcript.WriteString(renderToolCallBlock(m.messageContentWidth(), tc))
-		m.statusHint = formatInteractiveToolCallLine(tc)
+		width := m.messageContentWidth()
+		if tc.GetAgentDelegation() {
+			m.parentEntry().transcript.WriteString("\n")
+			m.parentEntry().transcript.WriteString(renderAgentDelegationBlock(width, tc.GetDelegationTarget(), tc.GetCallId(), tc.GetArgs()))
+			m.pendingCmd = m.registerDelegation(tc)
+			target := strings.TrimSpace(tc.GetDelegationTarget())
+			if target == "" {
+				target = formatToolBindingName(tc.GetTool(), tc.GetVersion())
+			}
+			m.statusHint = "delegating to " + target
+		} else {
+			m.parentEntry().transcript.WriteString("\n")
+			m.parentEntry().transcript.WriteString(renderToolCallBlock(width, tc))
+			m.statusHint = formatInteractiveToolCallLine(tc)
+		}
 		m.followTail = true
 		m.layout()
 	case msg.GetToolResult() != nil:
 		tr := msg.GetToolResult()
+		if m.isDelegationCallID(tr.GetCallId()) {
+			m.statusHint = "delegation completed"
+			m.pendingCmd = m.hydrateChildAfterDelegation(tr.GetCallId())
+			m.layout()
+			break
+		}
 		if m.status != "streaming" {
 			m.status = "streaming"
 		}
-		m.transcript.WriteString("\n")
-		m.transcript.WriteString(renderToolResultBlock(m.messageContentWidth(), tr))
+		m.parentEntry().transcript.WriteString("\n")
+		m.parentEntry().transcript.WriteString(renderToolResultBlock(m.messageContentWidth(), tr))
 		m.statusHint = formatInteractiveToolResultLine(tr)
 		m.followTail = true
 		m.layout()
@@ -586,8 +669,8 @@ func (m *runTUI) handleServerMsg(msg *runtimev1.RunSessionInteractiveServerMsg) 
 		if _, err := m.flushStreamingTurn(nil); err != nil {
 			return err
 		}
-		m.transcript.WriteString("\n")
-		m.transcript.WriteString(renderToolApprovalBlock(m.messageContentWidth(), ar))
+		m.parentEntry().transcript.WriteString("\n")
+		m.parentEntry().transcript.WriteString(renderToolApprovalBlock(m.messageContentWidth(), ar))
 		m.applyAwaitingApprovalState(ar)
 		m.followTail = true
 		m.layout()
@@ -778,8 +861,8 @@ func (m *runTUI) appendConversationHistory(msgs []*runtimev1.InteractiveConversa
 		content := msg.GetContent()
 		switch role {
 		case "user":
-			m.transcript.WriteString("\n")
-			m.transcript.WriteString(renderUserBlock(m.messageContentWidth(), content))
+			m.parentEntry().transcript.WriteString("\n")
+			m.parentEntry().transcript.WriteString(renderUserBlock(m.messageContentWidth(), content))
 		case "assistant":
 			turn++
 			formatted, err := formatAssistantTranscript(content)
@@ -793,8 +876,8 @@ func (m *runTUI) appendConversationHistory(msgs []*runtimev1.InteractiveConversa
 				body = content
 			}
 			meta := turnMeta(statsFromHistoryMessage(msg, turn), msg.GetStopReason(), durationFromHistoryMessage(msg))
-			m.transcript.WriteString("\n")
-			m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", body, meta))
+			m.parentEntry().transcript.WriteString("\n")
+			m.parentEntry().transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", body, meta))
 			if meta != nil {
 				m.historyMetaTurns = turn
 			}
@@ -831,14 +914,15 @@ func (m *runTUI) appendCompletedOutput(raw []byte, meta *turnDisplayMeta) error 
 	if err != nil {
 		return err
 	}
-	m.transcript.WriteString("\n")
-	m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "Result", string(pretty), meta))
+	m.parentEntry().transcript.WriteString("\n")
+	m.parentEntry().transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "Result", string(pretty), meta))
 	return nil
 }
 
 func (m *runTUI) flushStreamingTurn(meta *turnDisplayMeta) (bool, error) {
-	raw := m.streaming.String()
-	m.streaming.Reset()
+	parent := m.parentEntry()
+	raw := parent.streaming.String()
+	parent.streaming.Reset()
 	if strings.TrimSpace(raw) == "" {
 		return false, nil
 	}
@@ -856,8 +940,8 @@ func (m *runTUI) flushStreamingTurn(meta *turnDisplayMeta) (bool, error) {
 	if formatted.Len() > 0 {
 		body = formatted.String()
 	}
-	m.transcript.WriteString("\n")
-	m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", body, meta))
+	parent.transcript.WriteString("\n")
+	parent.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", body, meta))
 	return true, nil
 }
 

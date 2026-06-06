@@ -45,7 +45,7 @@ func TestReplaySessionEventLog_replaysWireBackedEventsInOrder(t *testing.T) {
 
 	callMsg := toolCallServerMsg(executor.ToolCallEvent{
 		CallID: "call-1", Tool: "weather.get-forecast", Version: "1.0.0", Args: json.RawMessage(`{}`),
-	})
+	}, nil)
 	resultMsg := toolResultServerMsg(executor.ToolResultEvent{
 		CallID: "call-1", Payload: json.RawMessage(`{"temp":72}`),
 	})
@@ -111,7 +111,7 @@ func TestReplaySessionEventLog_skipsPendingApproval(t *testing.T) {
 func TestServerMsgFromSessionEvent_roundTrip(t *testing.T) {
 	orig := toolCallServerMsg(executor.ToolCallEvent{
 		CallID: "call-rt", Tool: "weather.get-forecast", Version: "1.0.0", Args: json.RawMessage(`{"city":"NYC"}`),
-	})
+	}, nil)
 	payload := marshalSessionEventProto(orig)
 	got, err := serverMsgFromSessionEvent(payload)
 	if err != nil {

@@ -11,7 +11,7 @@ import (
 
 func newMenuTUI(t *testing.T) *runTUI {
 	t.Helper()
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.sessionID = "sess-1"

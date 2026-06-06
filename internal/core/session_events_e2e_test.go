@@ -556,7 +556,7 @@ func TestSessionEventsE2E_activeAttachReplaysPersistedToolTimeline(t *testing.T)
 
 	callMsg := toolCallServerMsg(executor.ToolCallEvent{
 		CallID: "call-1", Tool: "weather.get-forecast", Version: "1.0.0", Args: json.RawMessage(`{"city":"NYC"}`),
-	})
+	}, nil)
 	resultMsg := toolResultServerMsg(executor.ToolResultEvent{
 		CallID: "call-1", Payload: json.RawMessage(`{"temp":72}`),
 	})

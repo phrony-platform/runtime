@@ -13,7 +13,7 @@ import (
 )
 
 func TestRunTUI_wallClockBlockedFreezesDisplay(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 100
 	m.maxWallClockSeconds = 60
 	m.sessionStartedAt = time.Now().Add(-90 * time.Second)
@@ -49,7 +49,7 @@ func TestRunTUI_wallClockBlockedFreezesDisplay(t *testing.T) {
 
 func TestRunTUI_handleServerMsg_approvalRequired(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.layout()
@@ -95,7 +95,7 @@ func TestRunTUI_handleServerMsg_approvalRequired(t *testing.T) {
 
 func TestRunTUI_sendToolApproval_approveAndDeny(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.applyAwaitingApprovalState(&runtimev1.RunSessionInteractiveApprovalRequired{
@@ -141,7 +141,7 @@ func TestRunTUI_sendToolApproval_approveAndDeny(t *testing.T) {
 
 func TestRunTUI_sendToolApproval_partialQuorum(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.applyAwaitingApprovalState(&runtimev1.RunSessionInteractiveApprovalRequired{
 		ApprovalId:         "appr-1",
 		Tool:               "danger.op",
@@ -164,7 +164,7 @@ func TestRunTUI_sendToolApproval_partialQuorum(t *testing.T) {
 }
 
 func TestRunTUI_scheduleStreamRecv_singleInFlight(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	if cmd := m.scheduleStreamRecv(); cmd == nil {
 		t.Fatal("expected first scheduleStreamRecv to return a cmd")
 	}
@@ -198,7 +198,7 @@ func TestRunTUI_textDeltaOrder_viaUpdatePump(t *testing.T) {
 		},
 	})
 	stream := &mockInteractiveClientStream{recv: recv}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 100
 	m.height = 24
 	m.layout()
@@ -220,7 +220,7 @@ func TestRunTUI_textDeltaOrder_viaUpdatePump(t *testing.T) {
 
 func TestRunTUI_Update_approvalKeys(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.applyAwaitingApprovalState(&runtimev1.RunSessionInteractiveApprovalRequired{
@@ -240,7 +240,7 @@ func TestRunTUI_Update_approvalKeys(t *testing.T) {
 }
 
 func TestRunTUI_handleServerMsg_toolCallAndResult(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.layout()
@@ -292,7 +292,7 @@ func TestRunTUI_handleServerMsg_toolCallAndResult(t *testing.T) {
 }
 
 func TestRunTUI_handleServerMsg_inputBlocked(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.layout()
@@ -326,7 +326,7 @@ func TestRunTUI_handleServerMsg_inputBlocked(t *testing.T) {
 }
 
 func TestRunTUI_statusBarView_wallClock(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 100
 	m.maxWallClockSeconds = 60
 	m.sessionStartedAt = time.Now().Add(-10 * time.Second)
@@ -343,7 +343,7 @@ func TestRunTUI_statusBarView_wallClockFrozenWhenEnded(t *testing.T) {
 	start := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	ended := start.Add(18 * time.Second)
 
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 100
 	m.maxWallClockSeconds = 60
 	m.sessionStartedAt = start
@@ -362,7 +362,7 @@ func TestRunTUI_statusBarView_wallClockFrozenWhenEnded(t *testing.T) {
 
 func TestRunTUI_handleServerMsg_turnWithStats(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 100
 	m.height = 30
 	m.layout()
@@ -455,7 +455,7 @@ func TestRunTUI_handleServerMsg_turnWithStats(t *testing.T) {
 }
 
 func TestRunTUI_handleServerMsg_sessionStartedWithHistory(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.layout()
@@ -492,7 +492,7 @@ func TestRunTUI_handleServerMsg_sessionStartedWithHistory(t *testing.T) {
 
 func TestRunTUI_attachCompletedReadOnly(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-done"})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-done"}, nil)
 	m.width = 80
 	m.height = 24
 	m.layout()
@@ -565,7 +565,7 @@ func TestRunTUI_attachCompletedReadOnly(t *testing.T) {
 
 func TestRunTUI_attachCancelledReadOnly(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-cancelled"})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-cancelled"}, nil)
 	m.width = 80
 	m.height = 24
 	m.layout()
@@ -634,7 +634,7 @@ func TestRunTUI_attachCancelledReadOnly(t *testing.T) {
 
 func TestRunTUI_attachFailedReadOnlyWallClockFrozen(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-failed"})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-failed"}, nil)
 	m.width = 80
 	m.height = 24
 	m.layout()
@@ -684,7 +684,7 @@ func TestRunTUI_attachFailedReadOnlyWallClockFrozen(t *testing.T) {
 }
 
 func TestRunTUI_layout_viewportMatchesBox(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.lastStats = &runtimev1.InteractiveSessionStats{Turn: 1}
@@ -703,7 +703,7 @@ func TestRunTUI_layout_viewportMatchesBox(t *testing.T) {
 
 func TestRunTUI_sendUserMessage_clearsStatsAndStreams(t *testing.T) {
 	stream := &mockInteractiveClientStream{}
-	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), stream, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.awaitingInput = true
@@ -730,7 +730,7 @@ func TestRunTUI_sendUserMessage_clearsStatsAndStreams(t *testing.T) {
 }
 
 func TestRunTUI_Update_windowSizeAndEmptyEnter(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.awaitingInput = true
 	m.input.Focus()
 
@@ -749,11 +749,11 @@ func TestRunTUI_Update_windowSizeAndEmptyEnter(t *testing.T) {
 }
 
 func TestRunTUI_mouseWheelScroll_disablesFollowTail(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 40
 	m.height = 12
 	for i := 0; i < 40; i++ {
-		m.transcript.WriteString(fmt.Sprintf("line %d\n", i))
+		m.parentEntry().transcript.WriteString(fmt.Sprintf("line %d\n", i))
 	}
 	m.layout()
 	if !m.followTail || !m.viewport.AtBottom() {
@@ -783,13 +783,13 @@ func TestRunTUI_mouseWheelScroll_disablesFollowTail(t *testing.T) {
 }
 
 func TestRunTUI_scrollWhileInput_preservesHistory(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 40
 	m.height = 12
 	m.awaitingInput = true
 	m.input.Focus()
 	for i := 0; i < 40; i++ {
-		m.transcript.WriteString(fmt.Sprintf("line %d\n", i))
+		m.parentEntry().transcript.WriteString(fmt.Sprintf("line %d\n", i))
 	}
 	m.layout()
 
@@ -810,18 +810,18 @@ func TestRunTUI_scrollWhileInput_preservesHistory(t *testing.T) {
 }
 
 func TestRunTUI_refreshViewport_respectsFollowTail(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 40
 	m.height = 12
 	for i := 0; i < 30; i++ {
-		m.transcript.WriteString(fmt.Sprintf("line %d\n", i))
+		m.parentEntry().transcript.WriteString(fmt.Sprintf("line %d\n", i))
 	}
 	m.layout()
 	m.followTail = false
 	m.viewport.LineUp(5)
 	offset := m.viewport.YOffset
 
-	m.transcript.WriteString("new line\n")
+	m.parentEntry().transcript.WriteString("new line\n")
 	m.refreshViewport()
 	if m.viewport.YOffset != offset {
 		t.Fatalf("YOffset = %d, want %d when not following tail", m.viewport.YOffset, offset)
@@ -841,7 +841,7 @@ func TestTuiScrollWhileInput_doesNotCaptureSpace(t *testing.T) {
 }
 
 func TestRunTUI_viewFitsTerminalWithInputFooter(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 80
 	m.height = 24
 	m.sessionID = "sess-1"
@@ -859,12 +859,12 @@ func TestRunTUI_viewFitsTerminalWithInputFooter(t *testing.T) {
 }
 
 func TestRunTUI_View_includesWrappedBody(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	m.width = 50
 	m.height = 20
 	m.sessionID = "sess-1"
 	m.layout()
-	m.transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", strings.Repeat("word ", 30), nil))
+	m.parentEntry().transcript.WriteString(renderAgentBlock(m.messageContentWidth(), "AGENT", strings.Repeat("word ", 30), nil))
 	m.refreshViewport()
 
 	view := m.View()
@@ -873,5 +873,38 @@ func TestRunTUI_View_includesWrappedBody(t *testing.T) {
 	}
 	if strings.Count(view, "\n") < 3 {
 		t.Fatalf("view should span multiple lines, got %q", view)
+	}
+}
+
+func TestRunTUI_footerHelpNotDuplicated(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
+	for _, width := range []int{40, 80, 100, 120} {
+		m.width = width
+		m.height = 24
+		m.awaitingInput = true
+		m.delegationPaneVisible = true
+		m.input.Focus()
+		m.layout()
+		footer := m.footerView()
+		if c := strings.Count(footer, "Enter send"); c != 1 {
+			t.Fatalf("width=%d footer Enter send count = %d, footer:\n%s", width, c, footer)
+		}
+		view := m.View()
+		if c := strings.Count(view, "Enter send"); c != 1 {
+			t.Fatalf("width=%d view Enter send count = %d", width, c)
+		}
+	}
+}
+
+func TestRunTUI_footerHelpNotDuplicatedOnShortTerminal(t *testing.T) {
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
+	m.width = 120
+	m.height = 10
+	m.awaitingInput = true
+	m.delegationPaneVisible = true
+	m.input.Focus()
+	m.layout()
+	if c := strings.Count(m.View(), "Enter send"); c != 1 {
+		t.Fatalf("short terminal Enter send count = %d", c)
 	}
 }

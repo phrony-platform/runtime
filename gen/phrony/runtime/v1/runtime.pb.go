@@ -1624,13 +1624,19 @@ func (x *RunSessionInteractiveCancelled) GetSessionEndedAtUnixMs() int64 {
 }
 
 type RunSessionInteractiveToolCall struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CallId        string                 `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
-	Tool          string                 `protobuf:"bytes,2,opt,name=tool,proto3" json:"tool,omitempty"`
-	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
-	Args          []byte                 `protobuf:"bytes,4,opt,name=args,proto3" json:"args,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	CallId  string                 `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	Tool    string                 `protobuf:"bytes,2,opt,name=tool,proto3" json:"tool,omitempty"`
+	Version string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Args    []byte                 `protobuf:"bytes,4,opt,name=args,proto3" json:"args,omitempty"`
+	// True when the tool binding delegates to a nested child agent session.
+	AgentDelegation bool `protobuf:"varint,5,opt,name=agent_delegation,json=agentDelegation,proto3" json:"agent_delegation,omitempty"`
+	// Stable child session id derived from call_id; set when agent_delegation is true.
+	ChildSessionId string `protobuf:"bytes,6,opt,name=child_session_id,json=childSessionId,proto3" json:"child_session_id,omitempty"`
+	// Display label for the delegation target (namespace.name@version or wire name).
+	DelegationTarget string `protobuf:"bytes,7,opt,name=delegation_target,json=delegationTarget,proto3" json:"delegation_target,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RunSessionInteractiveToolCall) Reset() {
@@ -1689,6 +1695,27 @@ func (x *RunSessionInteractiveToolCall) GetArgs() []byte {
 		return x.Args
 	}
 	return nil
+}
+
+func (x *RunSessionInteractiveToolCall) GetAgentDelegation() bool {
+	if x != nil {
+		return x.AgentDelegation
+	}
+	return false
+}
+
+func (x *RunSessionInteractiveToolCall) GetChildSessionId() string {
+	if x != nil {
+		return x.ChildSessionId
+	}
+	return ""
+}
+
+func (x *RunSessionInteractiveToolCall) GetDelegationTarget() string {
+	if x != nil {
+		return x.DelegationTarget
+	}
+	return ""
 }
 
 type RunSessionInteractiveToolResult struct {
@@ -6415,12 +6442,15 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x1bRunSessionInteractiveFailed\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\"X\n" +
 	"\x1eRunSessionInteractiveCancelled\x126\n" +
-	"\x18session_ended_at_unix_ms\x18\x01 \x01(\x03R\x14sessionEndedAtUnixMs\"z\n" +
+	"\x18session_ended_at_unix_ms\x18\x01 \x01(\x03R\x14sessionEndedAtUnixMs\"\xfc\x01\n" +
 	"\x1dRunSessionInteractiveToolCall\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x12\n" +
 	"\x04tool\x18\x02 \x01(\tR\x04tool\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12\x12\n" +
-	"\x04args\x18\x04 \x01(\fR\x04args\"y\n" +
+	"\x04args\x18\x04 \x01(\fR\x04args\x12)\n" +
+	"\x10agent_delegation\x18\x05 \x01(\bR\x0fagentDelegation\x12(\n" +
+	"\x10child_session_id\x18\x06 \x01(\tR\x0echildSessionId\x12+\n" +
+	"\x11delegation_target\x18\a \x01(\tR\x10delegationTarget\"y\n" +
 	"\x1fRunSessionInteractiveToolResult\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12#\n" +

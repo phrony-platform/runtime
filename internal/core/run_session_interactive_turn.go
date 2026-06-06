@@ -9,6 +9,7 @@ import (
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
+	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/provider"
@@ -149,10 +150,14 @@ func (st *interactiveSessionState) runTurn(
 				})
 			}
 			flushAssistantSegment("", provider.TokenUsage{}, 0)
-			if err := sendToolCall(events, ev.ToolCall); err != nil {
+			var agent *manifest.Agent
+			if st.version != nil {
+				agent = st.version.Agent
+			}
+			if err := sendToolCall(events, ev.ToolCall, agent); err != nil {
 				return "", "", provider.TokenUsage{}, err
 			}
-			recorder.RecordServerMsg(ctx, st.sessionID, model.SessionEventToolCall, toolCallServerMsg(ev.ToolCall))
+			recorder.RecordServerMsg(ctx, st.sessionID, model.SessionEventToolCall, toolCallServerMsg(ev.ToolCall, agent))
 		case executor.EventToolResult:
 			if q != nil {
 				_, _ = q.UpdateSession(ctx, store.UpdateSessionParams{

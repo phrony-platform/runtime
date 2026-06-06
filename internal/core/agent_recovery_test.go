@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/phrony-platform/runtime/internal/manifest"
+	"github.com/phrony-platform/runtime/internal/sessionids"
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
 )
 
@@ -24,11 +25,11 @@ func TestIsAgentBackedTool(t *testing.T) {
 }
 
 func TestChildSessionID_deterministicPerCall(t *testing.T) {
-	first := childSessionID("call-abc")
-	if first != childSessionID("call-abc") {
-		t.Fatal("childSessionID must be stable for a given call id so recovery can locate the child")
+	first := sessionids.ChildFromCallID("call-abc")
+	if first != sessionids.ChildFromCallID("call-abc") {
+		t.Fatal("ChildFromCallID must be stable for a given call id so recovery can locate the child")
 	}
-	if first == childSessionID("call-xyz") {
+	if first == sessionids.ChildFromCallID("call-xyz") {
 		t.Fatal("distinct call ids must map to distinct child sessions")
 	}
 	if !strings.HasPrefix(first, "run_") {

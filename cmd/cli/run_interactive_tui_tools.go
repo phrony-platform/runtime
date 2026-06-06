@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,22 @@ import (
 )
 
 var (
+	tuiDelegationLabelStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("141"))
+	tuiDelegationBlockStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("53")).
+				Padding(1, 2).
+				MarginBottom(1)
+	tuiSubagentInputLabelStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("81"))
+	tuiSubagentInputBlockStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("23")).
+				Padding(1, 2).
+				MarginBottom(1)
 	tuiToolCallLabelStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("214"))
@@ -88,6 +105,68 @@ func renderToolPanel(width int, label string, labelStyle, blockStyle lipgloss.St
 		return blockStyle.Width(width).Render(inner)
 	}
 	return blockStyle.Render(inner)
+}
+
+// delegationInputPlainText extracts a human-readable task from common delegation arg shapes.
+func delegationInputPlainText(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return ""
+	}
+	for _, key := range []string{"message", "text", "task", "input", "question"} {
+		v, ok := obj[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			if s = strings.TrimSpace(s); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// delegatedUserHistoryDuplicatesInput reports whether a child session history user
+// message repeats input already shown from the parent delegation tool call.
+func delegatedUserHistoryDuplicatesInput(sessionInput []byte, historyUser string) bool {
+	if len(sessionInput) == 0 {
+		return false
+	}
+	historyUser = strings.TrimSpace(historyUser)
+	if historyUser == "" {
+		return false
+	}
+	rawInput := strings.TrimSpace(string(sessionInput))
+	if historyUser == rawInput {
+		return true
+	}
+	if plain := delegationInputPlainText(sessionInput); plain != "" && historyUser == plain {
+		return true
+	}
+	return false
+}
+
+func renderSubagentSessionInputBlock(width int, input []byte) string {
+	fields := [][2]string{{"input", formatToolDisplayJSON(input)}}
+	return renderToolPanel(width, "SESSION INPUT", tuiSubagentInputLabelStyle, tuiSubagentInputBlockStyle, fields)
+}
+
+func renderAgentDelegationBlock(width int, target, callID string, args []byte) string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		target = "agent"
+	}
+	fields := [][2]string{
+		{"target", target},
+		{"call_id", callID},
+		{"input", formatToolDisplayJSON(args)},
+	}
+	return renderToolPanel(width, "AGENT DELEGATION", tuiDelegationLabelStyle, tuiDelegationBlockStyle, fields)
 }
 
 func renderToolCallBlock(width int, tc *runtimev1.RunSessionInteractiveToolCall) string {

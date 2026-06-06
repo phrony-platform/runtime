@@ -9,6 +9,7 @@ import (
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
+	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/policy"
 	"github.com/phrony-platform/runtime/internal/provider"
@@ -204,7 +205,11 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 				return err
 			}
 		case executor.EventToolCall:
-			if err := sendToolCall(events, ev.ToolCall); err != nil {
+			var agent *manifest.Agent
+			if st != nil && st.version != nil {
+				agent = st.version.Agent
+			}
+			if err := sendToolCall(events, ev.ToolCall, agent); err != nil {
 				return err
 			}
 		case executor.EventToolResult:

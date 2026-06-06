@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
+	"github.com/phrony-platform/runtime/internal/sessionids"
 	"github.com/phrony-platform/runtime/internal/store"
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
 )
@@ -251,17 +251,6 @@ func (d *agentDispatcher) runChild(ctx context.Context, call tooldispatch.ToolCa
 	return d.childResult(ctx, q, call.CallID, childSessionID, binding.result)
 }
 
-// childSessionNamespace seeds deterministic child session ids derived from the
-// originating tool call id, so an interrupted delegation resumes the same
-// durable child on recovery instead of spawning a duplicate.
-var childSessionNamespace = uuid.MustParse("b3f2a1c0-1d4e-4f6a-9c2b-7e8d9a0b1c2d")
-
-// childSessionID returns the stable session id for the child spawned by a tool
-// call. It is a pure function of the call id so recovery can locate the child.
-func childSessionID(callID string) string {
-	return "run_" + uuid.NewSHA1(childSessionNamespace, []byte(callID)).String()
-}
-
 // childResult reads the finished child session and maps it to a tool result:
 // completed runs return their output (and usage for parent token accounting),
 // failed or non-terminal runs become tool errors for the parent model.
@@ -280,7 +269,7 @@ func (d *agentDispatcher) enrichDelegatedUsageIfNeeded(
 	if err != nil {
 		return res
 	}
-	enriched, err := d.childResult(ctx, q, callID, childSessionID(callID), resultShape)
+	enriched, err := d.childResult(ctx, q, callID, sessionids.ChildFromCallID(callID), resultShape)
 	if err != nil || enriched.Usage == nil || enriched.Usage.Total() == 0 {
 		return res
 	}
@@ -340,15 +329,20 @@ func (s *runtimeServer) runChildSessionToCompletion(
 ) error {
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if err := s.registerActiveSession(childSessionID, activeSessionEntry{cancel: cancel}); err != nil {
+	eventHub := newSessionEventHub()
+	inputMux := newClosedChildInputStream(childCtx)
+	if err := s.registerActiveSession(childSessionID, activeSessionEntry{
+		cancel:   cancel,
+		eventHub: eventHub,
+		inputMux: inputMux,
+	}); err != nil {
 		return err
 	}
 	defer s.unregisterActiveSession(childSessionID)
 
-	stream := newClosedChildInputStream(childCtx)
 	return s.driveSessionToCompletion(
 		childCtx, q, childSessionID, agentVersionID, ver,
-		noopSessionEventSink{}, stream, inputJSON, true, depth,
+		eventHub, inputMux, inputJSON, true, depth,
 	)
 }
 
@@ -373,7 +367,7 @@ func (s *runtimeServer) createChildSession(
 	inputJSON json.RawMessage,
 	depth int,
 ) (string, error) {
-	childID := childSessionID(callID)
+	childID := sessionids.ChildFromCallID(callID)
 	if existing, err := q.GetSession(ctx, childID); err == nil {
 		return existing.ID, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {

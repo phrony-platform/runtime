@@ -75,7 +75,7 @@ var (
 // bodyContentWidth is the viewport width inside the chat box (border + inner padding).
 func (m *runTUI) bodyContentWidth() int {
 	// Outer box width is m.width-2; subtract border (2) and tuiBoxStyle horizontal padding (4).
-	w := m.width - 8
+	w := m.width - 8 - m.sessionsPaneWidth()
 	if w < 10 {
 		return 10
 	}
@@ -100,13 +100,19 @@ func (m *runTUI) headerContentWidth() int {
 }
 
 func (m *runTUI) conversationText() string {
-	var b strings.Builder
-	if m.transcript.Len() > 0 {
-		b.WriteString(m.transcript.String())
+	entry := m.selectedEntry()
+	if entry == nil {
+		return ""
 	}
-	if m.streaming.Len() > 0 {
-		body := m.streaming.String()
-		if m.status == "streaming" {
+	var b strings.Builder
+	if entry.transcript.Len() > 0 {
+		b.WriteString(entry.transcript.String())
+	}
+	if entry.streaming.Len() > 0 {
+		body := entry.streaming.String()
+		if m.status == "streaming" && entry.isParent {
+			body += lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Render("▌")
+		} else if !entry.isParent && entry.status == "running" {
 			body += lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Render("▌")
 		}
 		b.WriteString("\n")
@@ -162,13 +168,15 @@ func (m *runTUI) headerView() string {
 		title = fmt.Sprintf("Phrony · session %s", shortID(m.sessionID))
 	}
 	hw := m.headerContentWidth()
+	metaParts := []string{
+		fmt.Sprintf("agent version %s · %s", shortID(m.agentVersionID), formatModelLine(m.modelProvider, m.modelName)),
+	}
+	if entry := m.selectedEntry(); entry != nil && !entry.isParent && entry.id != "" {
+		metaParts = append([]string{fmt.Sprintf("session %s · %s", shortID(entry.id), entry.label)}, metaParts...)
+	}
 	inner := strings.Join([]string{
 		tuiTitleStyle.Render(title),
-		wrapTUIText(hw, tuiMetaStyle.Render(fmt.Sprintf(
-			"agent version %s · %s",
-			shortID(m.agentVersionID),
-			formatModelLine(m.modelProvider, m.modelName),
-		))),
+		wrapTUIText(hw, tuiMetaStyle.Render(strings.Join(metaParts, " · "))),
 	}, "\n")
 	return tuiHeaderBarStyle.Width(m.width - 2).Render(inner)
 }
@@ -280,35 +288,107 @@ func (m *runTUI) footerView() string {
 	}
 	switch {
 	case m.awaitingApprovalDecision():
-		help := tuiHelpStyle.Render(
+		return m.footerPanelWithHelp(
+			m.approvalPanelView(),
 			"A approve  ·  D deny  ·  PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu",
 		)
-		return m.approvalPanelView() + "\n" + help
 	case m.inputBlocked():
-		help := tuiHelpStyle.Render(
+		return m.footerPanelWithHelp(
+			m.blockedPanelView(),
 			"PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu",
 		)
-		return m.blockedPanelView() + "\n" + help
 	case m.awaitingInput:
-		help := tuiHelpStyle.Render(
+		return m.footerPanelWithHelp(
+			m.inputPanelView(),
 			"Enter send  ·  PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu",
 		)
-		return m.inputPanelView() + "\n" + help
 	case m.readOnly:
-		return tuiHelpStyle.Render(
+		return m.footerHelpLine(
 			"Session finished — scroll to review  ·  PgUp/PgDn  ·  Ctrl+End latest  ·  Ctrl+P menu",
 		)
 	case m.status == "done":
-		return tuiHelpStyle.Render("Session finished  ·  Ctrl+P menu  ·  Ctrl+C exit")
+		return m.footerHelpLine("Session finished  ·  Ctrl+P menu  ·  Ctrl+C exit")
 	default:
-		return tuiHelpStyle.Render("PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu")
+		return m.footerHelpLine("PgUp/PgDn scroll  ·  Ctrl+End latest  ·  Ctrl+P menu")
 	}
+}
+
+func (m *runTUI) footerPanelWithHelp(panel, helpBase string) string {
+	help := m.footerHelpLine(helpBase)
+	if panel == "" {
+		return help
+	}
+	return panel + "\n" + help
+}
+
+func (m *runTUI) footerHelpLine(base string) string {
+	if m.delegationPaneVisible {
+		if m.sessionsPaneExpanded() {
+			base += "  ·  Ctrl+S sessions"
+		} else {
+			base += "  ·  " + tuiSessionsPaneCollapsedHint
+		}
+	}
+	return tuiHelpStyle.Render(base)
 }
 
 func (m *runTUI) chatBoxView() string {
 	_, _, _, frameH := m.chromeHeights()
 	outerH := m.viewport.Height + frameH
-	return tuiBoxStyle.Width(m.width - 2).Height(outerH).Render(m.viewport.View())
+	if !m.sessionsPaneExpanded() {
+		return tuiBoxStyle.Width(m.width - 2).Height(outerH).Render(m.viewport.View())
+	}
+	chatW := m.bodyContentWidth() + tuiBoxStyle.GetHorizontalFrameSize()
+	chat := tuiBoxStyle.Width(chatW).Height(outerH).Render(m.viewport.View())
+	pane := m.sessionsPaneView(outerH)
+	return lipgloss.JoinHorizontal(lipgloss.Top, chat, pane)
+}
+
+func (m *runTUI) sessionsPaneView(outerH int) string {
+	borderColor := lipgloss.Color("240")
+	if m.focusPane == tuiFocusSessions {
+		borderColor = lipgloss.Color("39")
+	}
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(0, 1)
+	title := tuiInputTitleStyle.Render("Sessions")
+	var lines []string
+	for i, entry := range m.sessions.entries {
+		label := entry.label
+		if entry.isParent {
+			label = "Parent"
+		}
+		dotColor := sessionStatusDotColor(entry.status)
+		prefix := "  "
+		if i == m.sessions.selectedIdx {
+			prefix = "● "
+		}
+		line := prefix + lipgloss.NewStyle().Foreground(lipgloss.Color(dotColor)).Render("●") + " " + label
+		if i == m.sessions.selectedIdx {
+			line = lipgloss.NewStyle().Bold(true).Render(line)
+		}
+		lines = append(lines, wrapTUIText(tuiSessionsPaneWidth-4, line))
+	}
+	body := strings.Join(lines, "\n")
+	inner := lipgloss.JoinVertical(lipgloss.Left, title, body)
+	return style.Width(tuiSessionsPaneWidth).Height(outerH).Render(inner)
+}
+
+func sessionStatusDotColor(status string) string {
+	switch status {
+	case "running":
+		return "39"
+	case "done":
+		return "244"
+	case "failed":
+		return "196"
+	case "cancelled":
+		return "214"
+	default:
+		return "252"
+	}
 }
 
 func (m *runTUI) View() string {

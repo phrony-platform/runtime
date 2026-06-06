@@ -37,9 +37,10 @@ func runInteractiveSession(
 	stdin io.Reader,
 	stdout, stderr io.Writer,
 	controls *sessionControls,
+	rt runtimev1.RuntimeClient,
 ) error {
 	if interactiveUseTUI(stdin, stdout) {
-		return runInteractiveSessionTUI(ctx, stream, start, controls)
+		return runInteractiveSessionTUI(ctx, stream, start, controls, rt)
 	}
 	return runInteractiveSessionPlain(ctx, stream, start, stdin, stdout, stderr)
 }

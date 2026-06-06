@@ -173,7 +173,7 @@ func (h *toolE2EHarness) runTurnWithSessionStart(
 				return "", "", err
 			}
 		case executor.EventToolCall:
-			if err := sendToolCall(stream, ev.ToolCall); err != nil {
+			if err := sendToolCall(stream, ev.ToolCall, nil); err != nil {
 				return "", "", err
 			}
 		case executor.EventToolResult:

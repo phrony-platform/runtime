@@ -75,7 +75,7 @@ func TestWrapTUIText_emptyAndZeroWidth(t *testing.T) {
 }
 
 func TestRunTUIBodyContentWidth(t *testing.T) {
-	m := newRunTUI(nil, nil, nil)
+	m := newRunTUI(nil, nil, nil, nil)
 	m.width = 80
 	if got := m.bodyContentWidth(); got != 72 {
 		t.Fatalf("bodyContentWidth() = %d, want 72", got)

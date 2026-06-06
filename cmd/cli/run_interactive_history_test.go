@@ -33,7 +33,7 @@ func TestPrintConversationHistory_skipsSystemAndTool(t *testing.T) {
 }
 
 func TestRunTUI_handleServerMsg_sessionStartedWithSystemInHistory(t *testing.T) {
-	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-tool"})
+	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{SessionId: "sess-tool"}, nil)
 	m.width = 80
 	m.height = 24
 	m.layout()

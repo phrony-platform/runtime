@@ -15,6 +15,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/provider"
+	"github.com/phrony-platform/runtime/internal/sessionids"
 	"github.com/phrony-platform/runtime/internal/store"
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
 	"gopkg.in/yaml.v3"
@@ -392,7 +393,7 @@ func TestAgentDelegationE2E_happyPath(t *testing.T) {
 	}
 
 	callID := soleCallID(t, db, rootID)
-	if childID != childSessionID(callID) {
+	if childID != sessionids.ChildFromCallID(callID) {
 		t.Fatalf("child id %q is not derived from the delegation call id %q", childID, callID)
 	}
 
@@ -517,9 +518,9 @@ func TestAgentDelegationE2E_recoveryResumesDelegation(t *testing.T) {
 		t.Fatalf("delegation invocation status = %q, want succeeded", inv.Status)
 	}
 
-	child, err := q.GetSession(context.Background(), childSessionID(callID))
+	child, err := q.GetSession(context.Background(), sessionids.ChildFromCallID(callID))
 	if err != nil {
-		t.Fatalf("recovered child session %s not found: %v", childSessionID(callID), err)
+		t.Fatalf("recovered child session %s not found: %v", sessionids.ChildFromCallID(callID), err)
 	}
 	if child.Status != model.SessionStatusCompleted {
 		t.Fatalf("recovered child status = %q, want completed", child.Status)
@@ -559,7 +560,7 @@ func TestAgentDelegationE2E_recoveryResumesChildStoredVersionAfterRepublish(t *t
 
 	parentID := uuid.NewString()
 	callID := uuid.NewString()
-	childID := childSessionID(callID)
+	childID := sessionids.ChildFromCallID(callID)
 	historyJSON, err := encodeHistory([]provider.Message{{Role: provider.RoleUser, Content: "please delegate"}})
 	if err != nil {
 		t.Fatalf("encodeHistory: %v", err)
