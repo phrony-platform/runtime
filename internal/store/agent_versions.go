@@ -122,6 +122,32 @@ FROM agent_versions
 WHERE id = $1
 `
 
+const agentVersionIdentity = `
+SELECT a.namespace, a.name, av.version, av.manifest
+FROM agent_versions av
+INNER JOIN agents a ON a.id = av.agent_id
+WHERE av.id = $1
+`
+
+// AgentVersionIdentity is the published agent ref and manifest for a version row.
+type AgentVersionIdentity struct {
+	Namespace string
+	Name      string
+	Version   string
+	Manifest  json.RawMessage
+}
+
+// GetAgentVersionIdentity returns agent ref labels and manifest for a version id.
+func (q *Queries) GetAgentVersionIdentity(ctx context.Context, agentVersionID string) (AgentVersionIdentity, error) {
+	row := q.db.QueryRowContext(ctx, agentVersionIdentity, agentVersionID)
+	var out AgentVersionIdentity
+	err := row.Scan(&out.Namespace, &out.Name, &out.Version, &out.Manifest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AgentVersionIdentity{}, err
+	}
+	return out, err
+}
+
 // GetAgentVersionManifest returns the ref-only manifest JSON for a deployed version.
 func (q *Queries) GetAgentVersionManifest(ctx context.Context, agentVersionID string) (json.RawMessage, error) {
 	row := q.db.QueryRowContext(ctx, agentVersionManifest, agentVersionID)

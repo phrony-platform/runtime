@@ -32,6 +32,8 @@ service Runtime {
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   rpc ListAgentVersions(ListAgentVersionsRequest) returns (ListAgentVersionsResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // InspectSession returns a complete persisted dump of a session and its delegated children.
+  rpc InspectSession(InspectSessionRequest) returns (InspectSessionResponse);
   rpc GetApproval(GetApprovalRequest) returns (Approval);
   rpc ListApprovals(ListApprovalsRequest) returns (ListApprovalsResponse);
   rpc DecideApproval(DecideApprovalRequest) returns (DecideApprovalResponse);
@@ -534,6 +536,126 @@ message SessionSummary {
 
 message ListSessionsResponse {
   repeated SessionSummary sessions = 1;
+}
+
+message InspectSessionRequest {
+  string session_id = 1;
+}
+
+// Per-completed-turn stats (from sessions.output.turns[] and history).
+message SessionTurnInspect {
+  string stop_reason = 1;
+  TokenUsage turn_usage = 2;
+  int64 turn_duration_ms = 3;
+}
+
+// Parsed final output summary (from sessions.output JSON).
+message SessionOutputInspect {
+  string message = 1;
+  string stop_reason = 2;
+  TokenUsage turn_usage = 3;
+  TokenUsage session_usage = 4;
+  repeated SessionTurnInspect turns = 5;
+}
+
+// Agent/runtime context resolved from agent_version manifest.
+message SessionAgentContext {
+  string namespace = 1;
+  string name = 2;
+  string version = 3;
+  string model_provider = 4;
+  string model_name = 5;
+  int32 max_tokens_per_run = 6;
+  int32 max_wall_clock_seconds = 7;
+}
+
+message SessionEventEntry {
+  int64 id = 1;
+  string type = 2;
+  bytes payload = 3;      // full JSON as stored (protojson for wire-backed events)
+  string created_at = 4;  // RFC3339
+}
+
+message ToolInvocationEntry {
+  string call_id = 1;
+  string agent_version_id = 2;
+  int32 turn = 3;
+  string tool = 4;
+  string version = 5;
+  bytes args = 6;
+  bytes result = 7;
+  string status = 8;
+  string worker_identity = 9;
+  string image_digest = 10;
+  string descriptor_hash = 11;
+  string manifest_content_hash = 12;
+  int32 attempt = 13;
+  string error_code = 14;
+  string error_message = 15;
+  TokenUsage usage = 16;
+  string created_at = 17;
+  string updated_at = 18;
+  string dispatched_at = 19;  // empty when unset
+  string completed_at = 20;   // empty when unset
+  // Server-computed delays (ms); 0 when timestamps unavailable.
+  int64 queue_delay_ms = 21;       // dispatched_at - created_at
+  int64 execution_duration_ms = 22; // completed_at - dispatched_at
+  int64 total_duration_ms = 23;     // completed_at - created_at
+}
+
+// Server-built unified chronological view merging events, invocation
+// milestones, and approvals. Clients that want one timeline use this.
+message InspectTimelineEntry {
+  string timestamp = 1;   // RFC3339
+  int64 gap_ms = 2;       // ms since previous entry (0 for first)
+  string source = 3;      // "event" | "invocation" | "approval"
+  string kind = 4;        // e.g. user_message, tool_call, invocation_dispatched, approval
+  string summary = 5;     // one-line human summary
+  SessionEventEntry event = 10;
+  ToolInvocationEntry invocation = 11;
+  Approval approval = 12;
+}
+
+// Recursive tree node: one session and its delegated children.
+message SessionInspect {
+  // Identity & status
+  string id = 1;
+  string agent_version_id = 2;
+  string status = 3;
+  string parent_session_id = 4;
+  int32 depth = 5;
+  string bundle_version_id = 6;
+  string created_at = 7;
+  string updated_at = 8;
+
+  // Session I/O (full, not truncated)
+  bytes input = 9;
+  bytes output_raw = 10;  // verbatim sessions.output JSON
+  SessionOutputInspect output = 11;
+  string error = 12;
+  repeated InteractiveConversationMessage history = 13;
+
+  // Agent/runtime context & governance
+  SessionAgentContext agent = 14;
+  DescriptiveMetadataEvidence descriptive_metadata = 15;
+
+  // Wall-clock bounds (unix ms; derived from session timestamps + lifecycle events)
+  int64 session_started_at_unix_ms = 16;
+  int64 session_ended_at_unix_ms = 17;
+
+  // Raw data sources
+  repeated SessionEventEntry events = 18;
+  repeated ToolInvocationEntry invocations = 19;
+  repeated Approval approvals = 20;  // reuse existing Approval message + votes
+
+  // Unified timeline (events + invocation milestones + approvals, sorted)
+  repeated InspectTimelineEntry timeline = 21;
+
+  repeated SessionInspect children = 22;
+}
+
+message InspectSessionResponse {
+  SessionInspect session = 1;
 }
 
 message ApprovalVote {

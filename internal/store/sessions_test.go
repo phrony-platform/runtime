@@ -323,6 +323,32 @@ func TestQueries_ListSessionsByAgentVersionID_allAgents(t *testing.T) {
 	}
 }
 
+func TestQueries_ListDescendantSessionIDs(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	mock.ExpectQuery(`WITH RECURSIVE descendants`).
+		WithArgs("root-sess").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).
+			AddRow("root-sess").
+			AddRow("child-sess"))
+
+	q := New(sqlDB)
+	ids, err := q.ListDescendantSessionIDs(context.Background(), "root-sess")
+	if err != nil {
+		t.Fatalf("ListDescendantSessionIDs: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != "root-sess" || ids[1] != "child-sess" {
+		t.Fatalf("ids = %v", ids)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestQueries_ListSessionsByAgentVersionID_allStatuses(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {

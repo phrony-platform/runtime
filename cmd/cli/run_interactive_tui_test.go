@@ -876,6 +876,16 @@ func TestRunTUI_View_includesWrappedBody(t *testing.T) {
 	}
 }
 
+func countTUIHelpLines(s string) int {
+	n := 0
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, "PgUp/PgDn scroll") {
+			n++
+		}
+	}
+	return n
+}
+
 func TestRunTUI_footerHelpNotDuplicated(t *testing.T) {
 	m := newRunTUI(context.Background(), &mockInteractiveClientStream{}, &runtimev1.RunSessionInteractiveStart{}, nil)
 	for _, width := range []int{40, 80, 100, 120} {
@@ -889,9 +899,15 @@ func TestRunTUI_footerHelpNotDuplicated(t *testing.T) {
 		if c := strings.Count(footer, "Enter send"); c != 1 {
 			t.Fatalf("width=%d footer Enter send count = %d, footer:\n%s", width, c, footer)
 		}
+		if c := countTUIHelpLines(footer); c != 1 {
+			t.Fatalf("width=%d footer help lines = %d, footer:\n%s", width, c, footer)
+		}
 		view := m.View()
 		if c := strings.Count(view, "Enter send"); c != 1 {
 			t.Fatalf("width=%d view Enter send count = %d", width, c)
+		}
+		if c := countTUIHelpLines(view); c != 1 {
+			t.Fatalf("width=%d view help lines = %d", width, c)
 		}
 	}
 }
@@ -904,7 +920,11 @@ func TestRunTUI_footerHelpNotDuplicatedOnShortTerminal(t *testing.T) {
 	m.delegationPaneVisible = true
 	m.input.Focus()
 	m.layout()
-	if c := strings.Count(m.View(), "Enter send"); c != 1 {
+	view := m.View()
+	if c := strings.Count(view, "Enter send"); c != 1 {
 		t.Fatalf("short terminal Enter send count = %d", c)
+	}
+	if c := countTUIHelpLines(view); c != 1 {
+		t.Fatalf("short terminal help lines = %d", c)
 	}
 }

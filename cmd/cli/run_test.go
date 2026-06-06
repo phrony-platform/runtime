@@ -83,6 +83,9 @@ func (c *recordingRuntimeClient) ListAgentVersions(context.Context, *runtimev1.L
 func (c *recordingRuntimeClient) ListSessions(context.Context, *runtimev1.ListSessionsRequest, ...grpc.CallOption) (*runtimev1.ListSessionsResponse, error) {
 	return nil, c.unexpected()
 }
+func (c *recordingRuntimeClient) InspectSession(context.Context, *runtimev1.InspectSessionRequest, ...grpc.CallOption) (*runtimev1.InspectSessionResponse, error) {
+	return nil, c.unexpected()
+}
 func (c *recordingRuntimeClient) GetApproval(context.Context, *runtimev1.GetApprovalRequest, ...grpc.CallOption) (*runtimev1.Approval, error) {
 	return nil, c.unexpected()
 }

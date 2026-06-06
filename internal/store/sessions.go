@@ -229,6 +229,39 @@ type ListSessionsByAgentVersionIDParams struct {
 	Status string
 }
 
+const listDescendantSessionIDs = `
+WITH RECURSIVE descendants AS (
+	SELECT id, depth
+	FROM sessions
+	WHERE id = $1
+	UNION ALL
+	SELECT s.id, s.depth
+	FROM sessions s
+	INNER JOIN descendants d ON s.parent_session_id = d.id
+)
+SELECT id FROM descendants
+ORDER BY depth ASC, id ASC
+`
+
+// ListDescendantSessionIDs returns the root session id and all delegated child session ids.
+func (q *Queries) ListDescendantSessionIDs(ctx context.Context, rootSessionID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listDescendantSessionIDs, rootSessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 func (q *Queries) ListSessionsByAgentVersionID(ctx context.Context, arg ListSessionsByAgentVersionIDParams) ([]SessionListRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionsByAgentVersionID, arg.AgentVersionID, arg.Status)
 	if err != nil {

@@ -321,6 +321,14 @@ func (m *runTUI) footerPanelWithHelp(panel, helpBase string) string {
 	return panel + "\n" + help
 }
 
+func (m *runTUI) footerHelpWidth() int {
+	w := m.width - 2
+	if w < 1 {
+		return 0
+	}
+	return w
+}
+
 func (m *runTUI) footerHelpLine(base string) string {
 	if m.delegationPaneVisible {
 		if m.sessionsPaneExpanded() {
@@ -329,7 +337,11 @@ func (m *runTUI) footerHelpLine(base string) string {
 			base += "  ·  " + tuiSessionsPaneCollapsedHint
 		}
 	}
-	return tuiHelpStyle.Render(base)
+	styled := tuiHelpStyle.Render(base)
+	if w := m.footerHelpWidth(); w > 0 {
+		return wrapTUIText(w, styled)
+	}
+	return styled
 }
 
 func (m *runTUI) chatBoxView() string {

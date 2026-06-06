@@ -131,6 +131,32 @@ func TestQueries_InsertToolInvocationPending(t *testing.T) {
 	}
 }
 
+func TestQueries_ListToolInvocationsBySessionID(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	now := time.Now()
+	rows := toolInvocationMockRows(now)
+	addToolInvocationRow(rows, "call-1", "sess-1", model.ToolInvocationSucceeded, now)
+	addToolInvocationRow(rows, "call-2", "sess-1", model.ToolInvocationDispatched, now)
+	mock.ExpectQuery(`FROM tool_invocations`).WithArgs("sess-1").WillReturnRows(rows)
+
+	q := New(sqlDB)
+	list, err := q.ListToolInvocationsBySessionID(context.Background(), "sess-1")
+	if err != nil {
+		t.Fatalf("ListToolInvocationsBySessionID: %v", err)
+	}
+	if len(list) != 2 || list[0].CallID != "call-1" || list[1].CallID != "call-2" {
+		t.Fatalf("list = %+v", list)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestQueries_ListUnfinishedInvocationsBySession(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {

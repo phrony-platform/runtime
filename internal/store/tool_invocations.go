@@ -261,6 +261,54 @@ type ToolInvocation struct {
 	CompletedAt         *time.Time      `json:"completed_at"`
 }
 
+const listToolInvocationsBySessionID = `
+SELECT
+	call_id,
+	session_id,
+	agent_version_id,
+	turn,
+	tool,
+	version,
+	args,
+	result,
+	status,
+	worker_identity,
+	image_digest,
+	descriptor_hash,
+	manifest_content_hash,
+	attempt,
+	error_code,
+	error_message,
+	usage_input_tokens,
+	usage_output_tokens,
+	usage_estimated,
+	created_at,
+	updated_at,
+	dispatched_at,
+	completed_at
+FROM tool_invocations
+WHERE session_id = $1
+ORDER BY turn ASC, call_id ASC
+`
+
+func (q *Queries) ListToolInvocationsBySessionID(ctx context.Context, sessionID string) ([]ToolInvocation, error) {
+	rows, err := q.db.QueryContext(ctx, listToolInvocationsBySessionID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ToolInvocation
+	for rows.Next() {
+		inv, err := scanToolInvocation(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
 const listUnfinishedInvocationsBySession = `
 SELECT
 	call_id,

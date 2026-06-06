@@ -41,6 +41,7 @@ const (
 	Runtime_ListAgents_FullMethodName                  = "/phrony.runtime.v1.Runtime/ListAgents"
 	Runtime_ListAgentVersions_FullMethodName           = "/phrony.runtime.v1.Runtime/ListAgentVersions"
 	Runtime_ListSessions_FullMethodName                = "/phrony.runtime.v1.Runtime/ListSessions"
+	Runtime_InspectSession_FullMethodName              = "/phrony.runtime.v1.Runtime/InspectSession"
 	Runtime_GetApproval_FullMethodName                 = "/phrony.runtime.v1.Runtime/GetApproval"
 	Runtime_ListApprovals_FullMethodName               = "/phrony.runtime.v1.Runtime/ListApprovals"
 	Runtime_DecideApproval_FullMethodName              = "/phrony.runtime.v1.Runtime/DecideApproval"
@@ -81,6 +82,8 @@ type RuntimeClient interface {
 	ListAgents(ctx context.Context, in *ListAgentsRequest, opts ...grpc.CallOption) (*ListAgentsResponse, error)
 	ListAgentVersions(ctx context.Context, in *ListAgentVersionsRequest, opts ...grpc.CallOption) (*ListAgentVersionsResponse, error)
 	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
+	// InspectSession returns a complete persisted dump of a session and its delegated children.
+	InspectSession(ctx context.Context, in *InspectSessionRequest, opts ...grpc.CallOption) (*InspectSessionResponse, error)
 	GetApproval(ctx context.Context, in *GetApprovalRequest, opts ...grpc.CallOption) (*Approval, error)
 	ListApprovals(ctx context.Context, in *ListApprovalsRequest, opts ...grpc.CallOption) (*ListApprovalsResponse, error)
 	DecideApproval(ctx context.Context, in *DecideApprovalRequest, opts ...grpc.CallOption) (*DecideApprovalResponse, error)
@@ -321,6 +324,16 @@ func (c *runtimeClient) ListSessions(ctx context.Context, in *ListSessionsReques
 	return out, nil
 }
 
+func (c *runtimeClient) InspectSession(ctx context.Context, in *InspectSessionRequest, opts ...grpc.CallOption) (*InspectSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InspectSessionResponse)
+	err := c.cc.Invoke(ctx, Runtime_InspectSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) GetApproval(ctx context.Context, in *GetApprovalRequest, opts ...grpc.CallOption) (*Approval, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Approval)
@@ -416,6 +429,8 @@ type RuntimeServer interface {
 	ListAgents(context.Context, *ListAgentsRequest) (*ListAgentsResponse, error)
 	ListAgentVersions(context.Context, *ListAgentVersionsRequest) (*ListAgentVersionsResponse, error)
 	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
+	// InspectSession returns a complete persisted dump of a session and its delegated children.
+	InspectSession(context.Context, *InspectSessionRequest) (*InspectSessionResponse, error)
 	GetApproval(context.Context, *GetApprovalRequest) (*Approval, error)
 	ListApprovals(context.Context, *ListApprovalsRequest) (*ListApprovalsResponse, error)
 	DecideApproval(context.Context, *DecideApprovalRequest) (*DecideApprovalResponse, error)
@@ -498,6 +513,9 @@ func (UnimplementedRuntimeServer) ListAgentVersions(context.Context, *ListAgentV
 }
 func (UnimplementedRuntimeServer) ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
+}
+func (UnimplementedRuntimeServer) InspectSession(context.Context, *InspectSessionRequest) (*InspectSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InspectSession not implemented")
 }
 func (UnimplementedRuntimeServer) GetApproval(context.Context, *GetApprovalRequest) (*Approval, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetApproval not implemented")
@@ -923,6 +941,24 @@ func _Runtime_ListSessions_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_InspectSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).InspectSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_InspectSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).InspectSession(ctx, req.(*InspectSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Runtime_GetApproval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetApprovalRequest)
 	if err := dec(in); err != nil {
@@ -1110,6 +1146,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSessions",
 			Handler:    _Runtime_ListSessions_Handler,
+		},
+		{
+			MethodName: "InspectSession",
+			Handler:    _Runtime_InspectSession_Handler,
 		},
 		{
 			MethodName: "GetApproval",

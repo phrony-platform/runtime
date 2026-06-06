@@ -8,6 +8,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/cliout"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func newSessionsCommand(runtimeAddr *string) *cobra.Command {
@@ -32,12 +33,14 @@ func newSessionsCommand(runtimeAddr *string) *cobra.Command {
 
 	inspect := &cobra.Command{
 		Use:   "inspect SESSION_ID",
-		Short: "Show metadata for a session",
+		Short: "Dump full persisted session state (timeline, usage, invocations, children)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSessionsInspect(cmd, runtimeAddr, args[0])
+			asJSON, _ := cmd.Flags().GetBool("json")
+			return runSessionsInspect(cmd, runtimeAddr, args[0], asJSON)
 		},
 	}
+	inspect.Flags().Bool("json", false, "emit full InspectSession response as JSON")
 
 	cancel := &cobra.Command{
 		Use:   "cancel SESSION_ID",
@@ -113,24 +116,24 @@ func runSessionsList(cmd *cobra.Command, runtimeAddr *string, agentName, status 
 	})
 }
 
-func runSessionsInspect(cmd *cobra.Command, runtimeAddr *string, sessionID string) error {
+func runSessionsInspect(cmd *cobra.Command, runtimeAddr *string, sessionID string, asJSON bool) error {
 	return withRuntimeClient(cmd, *runtimeAddr, func(rt runtimev1.RuntimeClient) error {
-		resp, err := rt.ListSessions(cmd.Context(), &runtimev1.ListSessionsRequest{})
+		resp, err := rt.InspectSession(cmd.Context(), &runtimev1.InspectSessionRequest{
+			SessionId: sessionID,
+		})
 		if err != nil {
-			return clierr.WrapRPC("list sessions", err)
+			return clierr.WrapRPC("inspect session", err)
 		}
-		for _, s := range resp.GetSessions() {
-			if s.GetId() != sessionID {
-				continue
+		out := cmd.OutOrStdout()
+		if asJSON {
+			b, err := protojson.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(resp)
+			if err != nil {
+				return fmt.Errorf("marshal inspect response: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "id:               %s\n", s.GetId())
-			fmt.Fprintf(cmd.OutOrStdout(), "status:           %s\n", s.GetStatus())
-			fmt.Fprintf(cmd.OutOrStdout(), "agent_version_id: %s\n", s.GetAgentVersionId())
-			fmt.Fprintf(cmd.OutOrStdout(), "created_at:       %s\n", s.GetCreatedAt())
-			fmt.Fprintf(cmd.OutOrStdout(), "updated_at:       %s\n", s.GetUpdatedAt())
+			fmt.Fprintln(out, string(b))
 			return nil
 		}
-		return fmt.Errorf("session %s not found", sessionID)
+		return formatSessionInspectHuman(out, resp.GetSession(), 0)
 	})
 }
 
