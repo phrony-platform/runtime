@@ -339,6 +339,68 @@ func hashLockfileBody(rootChildName string, members []LockfileMember) (string, e
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
+// LockfileVersion returns the bundle version label sha256:… for a lockfile body.
+func LockfileVersion(rootChildName string, members []LockfileMember) (string, error) {
+	return hashLockfileBody(rootChildName, members)
+}
+
+// ApplyClosurePinning expands any remaining spec.agents entries and pins compiled
+// agent tool bindings from the walked closure (AgentVersionID, ChildName, identity).
+func ApplyClosurePinning(agent *Agent, closure *ClosureContext) error {
+	if err := expandSubagentBindings(agent, closure); err != nil {
+		return err
+	}
+	return PinCompiledAgentBindings(agent, closure)
+}
+
+// PinCompiledAgentBindings sets frozen delegation targets on compiled spec.tools
+// agent bindings using a publish-time closure context.
+func PinCompiledAgentBindings(agent *Agent, closure *ClosureContext) error {
+	if agent == nil || closure == nil {
+		return nil
+	}
+	for i := range agent.Spec.Tools {
+		tb := &agent.Spec.Tools[i]
+		if !tb.IsAgent() || tb.Agent == nil {
+			continue
+		}
+		if tb.Agent.LateBound {
+			continue
+		}
+		edge, err := ParseAgentEdgeRef(tb.Ref, tb.Agent.LateBound)
+		if err != nil {
+			return FieldError{Path: fmt.Sprintf("spec.tools[%d].ref", i), Message: err.Error()}
+		}
+		target, ok := closure.Lookup(edge)
+		if !ok {
+			return FieldError{
+				Path:    fmt.Sprintf("spec.tools[%d]", i),
+				Message: "delegation target not in bundle closure",
+			}
+		}
+		if strings.TrimSpace(target.AgentVersionID) == "" {
+			return FieldError{
+				Path:    fmt.Sprintf("spec.tools[%d].agent", i),
+				Message: "closure target missing agent_version_id",
+			}
+		}
+		tb.Agent.AgentVersionID = target.AgentVersionID
+		if target.ChildName != "" {
+			tb.Agent.ChildName = target.ChildName
+		}
+		if target.Namespace != "" {
+			tb.Agent.Namespace = target.Namespace
+		}
+		if target.Name != "" {
+			tb.Agent.Name = target.Name
+		}
+		if edge.Kind == AgentEdgeRefKindExternal && target.Version != "" {
+			tb.Agent.Version = target.Version
+		}
+	}
+	return nil
+}
+
 func contentHash(raw []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])

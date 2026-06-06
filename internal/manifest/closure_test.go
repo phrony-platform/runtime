@@ -203,6 +203,46 @@ func TestWalkBundle_excludesLateBound(t *testing.T) {
 	}
 }
 
+func TestPinCompiledAgentBindings_pinsAgentVersionID(t *testing.T) {
+	t.Parallel()
+	agent := &Agent{
+		Metadata: AgentMetadata{
+			Annotations: map[string]string{AnnotationPoliciesCompiled: "true"},
+		},
+		Spec: AgentSpec{
+			Tools: []ToolBinding{{
+				Ref:             "./billing.yaml",
+				As:              "ask_billing",
+				InputSchema:     &SchemaSpec{Inline: map[string]any{"type": "object"}},
+				SideEffectClass: SideEffectNonIdempotentWrite,
+				Agent: &ToolAgentBinding{
+					ChildName: "billing",
+				},
+			}},
+		},
+	}
+	ctx := NewClosureContext(&ClosurePackage{
+		Members: []ClosureMember{{
+			ChildName:      "billing",
+			Origin:         ClosureMemberOriginVendored,
+			Ref:            "./billing.yaml",
+			Namespace:      "support",
+			Name:           "billing",
+			AgentVersionID: "ver-billing",
+		}},
+	})
+	if err := PinCompiledAgentBindings(agent, ctx); err != nil {
+		t.Fatalf("PinCompiledAgentBindings() error = %v", err)
+	}
+	got := agent.Spec.Tools[0].Agent
+	if got == nil || got.AgentVersionID != "ver-billing" {
+		t.Fatalf("agent_version_id = %+v, want ver-billing", got)
+	}
+	if got.Namespace != "support" || got.Name != "billing" {
+		t.Fatalf("identity = %s/%s, want support/billing", got.Namespace, got.Name)
+	}
+}
+
 func TestExpandSubagentBindings_closureContextPinsChildName(t *testing.T) {
 	t.Parallel()
 	agent := &Agent{
