@@ -39,9 +39,11 @@ Compose waits for Postgres to become healthy, pulls `phrony-runtime`, runs migra
 Install `phrony` with Go and ensure `$(go env GOPATH)/bin` is on your `PATH`:
 
 ```bash
-go build -o "$(go env GOPATH)/bin/phrony" \
-  github.com/phrony-platform/runtime/cmd/cli@latest
+go install github.com/phrony-platform/runtime/cmd/cli@latest
+mv -f "$(go env GOPATH)/bin/cli" "$(go env GOPATH)/bin/phrony"
 ```
+
+`go install` names the binary after the package directory (`cli`); the second line installs it as `phrony`.
 
 From a clone of this repository you can instead run `make install-cli`, which also installs to `~/.local/bin` and updates your shell `PATH`.
 
