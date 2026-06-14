@@ -168,7 +168,9 @@ func (c *approvalCoordinator) handleApprovalTimeout(approvalID string) {
 	switch strings.ToLower(approvalTimeoutDefault(row.PolicyRuntime)) {
 	case "allow":
 		params.Approved = true
-		_, _ = c.decideLoaded(ctx, q, params, row)
+		if _, err := c.decideLoaded(ctx, q, params, row); err != nil {
+			slog.Error("approval timeout auto-allow failed", "approval_id", approvalID, "error", err)
+		}
 	case "escalate":
 		if err := c.escalateTimedOutApproval(ctx, q, row); err != nil {
 			slog.Error("approval timeout escalate", "approval_id", approvalID, "error", err)
@@ -176,7 +178,9 @@ func (c *approvalCoordinator) handleApprovalTimeout(approvalID string) {
 	default:
 		params.Approved = false
 		params.Comment = "approval timed out"
-		_, _ = c.decideLoaded(ctx, q, params, row)
+		if _, err := c.decideLoaded(ctx, q, params, row); err != nil {
+			slog.Error("approval timeout auto-deny failed", "approval_id", approvalID, "error", err)
+		}
 	}
 }
 
