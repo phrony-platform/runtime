@@ -31,13 +31,9 @@ func (h *sessionEventHub) Send(msg *runtimev1.RunSessionInteractiveServerMsg) er
 	if h == nil || msg == nil {
 		return nil
 	}
-	h.mu.RLock()
-	subs := make([]*sessionEventSubscriber, 0, len(h.subscribers))
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	for _, sub := range h.subscribers {
-		subs = append(subs, sub)
-	}
-	h.mu.RUnlock()
-	for _, sub := range subs {
 		select {
 		case sub.ch <- msg:
 		default:
