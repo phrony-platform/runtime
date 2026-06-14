@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/executor"
@@ -142,7 +143,9 @@ func (d *agentDispatcher) Dispatch(ctx context.Context, call tooldispatch.ToolCa
 			return tooldispatch.ToolResult{}, fmt.Errorf("record tool invocation: %w", err)
 		}
 		if err := rec.RecordDispatched(runCtx, tooldispatch.DispatchProvenance{Call: call}); err != nil {
-			_ = rec.RecordCompleted(runCtx, call, tooldispatch.ToolResult{}, err)
+			if rec.RecordCompleted(runCtx, call, tooldispatch.ToolResult{}, err) != nil {
+				slog.Error("rollback tool invocation", "call_id", call.CallID, "error", err)
+			}
 			return tooldispatch.ToolResult{}, fmt.Errorf("record tool dispatch: %w", err)
 		}
 	}

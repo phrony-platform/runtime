@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -78,7 +79,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, call tooldispatch.ToolCall) (
 			return tooldispatch.ToolResult{}, fmt.Errorf("record tool invocation: %w", err)
 		}
 		if err := rec.RecordDispatched(ctx, tooldispatch.DispatchProvenance{Call: call}); err != nil {
-			_ = rec.RecordCompleted(ctx, call, tooldispatch.ToolResult{}, err)
+			if rec.RecordCompleted(ctx, call, tooldispatch.ToolResult{}, err) != nil {
+				slog.Error("rollback tool invocation", "call_id", call.CallID, "error", err)
+			}
 			return tooldispatch.ToolResult{}, fmt.Errorf("record tool dispatch: %w", err)
 		}
 	}
