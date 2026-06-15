@@ -9,90 +9,79 @@
 
 **Official open-source implementation of the Phrony Agent Spec runtime.**
 
-This repository implements the runtime defined by the Phrony Agent Spec—the open specification for declaring, deploying, and running agents as first-class primitives. In the Phrony paradigm, agents are **declared** in a manifest, **deployed** to a runtime, and **run** as named, versioned entities—not embedded as application code. This runtime loads deployed manifests, executes agent sessions (model loop, tool mediation, policies, limits, and human-in-the-loop), emits structured traces, and returns results. Applications ask the runtime for work; the runtime is where the agent lives.
+## What is this?
 
-## Prerequisites
+The Phrony Runtime is a gRPC daemon that loads declared agent manifests, executes agent sessions (LLM loop, tool mediation, policies, approvals, and limits), emits structured traces, and returns results. Agents are declared in a YAML manifest (not embedded as application code), deployed to the runtime as versioned entities, and run by name. Applications register tool handlers over a bidirectional streaming protocol—the runtime mediates tool calls from the model to your handlers without the application managing the LLM loop itself.
 
-- Docker (Postgres + runtime via Docker Compose)
-- Go 1.25+ (operator CLI)
+## How it all fits together
 
-## Getting started
+![Phrony Runtime architecture](assets/phrony-diagram.png)
 
-Three steps take you from zero to a running runtime you can drive with the operator CLI.
+**Components:**
 
-### 1. Bring up the runtime
+| Binary | Role |
+|--------|------|
+| `phrony-runtime` | Daemon: migrations, gRPC server, deploy, session execution |
+| `phrony` | Operator CLI: `status`, `session`, `deploy`, `validate` |
 
-Use the official Docker image `ghcr.io/phrony-platform/phrony-runtime:latest` (published on each [GitHub release](https://github.com/phrony-platform/runtime/releases)).
+## Grab the tools
 
-Download the Compose file from the [Phrony docs](https://phrony.com/runtime/docker-compose.yml), then start Postgres and the runtime:
-
-```bash
-mkdir phrony-runtime && cd phrony-runtime
-curl -fsSLO https://phrony.com/runtime/docker-compose.yml
-docker compose up -d --wait
-```
-
-Compose waits for Postgres to become healthy, pulls `phrony-runtime`, runs migrations on startup, and listens on **gRPC port 7777** (`127.0.0.1:7777` from your machine). Stop the stack with `docker compose down`.
-
-### 2. Install the operator CLI
-
-Install `phrony` with Go and ensure `$(go env GOPATH)/bin` is on your `PATH`:
+**You'll need:** Docker, Go 1.25+
 
 ```bash
 go install github.com/phrony-platform/runtime/cmd/cli@latest
 mv -f "$(go env GOPATH)/bin/cli" "$(go env GOPATH)/bin/phrony"
 ```
 
-`go install` names the binary after the package directory (`cli`); the second line installs it as `phrony`.
+Or from a clone: `make install-cli` (installs to `~/.local/bin`).
 
-From a clone of this repository you can instead run `make install-cli`, which also installs to `~/.local/bin` and updates your shell `PATH`.
-
-### 3. Use the runtime
-
-With the runtime up and `phrony` on your `PATH`:
+## Run your first agent in 5 minutes
 
 ```bash
+mkdir phrony-quickstart && cd phrony-quickstart
+
+# 1. Start Postgres and the runtime daemon
+curl -fsSLO https://phrony.com/runtime/docker-compose.yml
+docker compose up -d --wait
+
+# 2. Check the runtime is reachable
 phrony status
-phrony validate path/to/agent.yaml
+
+# 3. Deploy an agent
 phrony deploy path/to/agent.yaml
+
+# 4. Run a session
 phrony session <namespace>/<name>
-phrony session <namespace>/<name> -v 1.2.0
+
+# 5. Tear down
+docker compose down
 ```
 
-Pass `--runtime-addr` to override the default runtime endpoint (`127.0.0.1:7777`).
+The runtime listens on `127.0.0.1:7777`. Override with `--runtime-addr` or `PHRONY_RUNTIME_ADDR`. See full reference below.
 
-## Environment variables
+## Reference
 
-The [Compose file](https://phrony.com/runtime/docker-compose.yml) sets `RUNTIME_DATABASE_URL` (hostname `postgres`), `RUNTIME_GRPC_ADDR=0.0.0.0:7777`, and a dev `RUNTIME_SECRETS_ENCRYPTION_KEY` on the runtime service, so the quickstart above needs no extra configuration.
+### Environment variables
 
-When building from source, `make` targets load `.env` (or `.env.example` as a fallback) automatically. Copy `.env.example` to `.env` to customize host-side settings.
+The [Compose file](https://phrony.com/runtime/docker-compose.yml) sets dev defaults for all variables below, so the quickstart needs no extra configuration.
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
-| `RUNTIME_DATABASE_URL` | `phrony-runtime` on the host | Postgres connection string (`localhost:5432` with compose Postgres) |
-| `RUNTIME_GRPC_ADDR` | `phrony-runtime` on the host | gRPC listen address (default `127.0.0.1:7777`; use `0.0.0.0:7777` inside Docker) |
-| `RUNTIME_SECRETS_ENCRYPTION_KEY` | `phrony-runtime` | AES-256 master key for encrypting publish-time secrets (32 bytes, base64 or hex). Required when deploying agents with a `secrets` section. Generate with `openssl rand -base64 32` |
+| `RUNTIME_DATABASE_URL` | `phrony-runtime` | Postgres connection string |
+| `RUNTIME_GRPC_ADDR` | `phrony-runtime` | gRPC listen address (default `127.0.0.1:7777`; use `0.0.0.0:7777` inside Docker) |
+| `RUNTIME_SECRETS_ENCRYPTION_KEY` | `phrony-runtime` | AES-256 master key for encrypting publish-time secrets (32 bytes, base64 or hex). Generate with `openssl rand -base64 32` |
 | `RUNTIME_TOOL_ALLOWLIST` | `phrony-runtime` | Path to a YAML tool allowlist for dispatch-time integrity checks (optional) |
-| `RUNTIME_DISPATCH_QUEUE_WAIT` | `phrony-runtime` | Max time a tool call may wait in the worker queue when no handler is free (default `10s`). Go duration (`5s`, `500ms`) or positive integer seconds (`30`). Invalid values fall back to `10s`. Applied even when the session wall-clock budget is longer, so detached runs do not park in `awaiting_tool` until the session limit |
+| `RUNTIME_DISPATCH_QUEUE_WAIT` | `phrony-runtime` | Max time a tool call may wait in the worker queue when no handler is free (default `10s`) |
 | `RUNTIME_ENABLE_STUB_PROVIDER` | `phrony-runtime` | Dev-only: enable the scripted stub model provider (`true`, `1`, or `yes`) |
-| `PHRONY_RUNTIME_ADDR` | `phrony` on the host | Runtime gRPC endpoint (default `127.0.0.1:7777` when using compose) |
-| `PHRONY_ACTOR` | `phrony` on the host | Audit identity for publish, deploy, and rollback (defaults to OS username) |
-| `PHRONY_NO_TUI` | `phrony` | Disable the interactive session TUI (plain stdout) |
-| `NO_COLOR` | `phrony diff` | Disable colorized diff output (also disabled when stdout is not a TTY) |
+| `PHRONY_RUNTIME_ADDR` | `phrony` | Runtime gRPC endpoint (default `127.0.0.1:7777`) |
+| `PHRONY_ACTOR` | `phrony` | Audit identity for publish, deploy, rollback (defaults to OS username) |
+| `PHRONY_NO_TUI` | `phrony` | Disable interactive session TUI (plain stdout) |
+| `NO_COLOR` | `phrony diff` | Disable colorized diff output |
 
-Provider API keys referenced in manifest `secrets.*.fromEnv` (for example `ANTHROPIC_API_KEY`) are read on the machine running `phrony publish`, not on the runtime daemon.
-
-## Components
-
-| Binary | Role |
-|--------|------|
-| `phrony-runtime` | Daemon: migrations, gRPC server, manifest deploy, session execution |
-| `phrony` | Operator CLI over gRPC (`status`, `session`, `deploy`) and local manifest checks (`validate`) |
-
-The Node-based Phrony CLI (manifest authoring and packaging) is separate; this repo is the official Phrony Agent Spec runtime daemon and its Go operator tools.
+Provider API keys referenced in manifest `secrets.*.fromEnv` (e.g. `ANTHROPIC_API_KEY`) are read on the machine running `phrony publish`, not on the runtime daemon.
 
 ## Development
 
-To build the runtime from source instead of pulling the official image, clone this repository and use `make dev-up` (builds the local `Dockerfile`) or `make serve` with Postgres from Compose. For building binaries, tests, migrations, protobuf regeneration, and other workflows, run `make` with no arguments to see the full target list.
+To build from source: `make dev-up` (builds local `Dockerfile`) or `make serve` with Postgres from Compose. Run `make` without arguments for the full target list.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for repository layout, code style, the development setup, and pull request guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for repository layout, code style, and PR guidelines.
