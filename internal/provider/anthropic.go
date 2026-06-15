@@ -18,7 +18,10 @@ type anthropicProvider struct {
 
 func newAnthropicProvider(apiKey string) Provider {
 	return &anthropicProvider{
-		client: anthropic.NewClient(option.WithAPIKey(apiKey)),
+		client: anthropic.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithMaxRetries(3),
+		),
 	}
 }
 

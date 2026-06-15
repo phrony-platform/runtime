@@ -18,7 +18,10 @@ type openAIProvider struct {
 
 func newOpenAIProvider(apiKey string) Provider {
 	return &openAIProvider{
-		client: openai.NewClient(option.WithAPIKey(apiKey)),
+		client: openai.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithMaxRetries(3),
+		),
 	}
 }
 
