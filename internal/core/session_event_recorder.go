@@ -147,7 +147,7 @@ func replaySessionEventLog(ctx context.Context, q *store.Queries, events session
 	log, err := q.ListEventsBySession(ctx, sessionID)
 	if err != nil {
 		slog.Error("replay session events", "session_id", sessionID, "error", err)
-		return nil
+		return err
 	}
 	for _, ev := range log {
 		msg, ok := replayWireMsgFromEvent(ev)
