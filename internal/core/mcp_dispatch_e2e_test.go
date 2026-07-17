@@ -224,8 +224,9 @@ func TestMCPToolDispatchE2E_requireApproval(t *testing.T) {
 		if err != nil {
 			t.Fatalf("runTurn: %v", err)
 		}
-		if countStreamToolCalls(stream.sent) != 0 {
-			t.Fatal("rejected approval must not dispatch the MCP tool")
+		// The attempt is surfaced as tool_call before HITL; rejection must not reach MCP.
+		if countStreamToolCalls(stream.sent) != 1 {
+			t.Fatalf("tool_call events = %d, want 1 attempt before rejection", countStreamToolCalls(stream.sent))
 		}
 		if countStreamToolResults(stream.sent) != 1 {
 			t.Fatalf("tool_result events = %d, want 1 denied result", countStreamToolResults(stream.sent))
