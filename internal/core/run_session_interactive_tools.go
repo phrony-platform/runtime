@@ -12,10 +12,11 @@ import (
 
 func toolCallServerMsg(ev executor.ToolCallEvent, agent *manifest.Agent) *runtimev1.RunSessionInteractiveServerMsg {
 	tc := &runtimev1.RunSessionInteractiveToolCall{
-		CallId:  ev.CallID,
-		Tool:    ev.Tool,
-		Version: ev.Version,
-		Args:    ev.Args,
+		CallId:   ev.CallID,
+		Tool:     ev.Tool,
+		WireName: ev.WireName,
+		Version:  ev.Version,
+		Args:     ev.Args,
 	}
 	applyDelegationToolCallMetadata(tc, agent, ev)
 	return &runtimev1.RunSessionInteractiveServerMsg{

@@ -8,6 +8,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/shared"
+	"github.com/phrony-platform/runtime/internal/manifest"
 )
 
 func toolInputSchema(raw json.RawMessage) (anthropic.ToolInputSchemaParam, error) {
@@ -127,12 +128,12 @@ func anthropicContentBlocks(m Message) ([]anthropic.ContentBlockParamUnion, erro
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, anthropic.NewToolUseBlock(b.ToolUseID, input, b.ToolName))
+			out = append(out, anthropic.NewToolUseBlock(WireToolCallID(b.ToolUseID), input, manifest.ReplayToolName(b.ToolName)))
 		case BlockToolResult:
 			if strings.TrimSpace(b.ToolUseID) == "" {
 				return nil, fmt.Errorf("tool_result block requires tool_use_id")
 			}
-			out = append(out, anthropic.NewToolResultBlock(b.ToolUseID, b.ToolResultContent, b.IsError))
+			out = append(out, anthropic.NewToolResultBlock(WireToolCallID(b.ToolUseID), b.ToolResultContent, b.IsError))
 		default:
 			return nil, fmt.Errorf("unsupported content block type %q", b.Type)
 		}
@@ -161,9 +162,9 @@ func openAIAssistantMessage(m Message) (openai.ChatCompletionMessageParamUnion, 
 			}
 			toolCalls = append(toolCalls, openai.ChatCompletionMessageToolCallUnionParam{
 				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-					ID: b.ToolUseID,
+					ID: WireToolCallID(b.ToolUseID),
 					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-						Name:      b.ToolName,
+						Name:      manifest.ReplayToolName(b.ToolName),
 						Arguments: args,
 					},
 				},
@@ -201,6 +202,7 @@ func openAIToolResultMessage(m Message) (openai.ChatCompletionMessageParamUnion,
 	if toolCallID == "" {
 		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("tool message requires tool_call_id")
 	}
+	toolCallID = WireToolCallID(toolCallID)
 	if content == "" && !isError {
 		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("tool message requires content")
 	}

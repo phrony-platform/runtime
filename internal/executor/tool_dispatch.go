@@ -17,10 +17,11 @@ import (
 
 // ToolCallEvent carries tool lifecycle data for interactive streaming.
 type ToolCallEvent struct {
-	CallID  string
-	Tool    string
-	Version string
-	Args    json.RawMessage
+	CallID   string
+	Tool     string
+	WireName string
+	Version  string
+	Args     json.RawMessage
 }
 
 // ToolResultEvent is emitted after a tool call resolves.
@@ -71,10 +72,13 @@ func (v *Version) dispatchToolCalls(
 				case policy.DecisionDeny:
 					results[i] = provider.ToolResultBlock(call.ID, denyMsg, true)
 					// Surface the attempt before the denial so the timeline shows both.
-					emitToolCall(ch, tdCall)
+					emitToolCall(ch, tdCall, call.Name)
 					emitToolDenied(ch, tdCall.CallID, denyMsg)
 					return nil
 				case policy.DecisionRequireApproval:
+					// Surface the tool call before HITL so the event log always has
+					// tool.requested ahead of approval/completion (needed for provider history).
+					emitToolCall(ch, tdCall, call.Name)
 					if err := v.waitForToolApproval(gctx, params, tracker, &tdCall, tc, ch); err != nil {
 						var denied *ApprovalDeniedError
 						if errors.As(err, &denied) {
@@ -85,10 +89,22 @@ func (v *Version) dispatchToolCalls(
 						}
 						return err
 					}
+					// Already emitted before approval; skip the post-approval emit below.
+					dctx, cancelDispatch := dispatchQueueContext(gctx)
+					res, err := dispatcher.Dispatch(dctx, tdCall)
+					cancelDispatch()
+					if err != nil {
+						return v.handleDispatchError(gctx, params, tracker, call, tdCall, tc, err, dispatcher, ch, &results[i], &usages[i])
+					}
+					usages[i] = res.Usage.Total()
+					content, isErr := formatToolResult(res)
+					results[i] = provider.ToolResultBlock(call.ID, content, isErr)
+					emitToolResult(ch, tdCall.CallID, res.Payload, contentIfError(isErr, content))
+					return nil
 				}
 			}
 
-			emitToolCall(ch, tdCall)
+			emitToolCall(ch, tdCall, call.Name)
 			dctx, cancelDispatch := dispatchQueueContext(gctx)
 			res, err := dispatcher.Dispatch(dctx, tdCall)
 			cancelDispatch()
@@ -263,7 +279,7 @@ func (v *Version) handleDispatchError(
 			emitToolResult(ch, tdCall.CallID, nil, msg)
 			return nil
 		}
-		emitToolCall(ch, tdCall)
+		emitToolCall(ch, tdCall, call.Name)
 		dctx, cancelDispatch := dispatchQueueContext(ctx)
 		res, redispatchErr := dispatcher.Dispatch(dctx, tdCall)
 		cancelDispatch()
@@ -282,17 +298,18 @@ func (v *Version) handleDispatchError(
 	}
 }
 
-func emitToolCall(ch chan<- Event, call tooldispatch.ToolCall) {
+func emitToolCall(ch chan<- Event, call tooldispatch.ToolCall, wireName string) {
 	if ch == nil {
 		return
 	}
 	ch <- Event{
 		Type: EventToolCall,
 		ToolCall: ToolCallEvent{
-			CallID:  call.CallID,
-			Tool:    call.Tool,
-			Version: call.Version,
-			Args:    call.Args,
+			CallID:   call.CallID,
+			Tool:     call.Tool,
+			WireName: strings.TrimSpace(wireName),
+			Version:  call.Version,
+			Args:     call.Args,
 		},
 	}
 }

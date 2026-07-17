@@ -206,13 +206,21 @@ func (s *runtimeServer) completeApprovalTurnOnStream(
 			if st != nil && st.version != nil {
 				agent = st.version.Agent
 			}
-			if err := sendToolCall(events, ev.ToolCall, agent); err != nil {
+			msg := toolCallServerMsg(ev.ToolCall, agent)
+			if err := events.Send(msg); err != nil {
 				return err
 			}
+			recorder.RecordServerMsg(ctx, st.sessionID, model.SessionEventToolCall, msg)
 		case executor.EventToolResult:
-			if err := sendToolResult(events, ev.ToolResult); err != nil {
+			msg := toolResultServerMsg(ev.ToolResult)
+			if err := events.Send(msg); err != nil {
 				return err
 			}
+			resultType := model.SessionEventToolResult
+			if ev.ToolResult.Denied {
+				resultType = model.SessionEventPolicyDenied
+			}
+			recorder.RecordServerMsg(ctx, st.sessionID, resultType, msg)
 		case executor.EventCompleted:
 			if err := <-runErrCh; err != nil {
 				return s.failInteractiveSession(ctx, q, events, st.sessionID, err)

@@ -113,7 +113,7 @@ func openAIParams(req CompletionRequest) (openai.ChatCompletionNewParams, error)
 			}
 			if hasOnlyToolResults(blocks) {
 				for _, b := range blocks {
-					messages = append(messages, openai.ToolMessage(b.ToolResultContent, b.ToolUseID))
+					messages = append(messages, openai.ToolMessage(b.ToolResultContent, WireToolCallID(b.ToolUseID)))
 				}
 				continue
 			}

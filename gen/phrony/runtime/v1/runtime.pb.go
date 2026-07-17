@@ -1635,8 +1635,10 @@ type RunSessionInteractiveToolCall struct {
 	ChildSessionId string `protobuf:"bytes,6,opt,name=child_session_id,json=childSessionId,proto3" json:"child_session_id,omitempty"`
 	// Display label for the delegation target (namespace.name@version or wire name).
 	DelegationTarget string `protobuf:"bytes,7,opt,name=delegation_target,json=delegationTarget,proto3" json:"delegation_target,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Model-facing tool name when it differs from tool (dispatch ref).
+	WireName      string `protobuf:"bytes,8,opt,name=wire_name,json=wireName,proto3" json:"wire_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RunSessionInteractiveToolCall) Reset() {
@@ -1714,6 +1716,13 @@ func (x *RunSessionInteractiveToolCall) GetChildSessionId() string {
 func (x *RunSessionInteractiveToolCall) GetDelegationTarget() string {
 	if x != nil {
 		return x.DelegationTarget
+	}
+	return ""
+}
+
+func (x *RunSessionInteractiveToolCall) GetWireName() string {
+	if x != nil {
+		return x.WireName
 	}
 	return ""
 }
@@ -7531,7 +7540,7 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x1bRunSessionInteractiveFailed\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\"X\n" +
 	"\x1eRunSessionInteractiveCancelled\x126\n" +
-	"\x18session_ended_at_unix_ms\x18\x01 \x01(\x03R\x14sessionEndedAtUnixMs\"\xfc\x01\n" +
+	"\x18session_ended_at_unix_ms\x18\x01 \x01(\x03R\x14sessionEndedAtUnixMs\"\x99\x02\n" +
 	"\x1dRunSessionInteractiveToolCall\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x12\n" +
 	"\x04tool\x18\x02 \x01(\tR\x04tool\x12\x18\n" +
@@ -7539,7 +7548,8 @@ const file_phrony_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x04args\x18\x04 \x01(\fR\x04args\x12)\n" +
 	"\x10agent_delegation\x18\x05 \x01(\bR\x0fagentDelegation\x12(\n" +
 	"\x10child_session_id\x18\x06 \x01(\tR\x0echildSessionId\x12+\n" +
-	"\x11delegation_target\x18\a \x01(\tR\x10delegationTarget\"y\n" +
+	"\x11delegation_target\x18\a \x01(\tR\x10delegationTarget\x12\x1b\n" +
+	"\twire_name\x18\b \x01(\tR\bwireName\"y\n" +
 	"\x1fRunSessionInteractiveToolResult\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12#\n" +

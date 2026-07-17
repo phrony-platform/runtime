@@ -282,6 +282,11 @@ func (t ToolBinding) MCPToolName() string {
 // toolNamePattern matches names accepted by the Anthropic and OpenAI tool APIs.
 var toolNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
+// ReplayToolName maps a stored dispatch tool ref to a model API-safe wire name.
+func ReplayToolName(ref string) string {
+	return sanitizeToolName(ref)
+}
+
 // sanitizeToolName maps a ref (which may contain dots or other separators) to a
 // deterministic model-API-safe tool name by replacing unsupported characters
 // with underscores and truncating to 64 characters.

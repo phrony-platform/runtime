@@ -512,7 +512,7 @@ func (s *runtimeServer) buildToolResultBlocksFromLedger(
 			continue
 		}
 		content, isErr := ledgerInvocationContent(stored)
-		blocks = append(blocks, provider.ToolResultBlock(inv.CallID, content, isErr))
+		blocks = append(blocks, provider.ToolResultBlock(provider.WireToolCallID(inv.CallID), content, isErr))
 	}
 	return blocks, nil
 }

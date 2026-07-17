@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/store"
@@ -568,6 +569,9 @@ func toolRequestedPayload(call tooldispatch.ToolCall, status string) json.RawMes
 		"version": call.Version,
 		"args":    json.RawMessage(call.Args),
 		"turn":    call.Turn,
+	}
+	if wireName := strings.TrimSpace(call.WireName); wireName != "" {
+		body["wire_name"] = wireName
 	}
 	if status != "" {
 		body["status"] = status

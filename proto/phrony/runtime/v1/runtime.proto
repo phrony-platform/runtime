@@ -228,6 +228,8 @@ message RunSessionInteractiveToolCall {
   string child_session_id = 6;
   // Display label for the delegation target (namespace.name@version or wire name).
   string delegation_target = 7;
+  // Model-facing tool name when it differs from tool (dispatch ref).
+  string wire_name = 8;
 }
 
 message RunSessionInteractiveToolResult {

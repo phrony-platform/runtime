@@ -23,6 +23,8 @@ type ToolCall struct {
 	AgentKey        string
 	Turn            int
 	Tool            string
+	// WireName is the model-facing tool name when it differs from Tool.
+	WireName        string
 	Version         string
 	Args            json.RawMessage
 	SideEffectClass string

@@ -6,6 +6,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
+	"github.com/phrony-platform/runtime/internal/manifest"
 )
 
 func TestAnthropicParams_toolsAndStructuredMessages(t *testing.T) {
@@ -117,6 +118,23 @@ func TestNormalizeStopReason(t *testing.T) {
 	}
 }
 
+func TestOpenAIAssistantMessage_sanitizesDottedToolName(t *testing.T) {
+	msg, err := openAIAssistantMessage(Message{
+		Role: RoleAssistant,
+		Blocks: []ContentBlock{
+			ToolUseBlock("id-1", "support.refund-agent", json.RawMessage(`{"a":1}`)),
+		},
+	})
+	if err != nil {
+		t.Fatalf("openAIAssistantMessage: %v", err)
+	}
+	got := msg.OfAssistant.ToolCalls[0].OfFunction.Function.Name
+	want := manifest.ReplayToolName("support.refund-agent")
+	if got != want {
+		t.Fatalf("tool name = %q, want %q", got, want)
+	}
+}
+
 func TestOpenAIAssistantMessage_toolCalls(t *testing.T) {
 	msg, err := openAIAssistantMessage(Message{
 		Role: RoleAssistant,
@@ -136,6 +154,24 @@ func TestOpenAIAssistantMessage_toolCalls(t *testing.T) {
 	}
 	if msg.OfAssistant.ToolCalls[0].OfFunction.Function.Name != "fn" {
 		t.Fatalf("tool name = %q", msg.OfAssistant.ToolCalls[0].OfFunction.Function.Name)
+	}
+}
+
+func TestOpenAIToolResultMessage_longCallID(t *testing.T) {
+	longID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:ffffffff-1111-2222-3333-444444444444:1:0"
+	msg, err := openAIToolResultMessage(Message{
+		Role:       RoleTool,
+		ToolCallID: longID,
+		Content:    "result",
+	})
+	if err != nil {
+		t.Fatalf("openAIToolResultMessage: %v", err)
+	}
+	if len(msg.OfTool.ToolCallID) > MaxWireToolCallIDLen {
+		t.Fatalf("tool_call_id len = %d, want <= %d", len(msg.OfTool.ToolCallID), MaxWireToolCallIDLen)
+	}
+	if msg.OfTool.ToolCallID != WireToolCallID(longID) {
+		t.Fatalf("tool_call_id = %q, want %q", msg.OfTool.ToolCallID, WireToolCallID(longID))
 	}
 }
 

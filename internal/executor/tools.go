@@ -88,6 +88,7 @@ func buildToolDispatchCall(
 		AgentKey:        agentKey,
 		Turn:            turn,
 		Tool:            toolRef,
+		WireName:        call.Name,
 		Version:         version,
 		Args:            call.Args,
 		SideEffectClass: tb.SideEffectClass,
