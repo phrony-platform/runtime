@@ -13,10 +13,6 @@
 
 The Phrony Runtime is a gRPC daemon that loads declared agent manifests, executes agent sessions (LLM loop, tool mediation, policies, approvals, and limits), emits structured traces, and returns results. Agents are declared in a YAML manifest (not embedded as application code), deployed to the runtime as versioned entities, and run by name. Applications register tool handlers over a bidirectional streaming protocol—the runtime mediates tool calls from the model to your handlers without the application managing the LLM loop itself.
 
-## How it all fits together
-
-![Phrony Runtime architecture](assets/phrony-diagram.png)
-
 **Components:**
 
 | Binary | Role |
