@@ -1,4 +1,4 @@
-.PHONY: targets dev-up dev-down migrate serve serve-e2e build install-cli test test-coverage proto proto-tools cli test-e2e test-e2e-validate test-e2e-up test-e2e-down
+.PHONY: targets dev-up dev-down migrate serve serve-e2e build install-cli test test-coverage proto proto-tools cli test-e2e test-e2e-local test-e2e-validate test-e2e-up test-e2e-down
 
 GOPATH_BIN := $(shell go env GOPATH)/bin
 export PATH := $(GOPATH_BIN):$(PATH)
@@ -44,6 +44,7 @@ targets:
 	@echo "  make test"
 	@echo "  make test-coverage       internal/ coverage (HTML: go tool cover -html=$(COVERAGE_OUT))"
 	@echo "  make test-e2e-validate   scenario validate-only tests (nested e2e module)"
+	@echo "  make test-e2e-local      scenario suite against running runtime (no compose)"
 	@echo "  make test-e2e            full scenario suite (compose + stub provider)"
 	@echo ""
 	@echo "  make proto               Regenerate gen/ (run make proto-tools once if needed)"
@@ -105,6 +106,10 @@ test-e2e-down:
 
 test-e2e-validate:
 	$(MAKE) -C e2e test-e2e-validate
+
+# Requires a running runtime with stub + short queue wait (make serve-e2e).
+test-e2e-local: build
+	$(MAKE) -C e2e test-e2e-local
 
 test-e2e: build
 	$(MAKE) -C e2e test-e2e

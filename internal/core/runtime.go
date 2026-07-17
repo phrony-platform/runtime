@@ -26,6 +26,9 @@ type runtimeServer struct {
 	loadSessionVersionFn func(ctx context.Context, q *store.Queries, sessionID string, agentVersionID string) (*executor.Version, error)
 	// startRunSessionBackgroundFn replaces detached session startup (tests only).
 	startRunSessionBackgroundFn func(sessionID, agentVersionID string, inputJSON json.RawMessage)
+	// recoverDetachedAfterRegisterFn runs after recoverDetachedSession registers
+	// and re-reads status, before any recovered Dispatch (tests only).
+	recoverDetachedAfterRegisterFn func(sessionID string)
 	// activeSessions tracks session IDs with a background session driver.
 	activeSessions *sync.Map
 	approvalCoordinator *approvalCoordinator

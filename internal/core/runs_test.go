@@ -81,6 +81,46 @@ func TestRuntime_CancelSession_invokesActiveCancel(t *testing.T) {
 	}
 }
 
+// Recovery registers the same activeSessions cancel slot CancelSession uses.
+func TestRuntime_CancelSession_invokesRecoveryActiveCancel(t *testing.T) {
+	db, mock := testSQLxDB(t)
+	expectLifecycleEventTx(mock, "run_recover")
+	mock.ExpectQuery(`UPDATE sessions`).
+		WithArgs("run_recover").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("run_recover"))
+	mock.ExpectCommit()
+	mock.ExpectExec(`DELETE FROM session_secrets`).
+		WithArgs("run_recover").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	srv := &runtimeServer{db: db, activeSessions: &sync.Map{}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cancelled := false
+	if err := srv.registerActiveSession("run_recover", activeSessionEntry{cancel: func() {
+		cancelled = true
+		cancel()
+	}}); err != nil {
+		t.Fatalf("registerActiveSession: %v", err)
+	}
+
+	_, err := srv.CancelSession(context.Background(), &runtimev1.CancelSessionRequest{
+		SessionId: "run_recover",
+	})
+	if err != nil {
+		t.Fatalf("CancelSession: %v", err)
+	}
+	if !cancelled {
+		t.Fatal("expected recovery active cancel func to run")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("expected recovery ctx to be cancelled")
+	}
+	if _, loaded := srv.activeSessions.Load("run_recover"); loaded {
+		t.Fatal("expected session removed from activeSessions")
+	}
+}
+
 func TestRuntime_CancelSession_notFound(t *testing.T) {
 	db, mock := testSQLxDB(t)
 	mock.ExpectBegin()

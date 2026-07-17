@@ -166,6 +166,136 @@ func TestWorkerRegistry_integrityReject(t *testing.T) {
 	}
 }
 
+func TestWorkerRegistry_cancelledCtxBeforeDispatch_noInvoke(t *testing.T) {
+	reg := tooldispatch.NewWorkerRegistry(tooldispatch.DefaultRegistryConfig())
+
+	var sent []*runtimev1.WorkServerMsg
+	_, err := reg.RegisterWorker("w1", "", "", []tooldispatch.HandlerAdvertisement{
+		{Tool: "t", Version: "v1", MaxConcurrency: 1},
+	}, nil, func(msg any) error {
+		m := msg.(*runtimev1.WorkServerMsg)
+		sent = append(sent, m)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("RegisterWorker: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = reg.Dispatch(ctx, tooldispatch.ToolCall{
+		CallID:    "c1",
+		SessionID: "sess-1",
+		Tool:      "t",
+		Version:   "v1",
+		Deadline:  time.Now().Add(time.Minute),
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if len(sent) != 0 {
+		t.Fatalf("expected no WorkInvoke, got %d messages", len(sent))
+	}
+}
+
+func TestWorkerRegistry_cancelledQueuedCtxOnDrain_noInvoke(t *testing.T) {
+	var queuedCancel context.CancelFunc
+	reg := tooldispatch.NewWorkerRegistry(tooldispatch.RegistryConfig{
+		IntegrityCheck: func(call tooldispatch.ToolCall, _ *tooldispatch.WorkerInfo) error {
+			// Cancel while leasing the drained waiter so the pre-send ctx.Err()
+			// guard rejects WorkInvoke without racing cancelCall.
+			if call.CallID == "queued" && queuedCancel != nil {
+				queuedCancel()
+			}
+			return nil
+		},
+	})
+
+	invokeCh := make(chan string, 2)
+	_, err := reg.RegisterWorker("w1", "", "", []tooldispatch.HandlerAdvertisement{
+		{Tool: "t", Version: "v1", MaxConcurrency: 1},
+	}, nil, func(msg any) error {
+		m := msg.(*runtimev1.WorkServerMsg)
+		if inv := m.GetInvoke(); inv != nil {
+			invokeCh <- inv.GetCallId()
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("RegisterWorker: %v", err)
+	}
+
+	busyDone := make(chan error, 1)
+	go func() {
+		_, err := reg.Dispatch(context.Background(), tooldispatch.ToolCall{
+			CallID:   "busy",
+			Tool:     "t",
+			Version:  "v1",
+			Deadline: time.Now().Add(time.Minute),
+		})
+		busyDone <- err
+	}()
+	select {
+	case id := <-invokeCh:
+		if id != "busy" {
+			t.Fatalf("first invoke = %q, want busy", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for busy invoke")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	queuedCancel = cancel
+	queuedDone := make(chan error, 1)
+	go func() {
+		_, err := reg.Dispatch(ctx, tooldispatch.ToolCall{
+			CallID:   "queued",
+			Tool:     "t",
+			Version:  "v1",
+			Deadline: time.Now().Add(time.Minute),
+		})
+		queuedDone <- err
+	}()
+	deadline := time.Now().Add(time.Second)
+	for reg.QueuedCount("t", "v1") != 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("queued = %d, want 1", reg.QueuedCount("t", "v1"))
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if err := reg.CompleteResult("w1", tooldispatch.ToolResult{
+		CallID:  "busy",
+		Payload: json.RawMessage(`{}`),
+	}); err != nil {
+		t.Fatalf("CompleteResult busy: %v", err)
+	}
+
+	select {
+	case err := <-busyDone:
+		if err != nil {
+			t.Fatalf("busy dispatch: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for busy dispatch")
+	}
+	select {
+	case err := <-queuedDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued dispatch err = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for queued dispatch cancel")
+	}
+
+	select {
+	case id := <-invokeCh:
+		t.Fatalf("unexpected WorkInvoke for %q after cancelled queued drain", id)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestWorkerRegistry_cancelSession(t *testing.T) {
 	reg := tooldispatch.NewWorkerRegistry(tooldispatch.DefaultRegistryConfig())
 

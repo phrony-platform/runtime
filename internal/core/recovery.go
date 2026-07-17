@@ -88,6 +88,24 @@ func (s *runtimeServer) recoverDetachedSession(sessionID string) {
 		return
 	}
 
+	// Hold an activeSessions slot so CancelSession cancels this ctx before any
+	// recovered Dispatch / WorkInvoke. Re-read status after register so a cancel
+	// that committed between the check above and registration is observed.
+	if err := s.registerActiveSession(sessionID, activeSessionEntry{cancel: cancel}); err != nil {
+		return
+	}
+	releaseSlot := true
+	defer func() {
+		if releaseSlot {
+			s.unregisterActiveSession(sessionID)
+		}
+	}()
+
+	session, err = q.GetSession(ctx, sessionID)
+	if err != nil || sessionStatusTerminal(session.Status) {
+		return
+	}
+
 	ver, err := s.loadSessionVersion(ctx, q, sessionID, session.AgentVersionID)
 	if err != nil {
 		_ = s.failDetachedSession(ctx, q, sessionID, err)
@@ -107,6 +125,10 @@ func (s *runtimeServer) recoverDetachedSession(sessionID string) {
 	}
 
 	if len(invocations) > 0 {
+		// Test hook: after active registration + status re-read, before Dispatch.
+		if s.recoverDetachedAfterRegisterFn != nil {
+			s.recoverDetachedAfterRegisterFn(sessionID)
+		}
 		if err := s.recoverOutstandingToolInvocations(ctx, q, ver, session, history, invocations, true); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -150,6 +172,14 @@ func (s *runtimeServer) recoverDetachedSession(sessionID string) {
 		input := session.Input
 		if len(input) == 0 {
 			input = json.RawMessage("{}")
+		}
+		// Release the recovery slot so startRunSessionBackground can register
+		// exclusively, then re-check terminal status for cancels in the gap.
+		s.unregisterActiveSession(sessionID)
+		releaseSlot = false
+		session, err = q.GetSession(ctx, sessionID)
+		if err != nil || sessionStatusTerminal(session.Status) || ctx.Err() != nil {
+			return
 		}
 		s.startRunSessionBackground(sessionID, session.AgentVersionID, input)
 	}
@@ -351,11 +381,13 @@ func (s *runtimeServer) continueRecoveredTurn(
 	history []provider.Message,
 	priorDelegatedUsage int,
 ) error {
-	if s.sessionIsActive(session.ID) {
-		return nil
+	ownsSlot := !s.sessionIsActive(session.ID)
+	sessionCtx := ctx
+	var sessionCancel context.CancelFunc
+	if ownsSlot {
+		sessionCtx, sessionCancel = context.WithCancel(context.Background())
+		defer sessionCancel()
 	}
-	sessionCtx, sessionCancel := context.WithCancel(context.Background())
-	defer sessionCancel()
 	dispatch, err := s.sessionToolDispatch(sessionCtx, q, session.ID, ver, rootSessionDepth)
 	if err != nil {
 		return err
@@ -374,12 +406,18 @@ func (s *runtimeServer) continueRecoveredTurn(
 	}
 	state.approvalGate = newSessionApprovalGate(s.approvalCoord(), session.ID, events, q, session.AgentVersionID)
 	state.approvalGate.hitl = state
-	if err := s.registerActiveSession(session.ID, activeSessionEntry{
-		cancel: sessionCancel, approvalGate: state.approvalGate,
-	}); err != nil {
-		return err
+	if ownsSlot {
+		if err := s.registerActiveSession(session.ID, activeSessionEntry{
+			cancel: sessionCancel, approvalGate: state.approvalGate,
+		}); err != nil {
+			return err
+		}
+		defer s.unregisterActiveSession(session.ID)
+	} else {
+		// Caller already holds the activeSessions slot (e.g. recoverDetachedSession);
+		// reuse their cancellable ctx so CancelSession reaches StreamCompletion.
+		s.attachActiveSessionGate(session.ID, state.approvalGate)
 	}
-	defer s.unregisterActiveSession(session.ID)
 
 	ch := make(chan executor.Event, 32)
 	runErrCh := make(chan error, 1)

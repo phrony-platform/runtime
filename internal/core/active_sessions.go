@@ -93,6 +93,32 @@ func (s *runtimeServer) withActiveSession(sessionID string, entry activeSessionE
 	return fn()
 }
 
+// withDetachedActiveSlot registers a cancelable activeSessions entry for detached
+// recovery/resume work so CancelSession aborts Dispatch before WorkInvoke.
+// Returns nil when another driver owns the session or the session is already
+// terminal after registration.
+func (s *runtimeServer) withDetachedActiveSlot(sessionID string, fn func(ctx context.Context) error) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := s.registerActiveSession(sessionID, activeSessionEntry{cancel: cancel}); err != nil {
+		return nil
+	}
+	defer s.unregisterActiveSession(sessionID)
+
+	q, err := s.queries()
+	if err != nil {
+		return err
+	}
+	session, err := q.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if sessionStatusTerminal(session.Status) {
+		return nil
+	}
+	return fn(ctx)
+}
+
 func (s *runtimeServer) attachActiveSessionGate(sessionID string, gate *sessionApprovalGate) {
 	if gate == nil {
 		return

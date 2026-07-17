@@ -121,6 +121,17 @@ make test-e2e
 
 From the repo root: `make test-e2e` (builds CLI, brings up e2e stack, runs the suite).
 
+Against a host-run runtime (no compose restart):
+
+```bash
+# Terminal 1
+docker compose up -d postgres --wait
+make serve-e2e
+
+# Terminal 2
+make test-e2e-local
+```
+
 Tests call `phrony` for actions and gRPC for session/approval assertions. They **skip** (do not fail) when the runtime is unreachable.
 
 **F1:** uses a **nodispatch** e2e worker (`PLAYGROUND_WORKER_MODE=nodispatch`) that declines `process_payment` without printing `payment processed:` — so the session does not sit in `awaiting_tool` for minutes. Stop any extra `make run` worker in another terminal; a stray real worker will still process the payment and break the test.

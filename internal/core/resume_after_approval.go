@@ -102,7 +102,9 @@ func (s *runtimeServer) resumeAfterApproval(
 			}
 			return s.completeApprovalTurnOnStream(ctx, q, gate, session, ver, history)
 		}
-		return s.recoverOutstandingToolInvocations(ctx, q, ver, session, history, []store.ToolInvocation{inv}, true)
+		return s.withDetachedActiveSlot(row.SessionID, func(resumeCtx context.Context) error {
+			return s.recoverOutstandingToolInvocations(resumeCtx, q, ver, session, history, []store.ToolInvocation{inv}, true)
+		})
 	}
 
 	denyMsg := strings.TrimSpace(comment)
@@ -125,7 +127,9 @@ func (s *runtimeServer) resumeAfterApproval(
 	if gate != nil && gate.events != nil {
 		return s.completeApprovalTurnOnStream(ctx, q, gate, session, ver, history)
 	}
-	return s.continueRecoveredTurn(ctx, q, session, ver, history, 0)
+	return s.withDetachedActiveSlot(row.SessionID, func(resumeCtx context.Context) error {
+		return s.continueRecoveredTurn(resumeCtx, q, session, ver, history, 0)
+	})
 }
 
 func (s *runtimeServer) completeApprovalTurnOnStream(

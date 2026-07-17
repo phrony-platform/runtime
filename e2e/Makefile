@@ -1,4 +1,4 @@
-.PHONY: run build tidy test test-e2e test-e2e-validate dev-up dev-down fresh-db
+.PHONY: run build tidy test test-e2e test-e2e-local test-e2e-validate dev-up dev-down fresh-db
 
 RUNTIME_ROOT := ..
 RUNTIME_COMPOSE := -f $(RUNTIME_ROOT)/docker-compose.yml -f docker-compose.e2e.yml
@@ -29,9 +29,12 @@ test-e2e-validate:
 	E2E_LOG=1 go test -v -shuffle=off ./e2e -count=1
 	@test -f e2e/scenario-overview.txt && cat e2e/scenario-overview.txt
 
-# E2E_LOG=1 + -v: go test hides passing-test output without -v; overview still printed at end.
-# -shuffle=off keeps zzz_archive then zzz_overview last (archive must not run before B3/D1).
-test-e2e: fresh-db
+# Against an already-running runtime (e.g. make -C .. serve-e2e). No compose / fresh-db.
+test-e2e-local:
 	@rm -f e2e/scenario-overview.txt
 	E2E_LOG=1 go test -v -shuffle=off -tags=integration ./e2e -count=1 -timeout 15m
 	@test -f e2e/scenario-overview.txt && cat e2e/scenario-overview.txt
+
+# E2E_LOG=1 + -v: go test hides passing-test output without -v; overview still printed at end.
+# -shuffle=off keeps zzz_archive then zzz_overview last (archive must not run before B3/D1).
+test-e2e: fresh-db test-e2e-local

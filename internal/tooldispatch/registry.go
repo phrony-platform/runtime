@@ -313,6 +313,14 @@ func (r *WorkerRegistry) Dispatch(ctx context.Context, call ToolCall) (ToolResul
 			return stored, nil
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		// Do not track or invoke; classify like a queue wait give-up so callers
+		// still see ErrNoHandler / ErrCapacityExhausted when the wait ends with
+		// no (or busy) workers.
+		mapped := r.queuedWaitGiveUpErrLocked(key, err)
+		r.mu.Unlock()
+		return ToolResult{}, mapped
+	}
 	r.trackSessionLocked(call)
 	r.inflight[call.CallID] = dw
 	rec := r.recorder
@@ -414,6 +422,9 @@ func (r *WorkerRegistry) pickWorkerLocked(key string) *workerConn {
 }
 
 func (r *WorkerRegistry) leaseAndInvokeLocked(dw *dispatchWaiter, w *workerConn, key string) error {
+	if err := dw.ctx.Err(); err != nil {
+		return err
+	}
 	hs := w.handlers[key]
 	if r.integrity != nil {
 		if err := r.integrity(dw.call, &w.info); err != nil {
@@ -436,6 +447,15 @@ func (r *WorkerRegistry) leaseAndInvokeLocked(dw *dispatchWaiter, w *workerConn,
 	dw.workerID = w.info.WorkerID
 	dw.queued = false
 
+	if err := dw.ctx.Err(); err != nil {
+		hs.busy--
+		w.handlers[key] = hs
+		if dw.dispatched && rec != nil {
+			_ = rec.RecordCompleted(dw.ctx, dw.call, ToolResult{}, err)
+			dw.dispatched = false
+		}
+		return err
+	}
 	if err := w.send(invokeMsg(dw.call)); err != nil {
 		hs.busy--
 		w.handlers[key] = hs

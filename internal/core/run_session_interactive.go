@@ -163,47 +163,45 @@ func (s *runtimeServer) runSessionInteractiveAttach(
 		}
 		state.history = history
 		state.turnCount = len(history) / 2
-		if invocations, err := q.ListUnfinishedInvocationsBySession(sessionCtx, sessionID); err == nil && len(invocations) > 0 {
-			if err := s.recoverOutstandingToolInvocations(sessionCtx, q, ver, session, history, invocations, false); err != nil {
-				return status.Errorf(codes.Internal, "resume tool dispatch: %v", err)
-			}
-			session, err = q.GetSession(sessionCtx, sessionID)
-			if err != nil {
-				return status.Errorf(codes.Internal, "load session: %v", err)
-			}
-			if session.Status == model.SessionStatusAwaitingApproval {
-				if pending, perr := q.GetPendingApprovalBySession(sessionCtx, sessionID); perr == nil {
-					req, reqErr := approvalRequestFromStore(sessionCtx, q, pending, sessionID)
-					if reqErr == nil {
-						_ = events.Send(&runtimev1.RunSessionInteractiveServerMsg{
-							Body: &runtimev1.RunSessionInteractiveServerMsg_ApprovalRequired{
-								ApprovalRequired: approvalRequiredToProto(req),
-							},
-						})
-						state.approvalGate.setPendingReplay(req)
-					}
-				}
-				if err := sendAwaitingInput(events, stopReasonFromSessionOutput(output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
-					return err
-				}
-				return s.withActiveSession(sessionID, activeSessionEntry{
-					cancel: sessionCancel, approvalGate: state.approvalGate,
-				}, func() error {
-					return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, nil, true)
-				})
-			}
-			history, output, err = loadFoldedSession(sessionCtx, q, sessionID)
-			if err != nil {
-				return status.Errorf(codes.Internal, "load session fold: %v", err)
-			}
-			state.history = history
-		}
-		if err := sendAwaitingInput(events, stopReasonFromSessionOutput(output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_tool"); err != nil {
-			return err
-		}
+		// Register before recovering tool invocations so CancelSession cancels
+		// sessionCtx before any recovered Dispatch.
 		return s.withActiveSession(sessionID, activeSessionEntry{
 			cancel: sessionCancel, approvalGate: state.approvalGate,
 		}, func() error {
+			if invocations, err := q.ListUnfinishedInvocationsBySession(sessionCtx, sessionID); err == nil && len(invocations) > 0 {
+				if err := s.recoverOutstandingToolInvocations(sessionCtx, q, ver, session, history, invocations, false); err != nil {
+					return status.Errorf(codes.Internal, "resume tool dispatch: %v", err)
+				}
+				session, err = q.GetSession(sessionCtx, sessionID)
+				if err != nil {
+					return status.Errorf(codes.Internal, "load session: %v", err)
+				}
+				if session.Status == model.SessionStatusAwaitingApproval {
+					if pending, perr := q.GetPendingApprovalBySession(sessionCtx, sessionID); perr == nil {
+						req, reqErr := approvalRequestFromStore(sessionCtx, q, pending, sessionID)
+						if reqErr == nil {
+							_ = events.Send(&runtimev1.RunSessionInteractiveServerMsg{
+								Body: &runtimev1.RunSessionInteractiveServerMsg_ApprovalRequired{
+									ApprovalRequired: approvalRequiredToProto(req),
+								},
+							})
+							state.approvalGate.setPendingReplay(req)
+						}
+					}
+					if err := sendAwaitingInput(events, stopReasonFromSessionOutput(output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_approval"); err != nil {
+						return err
+					}
+					return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, nil, true)
+				}
+				history, output, err = loadFoldedSession(sessionCtx, q, sessionID)
+				if err != nil {
+					return status.Errorf(codes.Internal, "load session fold: %v", err)
+				}
+				state.history = history
+			}
+			if err := sendAwaitingInput(events, stopReasonFromSessionOutput(output), state.turnCount, provider.TokenUsage{}, provider.TokenUsage{}, "awaiting_tool"); err != nil {
+				return err
+			}
 			return s.runSessionInteractiveLoop(sessionCtx, stream, events, q, sessionID, state, nil, true)
 		})
 
