@@ -22,15 +22,31 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Test
+      - name: Unit tests
         run: go test -short ./...
 
       - name: E2E validate-only
         run: make test-e2e-validate
 
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binaries
+        run: make build
+
   e2e:
     name: E2E
-    # Full scenario suite on merges to main (nested e2e/ module; not in product binaries).
+    needs: build
+    # Full scenario suite on merges to main (compose overlay sets stub + queue wait).
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
