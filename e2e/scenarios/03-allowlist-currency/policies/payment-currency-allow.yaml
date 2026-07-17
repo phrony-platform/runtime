@@ -1,0 +1,15 @@
+apiVersion: phrony.com/v1
+kind: Policy
+
+metadata:
+  name: payment-currency-allow
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  description: Allow USD only for process-payment.
+  scope: tool:payments.process-payment
+  allow:
+    - USD
+  decision:
+    type: allow

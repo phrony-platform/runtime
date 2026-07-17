@@ -1,0 +1,24 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: payment-agent-secret-warning
+  namespace: demo
+  version: 1.0.0
+
+secrets:
+  openai:
+    fromEnv: OPENAI_API_KEY
+
+spec:
+  purpose: Secret env warning fixture.
+  instructions:
+    text: test
+  model:
+    provider: openai
+    name: gpt-4o
+  default_policies:
+    - demo.payment-require-approval
+  tools:
+    - ref: payments.process-payment@1.0.0
+      as: process_payment

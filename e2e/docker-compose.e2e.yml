@@ -1,0 +1,9 @@
+# Extends the runtime dev stack with the stub model provider enabled for e2e.
+# Usage (from runtime/e2e): make dev-up
+# Or: docker compose -f ../docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait
+services:
+  runtime:
+    environment:
+      RUNTIME_ENABLE_STUB_PROVIDER: "true"
+      # Fail queued tool calls when no worker is connected (F2) instead of blocking for minutes.
+      RUNTIME_DISPATCH_QUEUE_WAIT: "10s"

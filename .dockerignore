@@ -9,3 +9,5 @@ dist
 coverage.out
 .gomodcache
 .gocache
+# Nested e2e module: not part of phrony-runtime; keep image builds lean.
+e2e

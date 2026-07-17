@@ -1,0 +1,25 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: routing-orchestrator
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  purpose: Routes payment questions to a specialist and relays the answer.
+  instructions:
+    text: |
+      When the user asks about payment status, call ask_payment_advisor with a `task`
+      field restating the question. Summarize the specialist's answer for the user.
+  model:
+    provider: stub
+    name: scripted
+  limits:
+    max_subagent_depth: 2
+    on_limit: halt
+  agents:
+    - ref: ./specialists/advisor.yaml
+      as: ask_payment_advisor
+      description: Delegate payment questions to the payment advisor agent.
+      result: summary

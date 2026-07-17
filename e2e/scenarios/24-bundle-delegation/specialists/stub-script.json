@@ -1,0 +1,8 @@
+{
+  "turns": [
+    [
+      {"type": "text_delta", "text": "Payment to Acme Corp is pending settlement."},
+      {"type": "completed", "stop_reason": "end_turn"}
+    ]
+  ]
+}

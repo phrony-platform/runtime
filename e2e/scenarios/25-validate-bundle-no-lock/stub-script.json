@@ -1,0 +1,8 @@
+{
+  "turns": [
+    [
+      {"type": "text_delta", "text": "OK."},
+      {"type": "completed", "stop_reason": "end_turn"}
+    ]
+  ]
+}

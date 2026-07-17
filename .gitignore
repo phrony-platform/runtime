@@ -37,3 +37,8 @@ go.work.sum
 .gocache
 
 .pnpm-store
+
+# Nested e2e module artifacts
+/e2e/bin/
+/e2e/e2e/scenario-overview.txt
+/e2e/.env

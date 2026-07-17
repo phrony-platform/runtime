@@ -1,0 +1,30 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: secrets-orchestrator
+  namespace: demo
+  version: 1.0.0
+
+secrets:
+  openai:
+    fromEnv: OPENAI_API_KEY
+
+spec:
+  purpose: Delegates explanation requests to a specialist that uses a different provider secret.
+  instructions:
+    text: |
+      When the user asks for a detailed explanation, call ask_explainer with a `task`
+      field restating the request. Summarize the specialist's answer.
+  model:
+    provider: stub
+    name: scripted
+    secret: openai
+  limits:
+    max_subagent_depth: 2
+    on_limit: halt
+  agents:
+    - ref: ./specialists/explainer.yaml
+      as: ask_explainer
+      description: Delegate explanation requests to the explainer specialist.
+      result: summary

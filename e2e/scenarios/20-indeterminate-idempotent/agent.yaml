@@ -1,0 +1,22 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: payment-agent-indeterminate-idempotent
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  purpose: idempotent_write tool should surface indeterminate dispatch as tool error, not HITL.
+  instructions:
+    text: |
+      When the user asks to send or process a payment, call process_payment with amount,
+      currency, and payee. Summarize the result for the user.
+  model:
+    provider: stub
+    name: scripted
+  default_policies:
+    - demo.payment-require-approval
+  tools:
+    - ref: payments.process-payment@1.0.0
+      as: process_payment

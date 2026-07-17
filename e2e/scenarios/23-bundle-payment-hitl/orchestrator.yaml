@@ -1,0 +1,25 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: payment-orchestrator-hitl
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  purpose: Front-desk agent that delegates payment requests to a payment specialist.
+  instructions:
+    text: |
+      When the user asks to send or process a payment, call ask_payment_specialist with a
+      `task` field that restates the payment details. Summarize the specialist's answer.
+  model:
+    provider: stub
+    name: scripted
+  limits:
+    max_subagent_depth: 2
+    on_limit: halt
+  agents:
+    - ref: ./specialists/payment.yaml
+      as: ask_payment_specialist
+      description: Delegate payment processing to the payment specialist agent.
+      result: summary

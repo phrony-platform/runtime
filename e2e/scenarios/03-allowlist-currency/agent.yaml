@@ -1,0 +1,22 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: payment-agent-currency
+  namespace: demo
+  version: 1.0.1
+
+spec:
+  purpose: Process user-requested payments via the payment tool.
+  instructions:
+    text: |
+      When the user asks to send or process a payment, call process_payment with amount,
+      currency, and payee. Summarize the result for the user.
+  model:
+    provider: stub
+    name: scripted
+  default_policies:
+    - demo.payment-currency-allow
+  tools:
+    - ref: payments.process-payment@1.0.0
+      as: process_payment

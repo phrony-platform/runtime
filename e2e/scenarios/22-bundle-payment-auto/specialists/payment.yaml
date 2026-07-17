@@ -1,0 +1,23 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: payment-specialist
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  purpose: Process payments via the payment tool when delegated a payment task.
+  instructions:
+    text: |
+      The session input carries a `task` field describing the payment to process.
+      Call process_payment with amount, currency, and payee extracted from the task.
+      Summarize the result for the orchestrator.
+  model:
+    provider: stub
+    name: scripted
+  default_policies:
+    - demo.payment-require-approval
+  tools:
+    - ref: payments.process-payment@1.0.0
+      as: process_payment

@@ -1,0 +1,12 @@
+{
+  "turns": [
+    [
+      {"type": "tool_call", "name": "process_payment", "args": {"amount": 1500, "currency": "USD", "payee": "Acme Corp"}},
+      {"type": "completed", "stop_reason": "tool_use"}
+    ],
+    [
+      {"type": "text_delta", "text": "Payment processed successfully."},
+      {"type": "completed", "stop_reason": "end_turn"}
+    ]
+  ]
+}

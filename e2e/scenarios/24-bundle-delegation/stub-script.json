@@ -1,0 +1,12 @@
+{
+  "turns": [
+    [
+      {"type": "tool_call", "name": "ask_payment_advisor", "args": {"task": "What is the status of payment to Acme Corp?"}},
+      {"type": "completed", "stop_reason": "tool_use"}
+    ],
+    [
+      {"type": "text_delta", "text": "The advisor confirmed the payment is pending."},
+      {"type": "completed", "stop_reason": "end_turn"}
+    ]
+  ]
+}

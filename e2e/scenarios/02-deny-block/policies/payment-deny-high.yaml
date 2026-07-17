@@ -1,0 +1,18 @@
+apiVersion: phrony.com/v1
+kind: Policy
+
+metadata:
+  name: payment-deny-high
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  description: Block payments over 500.
+  scope: tool:payments.process-payment
+  conditions:
+    field: amount
+    op: gt
+    value: 500
+  decision:
+    type: deny
+    reason: Payment amount exceeds 500.

@@ -1,0 +1,20 @@
+apiVersion: phrony.com/v1
+kind: Policy
+
+metadata:
+  name: dispatch-no-handler
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  description: Escalate when no worker handler is available.
+  scope: agent
+  conditions:
+    field: phrony.dispatch.trigger
+    op: eq
+    value: dispatch:no_handler
+  decision:
+    type: escalate
+    reason: No handler registered for this tool version.
+    runtime:
+      phrony.com/approver_role: ops

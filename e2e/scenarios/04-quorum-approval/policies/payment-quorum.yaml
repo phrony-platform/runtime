@@ -1,0 +1,19 @@
+apiVersion: phrony.com/v1
+kind: Policy
+
+metadata:
+  name: payment-quorum
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  description: Large payments need two approvers.
+  scope: tool:payments.process-payment
+  conditions:
+    field: amount
+    op: gt
+    value: 1000
+  decision:
+    type: require_approval
+    approvals_required: 2
+    reason: Payment amount exceeds 1000; two approvers required.

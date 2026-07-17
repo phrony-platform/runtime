@@ -1,0 +1,25 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: secrets-explainer
+  namespace: demo
+  version: 1.0.0
+
+secrets:
+  anthropic:
+    fromEnv: ANTHROPIC_API_KEY
+
+spec:
+  purpose: Produce explanations when delegated by the orchestrator.
+  instructions:
+    text: |
+      The session input carries a `task` field describing what to explain.
+      Answer directly and concisely in plain language.
+  model:
+    provider: stub
+    name: scripted
+    secret: anthropic
+  limits:
+    max_subagent_depth: 1
+    on_limit: halt

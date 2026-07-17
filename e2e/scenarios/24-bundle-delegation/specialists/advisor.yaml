@@ -1,0 +1,17 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: payment-advisor
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  purpose: Answer payment status questions without invoking tools.
+  instructions:
+    text: |
+      The session input carries a `task` field with a payment question.
+      Answer directly and concisely in plain language.
+  model:
+    provider: stub
+    name: scripted

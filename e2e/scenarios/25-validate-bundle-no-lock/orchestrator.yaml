@@ -1,0 +1,15 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: payment-orchestrator-unlocked
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  purpose: Minimal bundle root for validate --require-lock negative fixture.
+  instructions:
+    text: Answer payment questions directly.
+  model:
+    provider: stub
+    name: scripted

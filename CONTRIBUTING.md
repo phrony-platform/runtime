@@ -43,6 +43,7 @@ runtime/
 ├── cmd/
 │   ├── cli/                Operator CLI (`phrony`) — thin gRPC client
 │   └── phrony-runtime/     Daemon entrypoint (`phrony-runtime`)
+├── e2e/                    Nested Go module: scenario e2e suite (not linked into product binaries)
 ├── gen/                    Generated Go from protobuf (do not edit by hand)
 ├── migrations/             Versioned SQL (golang-migrate); embedded at build time
 ├── internal/
@@ -67,6 +68,7 @@ runtime/
 | Path | Purpose |
 |------|---------|
 | `cmd/` | Entrypoints only — keep logic in `internal/` |
+| `e2e/` | Nested module; excluded from `make build` and Docker image context |
 | `internal/` | Private application code; not importable by other modules |
 | `gen/` | Output of `make proto` — commit regenerated files with API changes |
 | `proto/` | API contract; changes should align with the Phrony Agent Spec |
@@ -148,6 +150,13 @@ Postgres integration tests (migrate + deploy against a real DB; requires `make d
 
 ```bash
 go test -tags=integration ./internal/core/...
+```
+
+Scenario e2e suite (nested module under `e2e/`; not part of product binaries):
+
+```bash
+make test-e2e-validate   # local validate fixtures only
+make test-e2e            # full suite with compose + stub provider
 ```
 
 Add or update tests for behavior you change. Integration tests that need Postgres should use `make dev-up` and the test database URL from `.env`.

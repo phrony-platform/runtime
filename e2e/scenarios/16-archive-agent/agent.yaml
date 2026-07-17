@@ -1,0 +1,20 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: payment-agent-archive-e2e
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  purpose: E2e-only agent archived by I1; not used by session or registry tests.
+  instructions:
+    text: Minimal stub agent for agents archive integration test.
+  model:
+    provider: stub
+    name: scripted
+  default_policies:
+    - demo.payment-require-approval
+  tools:
+    - ref: payments.process-payment@1.0.0
+      as: process_payment

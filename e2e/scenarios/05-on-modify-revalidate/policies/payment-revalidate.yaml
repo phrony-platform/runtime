@@ -1,0 +1,19 @@
+apiVersion: phrony.com/v1
+kind: Policy
+
+metadata:
+  name: payment-revalidate
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  description: Revalidate when approver edits tool args.
+  scope: tool:payments.process-payment
+  conditions:
+    field: amount
+    op: gt
+    value: 1000
+  decision:
+    type: require_approval
+    on_modify: revalidate
+    reason: Payment amount exceeds 1000; confirm before processing.

@@ -84,4 +84,6 @@ Provider API keys referenced in manifest `secrets.*.fromEnv` (e.g. `ANTHROPIC_AP
 
 To build from source: `make dev-up` (builds local `Dockerfile`) or `make serve` with Postgres from Compose. Run `make` without arguments for the full target list.
 
+Scenario e2e tests live in a nested module under [`e2e/`](./e2e/) and are **not** linked into `phrony` / `phrony-runtime`. From the repo root: `make test-e2e-validate` (no stack) or `make test-e2e` (compose + stub provider). For a host-run runtime against Postgres, use `make serve-e2e` (enables stub provider and a 10s dispatch queue wait). See [`e2e/README.md`](./e2e/README.md).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for repository layout, code style, and PR guidelines.

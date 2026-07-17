@@ -1,0 +1,10 @@
+apiVersion: phrony.com/v1
+kind: Bundle
+
+metadata:
+  name: secrets-conflict
+  namespace: demo
+  version: 1.0.0
+
+spec:
+  root: ./orchestrator.yaml

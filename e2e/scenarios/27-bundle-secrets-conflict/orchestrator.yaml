@@ -1,0 +1,28 @@
+apiVersion: phrony.com/v1
+kind: Agent
+
+metadata:
+  name: conflict-orchestrator
+  namespace: demo
+  version: 1.0.0
+
+secrets:
+  openai:
+    fromEnv: OPENAI_API_KEY
+
+spec:
+  purpose: Delegates to a specialist with a conflicting secret definition.
+  instructions:
+    text: Delegate to ask_specialist when needed.
+  model:
+    provider: stub
+    name: scripted
+    secret: openai
+  limits:
+    max_subagent_depth: 2
+    on_limit: halt
+  agents:
+    - ref: ./specialists/specialist.yaml
+      as: ask_specialist
+      description: Delegate to the specialist.
+      result: summary

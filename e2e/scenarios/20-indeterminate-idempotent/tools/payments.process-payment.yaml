@@ -1,0 +1,22 @@
+apiVersion: phrony.com/v1
+kind: Tool
+
+metadata:
+  name: process-payment
+  namespace: payments
+  version: 1.0.0
+
+spec:
+  description: Process a payment to a payee.
+  side_effect_class: idempotent_write
+  input_schema:
+    inline:
+      type: object
+      properties:
+        amount:
+          type: number
+        currency:
+          type: string
+        payee:
+          type: string
+      required: [amount, currency, payee]

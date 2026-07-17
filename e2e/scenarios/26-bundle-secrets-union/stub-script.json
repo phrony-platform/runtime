@@ -1,0 +1,12 @@
+{
+  "turns": [
+    [
+      {"type": "tool_call", "name": "ask_explainer", "args": {"task": "Explain how bundle secret unions work."}},
+      {"type": "completed", "stop_reason": "tool_use"}
+    ],
+    [
+      {"type": "text_delta", "text": "The specialist explained bundle secret pooling."},
+      {"type": "completed", "stop_reason": "end_turn"}
+    ]
+  ]
+}

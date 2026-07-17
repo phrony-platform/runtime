@@ -1,0 +1,12 @@
+{
+  "turns": [
+    [
+      {"type": "tool_call", "name": "ask_payment_specialist", "args": {"task": "Pay 500 USD to Acme Corp"}},
+      {"type": "completed", "stop_reason": "tool_use"}
+    ],
+    [
+      {"type": "text_delta", "text": "Payment delegated and completed."},
+      {"type": "completed", "stop_reason": "end_turn"}
+    ]
+  ]
+}

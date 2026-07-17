@@ -1,0 +1,8 @@
+{
+  "turns": [
+    [
+      {"type": "text_delta", "text": "Bundle runs resolve the union of all closure member secrets at the root session pool."},
+      {"type": "completed", "stop_reason": "end_turn"}
+    ]
+  ]
+}
