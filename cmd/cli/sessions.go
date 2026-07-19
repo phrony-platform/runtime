@@ -161,7 +161,7 @@ func runSessionsInspect(cmd *cobra.Command, runtimeAddr *string, sessionID strin
 			fmt.Fprintln(out, string(b))
 			return nil
 		}
-		return formatSessionInspectHuman(out, resp.GetSession(), resp.GetMergedTimeline(), 0)
+		return formatSessionInspectHuman(out, resp.GetSession(), resp.GetTimeline())
 	})
 }
 

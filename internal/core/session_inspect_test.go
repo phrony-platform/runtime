@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/phrony-platform/runtime/internal/sessionids"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const inspectTestManifestJSON = `{
@@ -47,21 +51,26 @@ func expectInspectSessionRootMocks(mock sqlmock.Sqlmock, sessionID string, now t
 			AddRow("demo", "echo-agent", "1.2.0", []byte(inspectTestManifestJSON)))
 
 	expectListEventsBySession(mock, sessionID, events, now)
+}
 
-	mock.ExpectQuery(`FROM tool_invocations`).WithArgs(sessionID).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"call_id", "session_id", "agent_version_id", "turn", "tool", "version", "args",
-			"result", "status", "worker_identity", "image_digest", "descriptor_hash",
-			"manifest_content_hash", "attempt", "error_code", "error_message",
-			"usage_input_tokens", "usage_output_tokens", "usage_estimated",
-			"created_at", "updated_at", "dispatched_at", "completed_at",
-		}).AddRow(
+func expectInspectSessionTimelineMocks(mock sqlmock.Sqlmock, sessionID string, now time.Time, withInvocation bool) {
+	invRows := sqlmock.NewRows([]string{
+		"call_id", "session_id", "agent_version_id", "turn", "tool", "version", "args",
+		"result", "status", "worker_identity", "image_digest", "descriptor_hash",
+		"manifest_content_hash", "attempt", "error_code", "error_message",
+		"usage_input_tokens", "usage_output_tokens", "usage_estimated",
+		"created_at", "updated_at", "dispatched_at", "completed_at",
+	})
+	if withInvocation {
+		invRows = invRows.AddRow(
 			"call-1", sessionID, "ver-1", 1, "tools.echo", "v1", []byte(`{"x":1}`),
 			[]byte(`{"ok":true}`), model.ToolInvocationSucceeded,
 			"worker-1", "sha256:abc", "desc-hash", "manifest-hash", 1, nil, nil,
 			3, 7, false,
 			now, now, now, now,
-		))
+		)
+	}
+	mock.ExpectQuery(`FROM tool_invocations`).WithArgs(sessionID).WillReturnRows(invRows)
 
 	mock.ExpectQuery(`FROM approvals`).WithArgs("", "", sessionID, "", "").
 		WillReturnRows(sqlmock.NewRows([]string{
@@ -71,6 +80,15 @@ func expectInspectSessionRootMocks(mock sqlmock.Sqlmock, sessionID string, now t
 			"approvals_required", "approvals_received", "comprehension_required",
 			"on_reject", "on_modify", "expires_at", "policy_runtime",
 		}))
+}
+
+func mustInspectProtoValue(t *testing.T, raw string) *structpb.Value {
+	t.Helper()
+	v, err := jsonToProtoValue([]byte(raw))
+	if err != nil {
+		t.Fatalf("jsonToProtoValue: %v", err)
+	}
+	return v
 }
 
 func TestRuntime_InspectSession_validation(t *testing.T) {
@@ -104,6 +122,7 @@ func TestRuntime_InspectSession_success(t *testing.T) {
 
 	parentEv := store.Event{ID: 1, SessionID: "root-sess", RootSessionID: "root-sess", Seq: 1, TS: now, Type: EventMessageUser, Actor: ActorUser, Payload: userMessagePayload("hi")}
 	expectListEventsByRoot(mock, "root-sess", []store.Event{parentEv}, now)
+	expectInspectSessionTimelineMocks(mock, "root-sess", now, true)
 
 	resp, err := srv.InspectSession(context.Background(), &runtimev1.InspectSessionRequest{SessionId: "root-sess"})
 	if err != nil {
@@ -119,20 +138,37 @@ func TestRuntime_InspectSession_success(t *testing.T) {
 	if sess.GetOutput().GetMessage() != "ok" || sess.GetOutput().GetTurns()[0].GetTurnDurationMs() != 250 {
 		t.Fatalf("output = %+v", sess.GetOutput())
 	}
-	if len(sess.GetHistory()) != 2 {
-		t.Fatalf("history len = %d", len(sess.GetHistory()))
+	if sess.GetInput() == nil || sess.GetInput().GetStructValue() == nil {
+		t.Fatalf("input = %+v", sess.GetInput())
 	}
-	if len(sess.GetInvocations()) != 1 || sess.GetInvocations()[0].GetQueueDelayMs() < 0 {
-		t.Fatalf("invocations = %+v", sess.GetInvocations())
+	if len(sess.GetChildren()) != 0 {
+		t.Fatalf("children = %+v", sess.GetChildren())
 	}
-	if len(sess.GetTimeline()) < 2 {
-		t.Fatalf("timeline = %+v", sess.GetTimeline())
+	timeline := resp.GetTimeline()
+	if len(timeline) == 0 {
+		t.Fatal("expected timeline")
 	}
-	if len(resp.GetMergedTimeline()) == 0 {
-		t.Fatal("expected merged_timeline")
+	if timeline[0].GetTsUnixMs() == 0 {
+		t.Fatalf("timeline missing ts_unix_ms: %+v", timeline[0])
 	}
-	if resp.GetMergedTimeline()[0].GetTsUnixMs() == 0 {
-		t.Fatalf("merged timeline missing ts_unix_ms: %+v", resp.GetMergedTimeline()[0])
+	foundReadableEvent := false
+	foundInvocation := false
+	for _, entry := range timeline {
+		if entry.GetSource() == "event" && entry.GetEvent() != nil && entry.GetEvent().GetPayload() != nil {
+			foundReadableEvent = true
+		}
+		if entry.GetSource() == "invocation" {
+			foundInvocation = true
+			if entry.GetInvocation() == nil || entry.GetInvocation().GetArgs() == nil {
+				t.Fatalf("invocation missing readable args: %+v", entry.GetInvocation())
+			}
+		}
+	}
+	if !foundReadableEvent {
+		t.Fatal("expected readable event payload in timeline")
+	}
+	if !foundInvocation {
+		t.Fatal("expected invocation milestones in timeline")
 	}
 	if sess.GetSessionEndedAtUnixMs() != now.UnixMilli() {
 		t.Fatalf("session_ended_at_unix_ms = %d, want %d", sess.GetSessionEndedAtUnixMs(), now.UnixMilli())
@@ -173,27 +209,14 @@ func TestRuntime_InspectSession_treeWithChild(t *testing.T) {
 			AddRow("demo", "child-agent", "1.0.0", []byte(inspectTestManifestJSON)))
 
 	expectListEventsBySession(mock, child, nil, now)
-	mock.ExpectQuery(`FROM tool_invocations`).WithArgs(child).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"call_id", "session_id", "agent_version_id", "turn", "tool", "version", "args",
-			"result", "status", "worker_identity", "image_digest", "descriptor_hash",
-			"manifest_content_hash", "attempt", "error_code", "error_message",
-			"usage_input_tokens", "usage_output_tokens", "usage_estimated",
-			"created_at", "updated_at", "dispatched_at", "completed_at",
-		}))
-	mock.ExpectQuery(`FROM approvals`).WithArgs("", "", child, "", "").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "session_id", "call_id", "status", "route", "reason", "decided_by", "comment",
-			"created_at", "decided_at",
-			"tool", "version", "args", "authority_ref", "policy_name",
-			"approvals_required", "approvals_received", "comprehension_required",
-			"on_reject", "on_modify", "expires_at", "policy_runtime",
-		}))
 
 	parentEv := store.Event{ID: 1, SessionID: parent, RootSessionID: parent, Seq: 1, TS: now, Type: EventMessageUser, Actor: ActorUser, Payload: userMessagePayload("parent")}
 	childEv := store.Event{ID: 2, SessionID: child, RootSessionID: parent, Seq: 1, TS: now.Add(time.Millisecond), Type: EventSessionStarted, Actor: ActorSystem, Payload: json.RawMessage(`{}`)}
 	mock.ExpectQuery(`FROM events`).WithArgs(parent).
 		WillReturnRows(sessionEventLogRows(now, parentEv, childEv))
+
+	expectInspectSessionTimelineMocks(mock, parent, now, false)
+	expectInspectSessionTimelineMocks(mock, child, now, false)
 
 	resp, err := srv.InspectSession(context.Background(), &runtimev1.InspectSessionRequest{SessionId: parent})
 	if err != nil {
@@ -205,15 +228,15 @@ func TestRuntime_InspectSession_treeWithChild(t *testing.T) {
 	if resp.GetSession().GetChildren()[0].GetParentSessionId() != parent {
 		t.Fatalf("child parent = %q", resp.GetSession().GetChildren()[0].GetParentSessionId())
 	}
-	merged := resp.GetMergedTimeline()
-	if len(merged) != 2 {
-		t.Fatalf("merged timeline len = %d, want 2", len(merged))
+	timeline := resp.GetTimeline()
+	if len(timeline) != 2 {
+		t.Fatalf("timeline len = %d, want 2", len(timeline))
 	}
-	if merged[0].GetSessionId() != parent || merged[1].GetSessionId() != child {
-		t.Fatalf("merged order = [%q, %q]", merged[0].GetSessionId(), merged[1].GetSessionId())
+	if timeline[0].GetSessionId() != parent || timeline[1].GetSessionId() != child {
+		t.Fatalf("timeline order = [%q, %q]", timeline[0].GetSessionId(), timeline[1].GetSessionId())
 	}
-	if merged[1].GetDepth() != 1 {
-		t.Fatalf("child depth = %d, want 1", merged[1].GetDepth())
+	if timeline[1].GetDepth() != 1 {
+		t.Fatalf("child depth = %d, want 1", timeline[1].GetDepth())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -243,8 +266,8 @@ func TestBuildInspectTimeline_orderingAndGaps(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	t2 := t1.Add(2 * time.Second)
 	events := []*runtimev1.SessionEventEntry{
-		{Id: 1, Type: EventMessageUser, TsUnixMs: t1.UnixMilli(), Seq: 1, Payload: json.RawMessage(`{"role":"user","content":"hi"}`)},
-		{Id: 2, Type: EventMessageAssistant, TsUnixMs: t2.UnixMilli(), Seq: 2, Payload: json.RawMessage(`{"role":"assistant","content":"ok"}`)},
+		{Id: 1, Type: EventMessageUser, TsUnixMs: t1.UnixMilli(), Seq: 1, Payload: mustInspectProtoValue(t, `{"role":"user","content":"hi"}`)},
+		{Id: 2, Type: EventMessageAssistant, TsUnixMs: t2.UnixMilli(), Seq: 2, Payload: mustInspectProtoValue(t, `{"role":"assistant","content":"ok"}`)},
 	}
 	invocations := []*runtimev1.ToolInvocationEntry{
 		{
@@ -288,15 +311,36 @@ func TestBuildInspectTimeline_orderingAndGaps(t *testing.T) {
 	}
 }
 
-func TestBuildMergedInspectTimeline_orderedByTsAndID(t *testing.T) {
+func TestBuildEventTimelineOrder_orderedByTsAndID(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	events := []store.Event{
-		{ID: 3, SessionID: "child", RootSessionID: "root", Seq: 1, TS: now.Add(2 * time.Millisecond), Type: EventSessionStarted, Actor: ActorSystem},
+		{ID: 3, SessionID: "child", RootSessionID: "root", Seq: 1, TS: now.Add(2 * time.Millisecond), Type: EventSessionStarted, Actor: ActorSystem, Payload: json.RawMessage(`{}`)},
 		{ID: 1, SessionID: "root", RootSessionID: "root", Seq: 1, TS: now, Type: EventMessageUser, Actor: ActorUser, Payload: userMessagePayload("go")},
-		{ID: 2, SessionID: "root", RootSessionID: "root", Seq: 2, TS: now.Add(time.Millisecond), Type: EventToolRequested, Actor: ActorAgent},
+		{ID: 2, SessionID: "root", RootSessionID: "root", Seq: 2, TS: now.Add(time.Millisecond), Type: EventToolRequested, Actor: ActorAgent, Payload: json.RawMessage(`{}`)},
+	}
+	protoEvents, err := sessionEventsToProto(events)
+	if err != nil {
+		t.Fatalf("sessionEventsToProto: %v", err)
 	}
 	depth := map[string]int32{"root": 0, "child": 1}
-	merged := buildMergedInspectTimeline(events, depth)
+	items := make([]inspectTimelineItem, 0, len(events))
+	for i, ev := range events {
+		items = append(items, inspectTimelineItem{
+			timestamp: ev.TS,
+			sortKey:   ev.ID,
+			entry: &runtimev1.InspectTimelineEntry{
+				Timestamp: formatTime(ev.TS),
+				TsUnixMs:  ev.TS.UnixMilli(),
+				Seq:       int32(ev.Seq),
+				SessionId: ev.SessionID,
+				Depth:     depth[ev.SessionID],
+				Source:    "event",
+				Kind:      ev.Type,
+				Event:     protoEvents[i],
+			},
+		})
+	}
+	merged := finalizeInspectTimeline(items)
 	if len(merged) != 3 {
 		t.Fatalf("len = %d", len(merged))
 	}
@@ -306,13 +350,19 @@ func TestBuildMergedInspectTimeline_orderedByTsAndID(t *testing.T) {
 	if merged[2].GetDepth() != 1 {
 		t.Fatalf("child depth = %d", merged[2].GetDepth())
 	}
+	if merged[0].GetEvent().GetPayload() == nil {
+		t.Fatal("expected readable payload")
+	}
 }
 
 func TestToolInvocationToProto_delays(t *testing.T) {
 	created := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	dispatched := created.Add(2 * time.Second)
 	completed := dispatched.Add(3 * time.Second)
-	entry := toolInvocationToProto(storeToolInvocationForTest(created, dispatched, completed))
+	entry, err := toolInvocationToProto(storeToolInvocationForTest(created, dispatched, completed))
+	if err != nil {
+		t.Fatalf("toolInvocationToProto: %v", err)
+	}
 	if entry.GetQueueDelayMs() != 2000 {
 		t.Fatalf("queue_delay_ms = %d", entry.GetQueueDelayMs())
 	}
@@ -321,6 +371,87 @@ func TestToolInvocationToProto_delays(t *testing.T) {
 	}
 	if entry.GetTotalDurationMs() != 5000 {
 		t.Fatalf("total_duration_ms = %d", entry.GetTotalDurationMs())
+	}
+}
+
+func TestJSONToProtoValue(t *testing.T) {
+	v, err := jsonToProtoValue([]byte(`{"a":1,"b":"x"}`))
+	if err != nil {
+		t.Fatalf("jsonToProtoValue: %v", err)
+	}
+	if v.GetStructValue().Fields["a"].GetNumberValue() != 1 {
+		t.Fatalf("a = %+v", v)
+	}
+	empty, err := jsonToProtoValue(nil)
+	if err != nil || empty != nil {
+		t.Fatalf("empty = %v err=%v", empty, err)
+	}
+}
+
+func TestJSONToProtoValue_expandsNestedBase64JSON(t *testing.T) {
+	msg := toolCallServerMsg(executor.ToolCallEvent{
+		CallID:  "call-1",
+		Tool:    "orders.lookup-order",
+		Version: "1.0.0",
+		Args:    json.RawMessage(`{"order_id":"1"}`),
+	}, nil)
+	payload := marshalSessionEventProto(msg)
+
+	v, err := jsonToProtoValue(payload)
+	if err != nil {
+		t.Fatalf("jsonToProtoValue: %v", err)
+	}
+	toolCall := v.GetStructValue().Fields["toolCall"].GetStructValue()
+	if toolCall == nil {
+		t.Fatalf("payload = %v", protoValueJSON(v))
+	}
+	args := toolCall.Fields["args"]
+	if args == nil || args.GetStructValue() == nil {
+		t.Fatalf("args still not nested JSON: %v", protoValueJSON(v))
+	}
+	if got := args.GetStructValue().Fields["order_id"].GetStringValue(); got != "1" {
+		t.Fatalf("order_id = %q", got)
+	}
+
+	entry := &runtimev1.SessionEventEntry{Payload: v}
+	out, err := protojson.Marshal(entry)
+	if err != nil {
+		t.Fatalf("protojson: %v", err)
+	}
+	if strings.Contains(string(out), "eyJ") {
+		t.Fatalf("protojson still contains base64 args: %s", out)
+	}
+	if !strings.Contains(string(out), `"order_id":"1"`) && !strings.Contains(string(out), `"order_id": "1"`) {
+		t.Fatalf("protojson missing readable args: %s", out)
+	}
+
+	resultMsg := &runtimev1.RunSessionInteractiveServerMsg{
+		Body: &runtimev1.RunSessionInteractiveServerMsg_ToolResult{
+			ToolResult: &runtimev1.RunSessionInteractiveToolResult{
+				CallId:  "call-1",
+				Payload: []byte(`{"ok":true}`),
+			},
+		},
+	}
+	resultVal, err := jsonToProtoValue(marshalSessionEventProto(resultMsg))
+	if err != nil {
+		t.Fatalf("tool result: %v", err)
+	}
+	tr := resultVal.GetStructValue().Fields["toolResult"].GetStructValue()
+	if tr.Fields["payload"].GetStructValue().Fields["ok"].GetBoolValue() != true {
+		t.Fatalf("tool result payload = %v", protoValueJSON(resultVal))
+	}
+}
+
+func TestJSONToProtoValue_leavesOpaqueBase64(t *testing.T) {
+	opaque := base64.StdEncoding.EncodeToString([]byte{0x00, 0x01, 0xff})
+	raw := []byte(`{"payload":"` + opaque + `"}`)
+	v, err := jsonToProtoValue(raw)
+	if err != nil {
+		t.Fatalf("jsonToProtoValue: %v", err)
+	}
+	if got := v.GetStructValue().Fields["payload"].GetStringValue(); got != opaque {
+		t.Fatalf("payload = %q, want opaque base64 left intact", got)
 	}
 }
 

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,12 +12,12 @@ import (
 	"time"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
-	"github.com/phrony-platform/runtime/internal/evidence"
 	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func (s *runtimeServer) InspectSession(ctx context.Context, req *runtimev1.InspectSessionRequest) (*runtimev1.InspectSessionResponse, error) {
@@ -69,9 +70,14 @@ func (s *runtimeServer) InspectSession(ctx context.Context, req *runtimev1.Inspe
 		return nil, status.Errorf(codes.Internal, "list root session events: %v", err)
 	}
 
+	timeline, err := buildTreeInspectTimeline(ctx, q, rootEvents, descendantIDs, depthBySession)
+	if err != nil {
+		return nil, err
+	}
+
 	return &runtimev1.InspectSessionResponse{
-		Session:         root,
-		MergedTimeline:  buildMergedInspectTimeline(rootEvents, depthBySession),
+		Session:  root,
+		Timeline: timeline,
 	}, nil
 }
 
@@ -85,14 +91,19 @@ func (s *runtimeServer) buildSessionInspect(ctx context.Context, q *store.Querie
 		return nil, status.Errorf(codes.Internal, "get session delegation meta: %v", err)
 	}
 
+	inputValue, err := jsonToProtoValue(session.Input)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "encode session input: %v", err)
+	}
+
 	out := &runtimev1.SessionInspect{
-		Id:             session.ID,
-		AgentVersionId: session.AgentVersionID,
-		Status:         session.Status,
-		Depth:          int32(meta.Depth),
-		CreatedAt:      formatTime(session.CreatedAt),
-		UpdatedAt:      formatTime(session.UpdatedAt),
-		Input:          session.Input,
+		Id:                     session.ID,
+		AgentVersionId:         session.AgentVersionID,
+		Status:                 session.Status,
+		Depth:                  int32(meta.Depth),
+		CreatedAt:              formatTime(session.CreatedAt),
+		UpdatedAt:              formatTime(session.UpdatedAt),
+		Input:                  inputValue,
 		SessionStartedAtUnixMs: session.CreatedAt.UnixMilli(),
 	}
 	if meta.ParentSessionID != nil {
@@ -107,7 +118,6 @@ func (s *runtimeServer) buildSessionInspect(ctx context.Context, q *store.Querie
 	if output, err := loadSessionOutputJSON(ctx, q, sessionID); err != nil {
 		return nil, status.Errorf(codes.Internal, "load session output: %v", err)
 	} else if len(output) > 0 {
-		out.OutputRaw = output
 		out.Output = sessionOutputToProto(output)
 	}
 	if sessionEndedAtUnixMs := sessionEndedAtUnixMs(session.Status, session.UpdatedAt); sessionEndedAtUnixMs > 0 {
@@ -126,42 +136,12 @@ func (s *runtimeServer) buildSessionInspect(ctx context.Context, q *store.Querie
 	}
 	for _, ev := range events {
 		if ev.Type == EventEvidenceRecorded {
-			if snap, parseErr := evidence.ParseSnapshot(ev.Payload); parseErr == nil {
-				out.DescriptiveMetadata = evidenceSnapshotToProto(snap)
+			if meta, metaErr := jsonToProtoValue(ev.Payload); metaErr == nil {
+				out.DescriptiveMetadata = meta
 			}
 			break
 		}
 	}
-	history := buildProviderContext(events)
-	out.History = historyToProto(history)
-	out.Events = sessionEventsToProto(events)
-
-	invocations, err := q.ListToolInvocationsBySessionID(ctx, sessionID)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "list tool invocations: %v", err)
-	}
-	invProto := toolInvocationsToProto(invocations)
-	out.Invocations = invProto
-
-	approvalRows, err := q.ListApprovals(ctx, store.ListApprovalsParams{SessionID: sessionID})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "list approvals: %v", err)
-	}
-	approvals := make([]*runtimev1.Approval, 0, len(approvalRows))
-	for _, row := range approvalRows {
-		enriched, enrichErr := enrichApprovalFromInvocation(ctx, q, row)
-		if enrichErr != nil {
-			return nil, status.Errorf(codes.Internal, "load approval context: %v", enrichErr)
-		}
-		votes, votesErr := q.ListApprovalVotes(ctx, row.ID)
-		if votesErr != nil {
-			return nil, status.Errorf(codes.Internal, "list approval votes: %v", votesErr)
-		}
-		approvals = append(approvals, approvalToProto(enriched, votes))
-	}
-	out.Approvals = approvals
-
-	out.Timeline = buildInspectTimeline(out.Events, invProto, approvals)
 	return out, nil
 }
 
@@ -262,24 +242,102 @@ func sessionOutputToProto(output json.RawMessage) *runtimev1.SessionOutputInspec
 	return out
 }
 
-func sessionEventsToProto(events []store.Event) []*runtimev1.SessionEventEntry {
-	out := make([]*runtimev1.SessionEventEntry, 0, len(events))
-	for _, ev := range events {
-		out = append(out, eventToProto(ev))
+func jsonToProtoValue(raw []byte) (*structpb.Value, error) {
+	if len(raw) == 0 {
+		return nil, nil
 	}
-	return out
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, err
+	}
+	expandEmbeddedJSONBytes(v)
+	return structpb.NewValue(v)
 }
 
-func eventToProto(ev store.Event) *runtimev1.SessionEventEntry {
+// expandEmbeddedJSONBytes walks decoded JSON and replaces protojson base64 (or
+// raw JSON string) values at known bytes-as-JSON keys with nested objects/arrays.
+// Wire-backed event payloads store tool args/results as protobuf bytes, which
+// otherwise appear as base64 strings in InspectSession --json output.
+func expandEmbeddedJSONBytes(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, val := range x {
+			if s, ok := val.(string); ok && isEmbeddedJSONBytesKey(k) {
+				if decoded, ok := decodeEmbeddedJSON(s); ok {
+					x[k] = decoded
+					expandEmbeddedJSONBytes(decoded)
+					continue
+				}
+			}
+			expandEmbeddedJSONBytes(val)
+		}
+	case []any:
+		for _, item := range x {
+			expandEmbeddedJSONBytes(item)
+		}
+	}
+}
+
+func isEmbeddedJSONBytesKey(k string) bool {
+	switch k {
+	case "args", "payload", "output", "policyRuntime", "policy_runtime":
+		return true
+	default:
+		return false
+	}
+}
+
+func decodeEmbeddedJSON(s string) (any, bool) {
+	if s == "" {
+		return nil, false
+	}
+	raw := []byte(s)
+	if s[0] != '{' && s[0] != '[' {
+		decoded, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			decoded, err = base64.RawStdEncoding.DecodeString(s)
+			if err != nil {
+				return nil, false
+			}
+		}
+		raw = decoded
+	}
+	if len(raw) == 0 {
+		return nil, false
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, false
+	}
+	return v, true
+}
+
+func sessionEventsToProto(events []store.Event) ([]*runtimev1.SessionEventEntry, error) {
+	out := make([]*runtimev1.SessionEventEntry, 0, len(events))
+	for _, ev := range events {
+		entry, err := eventToProto(ev)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+func eventToProto(ev store.Event) (*runtimev1.SessionEventEntry, error) {
+	payload, err := jsonToProtoValue(ev.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("event %d payload: %w", ev.ID, err)
+	}
 	entry := &runtimev1.SessionEventEntry{
-		Id:         ev.ID,
-		Type:       ev.Type,
-		Payload:    ev.Payload,
-		CreatedAt:  formatTime(ev.TS),
-		Seq:        int32(ev.Seq),
-		TsUnixMs:   ev.TS.UnixMilli(),
-		SessionId:  ev.SessionID,
-		Actor:      ev.Actor,
+		Id:        ev.ID,
+		Type:      ev.Type,
+		Payload:   payload,
+		CreatedAt: formatTime(ev.TS),
+		Seq:       int32(ev.Seq),
+		TsUnixMs:  ev.TS.UnixMilli(),
+		SessionId: ev.SessionID,
+		Actor:     ev.Actor,
 	}
 	if ev.Turn != nil {
 		entry.Turn = int32(*ev.Turn)
@@ -290,26 +348,38 @@ func eventToProto(ev store.Event) *runtimev1.SessionEventEntry {
 	if ev.ChildSessionID != nil {
 		entry.ChildSessionId = *ev.ChildSessionID
 	}
-	return entry
+	return entry, nil
 }
 
-func toolInvocationsToProto(invocations []store.ToolInvocation) []*runtimev1.ToolInvocationEntry {
+func toolInvocationsToProto(invocations []store.ToolInvocation) ([]*runtimev1.ToolInvocationEntry, error) {
 	out := make([]*runtimev1.ToolInvocationEntry, 0, len(invocations))
 	for _, inv := range invocations {
-		out = append(out, toolInvocationToProto(inv))
+		entry, err := toolInvocationToProto(inv)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, entry)
 	}
-	return out
+	return out, nil
 }
 
-func toolInvocationToProto(inv store.ToolInvocation) *runtimev1.ToolInvocationEntry {
+func toolInvocationToProto(inv store.ToolInvocation) (*runtimev1.ToolInvocationEntry, error) {
+	args, err := jsonToProtoValue(inv.Args)
+	if err != nil {
+		return nil, fmt.Errorf("invocation %s args: %w", inv.CallID, err)
+	}
+	result, err := jsonToProtoValue(inv.Result)
+	if err != nil {
+		return nil, fmt.Errorf("invocation %s result: %w", inv.CallID, err)
+	}
 	entry := &runtimev1.ToolInvocationEntry{
 		CallId:              inv.CallID,
 		AgentVersionId:      inv.AgentVersionID,
 		Turn:                int32(inv.Turn),
 		Tool:                inv.Tool,
 		Version:             inv.Version,
-		Args:                inv.Args,
-		Result:              inv.Result,
+		Args:                args,
+		Result:              result,
 		Status:              inv.Status,
 		WorkerIdentity:      inv.WorkerIdentity,
 		ImageDigest:         inv.ImageDigest,
@@ -345,7 +415,63 @@ func toolInvocationToProto(inv store.ToolInvocation) *runtimev1.ToolInvocationEn
 			entry.ExecutionDurationMs = inv.CompletedAt.Sub(*inv.DispatchedAt).Milliseconds()
 		}
 	}
-	return entry
+	return entry, nil
+}
+
+func approvalToInspectProto(row store.Approval, votes []store.ApprovalVote) (*runtimev1.InspectApproval, error) {
+	required := row.ApprovalsRequired
+	if required <= 0 {
+		required = 1
+	}
+	args, err := jsonToProtoValue(row.Args)
+	if err != nil {
+		return nil, fmt.Errorf("approval %s args: %w", row.ID, err)
+	}
+	policyRuntime, err := jsonToProtoValue(row.PolicyRuntime)
+	if err != nil {
+		return nil, fmt.Errorf("approval %s policy_runtime: %w", row.ID, err)
+	}
+	out := &runtimev1.InspectApproval{
+		Id:                    row.ID,
+		SessionId:             row.SessionID,
+		CallId:                row.CallID,
+		Status:                row.Status,
+		Route:                 row.Route,
+		Reason:                row.Reason,
+		Tool:                  row.Tool,
+		Version:               row.Version,
+		Args:                  args,
+		AuthorityRef:          row.AuthorityRef,
+		PolicyName:            row.PolicyName,
+		PolicyRuntime:         policyRuntime,
+		ApprovalsRequired:     int32(required),
+		ApprovalsReceived:     int32(row.ApprovalsReceived),
+		ComprehensionRequired: row.ComprehensionRequired,
+		OnReject:              row.OnReject,
+		OnModify:              row.OnModify,
+		CreatedAt:             formatTime(row.CreatedAt),
+		DecidedBy:             row.DecidedBy,
+		Comment:               row.Comment,
+	}
+	if row.ExpiresAt != nil {
+		out.ExpiresAt = formatTime(*row.ExpiresAt)
+	}
+	if row.DecidedAt != nil {
+		out.DecidedAt = formatTime(*row.DecidedAt)
+	}
+	if len(votes) > 0 {
+		out.Votes = make([]*runtimev1.ApprovalVote, 0, len(votes))
+		for _, v := range votes {
+			out.Votes = append(out.Votes, &runtimev1.ApprovalVote{
+				DecidedBy:                 v.DecidedBy,
+				Decision:                  v.Decision,
+				Comment:                   v.Comment,
+				ComprehensionAcknowledged: v.ComprehensionAcknowledged,
+				CreatedAt:                 formatTime(v.CreatedAt),
+			})
+		}
+	}
+	return out, nil
 }
 
 type inspectTimelineItem struct {
@@ -354,33 +480,152 @@ type inspectTimelineItem struct {
 	entry     *runtimev1.InspectTimelineEntry
 }
 
-func buildMergedInspectTimeline(events []store.Event, depthBySession map[string]int32) []*runtimev1.InspectTimelineEntry {
-	protoEvents := sessionEventsToProto(events)
+func buildTreeInspectTimeline(
+	ctx context.Context,
+	q *store.Queries,
+	events []store.Event,
+	sessionIDs []string,
+	depthBySession map[string]int32,
+) ([]*runtimev1.InspectTimelineEntry, error) {
+	protoEvents, err := sessionEventsToProto(events)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "encode session events: %v", err)
+	}
+
 	items := make([]inspectTimelineItem, 0, len(events))
 	for i, ev := range events {
 		items = append(items, inspectTimelineItem{
 			timestamp: ev.TS,
 			sortKey:   ev.ID,
 			entry: &runtimev1.InspectTimelineEntry{
-				Timestamp:  formatTime(ev.TS),
-				TsUnixMs:   ev.TS.UnixMilli(),
-				Seq:        int32(ev.Seq),
-				SessionId:  ev.SessionID,
-				Depth:      depthBySession[ev.SessionID],
-				Source:     "event",
-				Kind:       ev.Type,
-				Summary:    sessionEventSummary(ev.Type, ev.Payload),
-				Event:      protoEvents[i],
+				Timestamp: formatTime(ev.TS),
+				TsUnixMs:  ev.TS.UnixMilli(),
+				Seq:       int32(ev.Seq),
+				SessionId: ev.SessionID,
+				Depth:     depthBySession[ev.SessionID],
+				Source:    "event",
+				Kind:      ev.Type,
+				Summary:   sessionEventSummary(ev.Type, ev.Payload),
+				Event:     protoEvents[i],
 			},
 		})
 	}
-	return finalizeInspectTimeline(items)
+
+	var seq int64
+	for _, sessionID := range sessionIDs {
+		invocations, err := q.ListToolInvocationsBySessionID(ctx, sessionID)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "list tool invocations: %v", err)
+		}
+		invProto, err := toolInvocationsToProto(invocations)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "encode tool invocations: %v", err)
+		}
+		depth := depthBySession[sessionID]
+		for _, inv := range invProto {
+			if inv.GetDispatchedAt() != "" {
+				ts := parseRFC3339(inv.GetDispatchedAt())
+				seq++
+				items = append(items, inspectTimelineItem{
+					timestamp: ts,
+					sortKey:   seq,
+					entry: &runtimev1.InspectTimelineEntry{
+						Timestamp:  inv.GetDispatchedAt(),
+						TsUnixMs:   ts.UnixMilli(),
+						SessionId:  sessionID,
+						Depth:      depth,
+						Source:     "invocation",
+						Kind:       "invocation_dispatched",
+						Summary:    fmt.Sprintf("dispatched %s@%s call_id=%s queue_delay_ms=%d", inv.GetTool(), inv.GetVersion(), inv.GetCallId(), inv.GetQueueDelayMs()),
+						Invocation: inv,
+					},
+				})
+			}
+			if inv.GetCompletedAt() != "" {
+				ts := parseRFC3339(inv.GetCompletedAt())
+				seq++
+				items = append(items, inspectTimelineItem{
+					timestamp: ts,
+					sortKey:   seq,
+					entry: &runtimev1.InspectTimelineEntry{
+						Timestamp:  inv.GetCompletedAt(),
+						TsUnixMs:   ts.UnixMilli(),
+						SessionId:  sessionID,
+						Depth:      depth,
+						Source:     "invocation",
+						Kind:       "invocation_completed",
+						Summary:    fmt.Sprintf("completed %s@%s call_id=%s status=%s exec_ms=%d", inv.GetTool(), inv.GetVersion(), inv.GetCallId(), inv.GetStatus(), inv.GetExecutionDurationMs()),
+						Invocation: inv,
+					},
+				})
+			}
+		}
+
+		approvalRows, err := q.ListApprovals(ctx, store.ListApprovalsParams{SessionID: sessionID})
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "list approvals: %v", err)
+		}
+		for _, row := range approvalRows {
+			enriched, enrichErr := enrichApprovalFromInvocation(ctx, q, row)
+			if enrichErr != nil {
+				return nil, status.Errorf(codes.Internal, "load approval context: %v", enrichErr)
+			}
+			votes, votesErr := q.ListApprovalVotes(ctx, row.ID)
+			if votesErr != nil {
+				return nil, status.Errorf(codes.Internal, "list approval votes: %v", votesErr)
+			}
+			appr, apprErr := approvalToInspectProto(enriched, votes)
+			if apprErr != nil {
+				return nil, status.Errorf(codes.Internal, "encode approval: %v", apprErr)
+			}
+			if appr.GetCreatedAt() != "" {
+				ts := parseRFC3339(appr.GetCreatedAt())
+				seq++
+				items = append(items, inspectTimelineItem{
+					timestamp: ts,
+					sortKey:   seq,
+					entry: &runtimev1.InspectTimelineEntry{
+						Timestamp: appr.GetCreatedAt(),
+						TsUnixMs:  ts.UnixMilli(),
+						SessionId: sessionID,
+						Depth:     depth,
+						Source:    "approval",
+						Kind:      "approval_created",
+						Summary:   fmt.Sprintf("approval %s tool=%s@%s status=%s", appr.GetId(), appr.GetTool(), appr.GetVersion(), appr.GetStatus()),
+						Approval:  appr,
+					},
+				})
+			}
+			if appr.GetDecidedAt() != "" {
+				ts := parseRFC3339(appr.GetDecidedAt())
+				seq++
+				items = append(items, inspectTimelineItem{
+					timestamp: ts,
+					sortKey:   seq,
+					entry: &runtimev1.InspectTimelineEntry{
+						Timestamp: appr.GetDecidedAt(),
+						TsUnixMs:  ts.UnixMilli(),
+						SessionId: sessionID,
+						Depth:     depth,
+						Source:    "approval",
+						Kind:      "approval_decided",
+						Summary:   fmt.Sprintf("approval %s decided status=%s by=%s", appr.GetId(), appr.GetStatus(), appr.GetDecidedBy()),
+						Approval:  appr,
+					},
+				})
+			}
+		}
+	}
+
+	return finalizeInspectTimeline(items), nil
 }
 
+// buildInspectTimeline merges events, invocation milestones, and approvals for tests
+// and local ordering checks. Production inspect uses buildTreeInspectTimeline.
 func buildInspectTimeline(
 	events []*runtimev1.SessionEventEntry,
 	invocations []*runtimev1.ToolInvocationEntry,
-	approvals []*runtimev1.Approval,
+	approvals []*runtimev1.InspectApproval,
 ) []*runtimev1.InspectTimelineEntry {
 	var items []inspectTimelineItem
 
@@ -392,14 +637,14 @@ func buildInspectTimeline(
 			timestamp: ts,
 			sortKey:   ev.GetId(),
 			entry: &runtimev1.InspectTimelineEntry{
-				Timestamp:  formatInspectTimestamp(ev),
-				TsUnixMs:   ev.GetTsUnixMs(),
-				Seq:        ev.GetSeq(),
-				SessionId:  ev.GetSessionId(),
-				Source:     "event",
-				Kind:       ev.GetType(),
-				Summary:    sessionEventSummary(ev.GetType(), ev.GetPayload()),
-				Event:      ev,
+				Timestamp: formatInspectTimestamp(ev),
+				TsUnixMs:  ev.GetTsUnixMs(),
+				Seq:       ev.GetSeq(),
+				SessionId: ev.GetSessionId(),
+				Source:    "event",
+				Kind:      ev.GetType(),
+				Summary:   sessionEventSummary(ev.GetType(), protoValueJSON(ev.GetPayload())),
+				Event:     ev,
 			},
 		})
 	}
@@ -448,7 +693,7 @@ func buildInspectTimeline(
 				sortKey:   seq,
 				entry: &runtimev1.InspectTimelineEntry{
 					Timestamp: appr.GetCreatedAt(),
-					TsUnixMs:   ts.UnixMilli(),
+					TsUnixMs:  ts.UnixMilli(),
 					Source:    "approval",
 					Kind:      "approval_created",
 					Summary:   fmt.Sprintf("approval %s tool=%s@%s status=%s", appr.GetId(), appr.GetTool(), appr.GetVersion(), appr.GetStatus()),
@@ -464,7 +709,7 @@ func buildInspectTimeline(
 				sortKey:   seq,
 				entry: &runtimev1.InspectTimelineEntry{
 					Timestamp: appr.GetDecidedAt(),
-					TsUnixMs:   ts.UnixMilli(),
+					TsUnixMs:  ts.UnixMilli(),
 					Source:    "approval",
 					Kind:      "approval_decided",
 					Summary:   fmt.Sprintf("approval %s decided status=%s by=%s", appr.GetId(), appr.GetStatus(), appr.GetDecidedBy()),
@@ -523,6 +768,17 @@ func parseRFC3339(s string) time.Time {
 	}
 	t, _ := time.Parse(time.RFC3339, s)
 	return t
+}
+
+func protoValueJSON(v *structpb.Value) json.RawMessage {
+	if v == nil {
+		return nil
+	}
+	b, err := v.MarshalJSON()
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 func sessionEventSummary(typ string, payload json.RawMessage) string {

@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package phrony.runtime.v1;
 
+import "google/protobuf/struct.proto";
+
 option go_package = "github.com/phrony-platform/runtime/gen/phrony/runtime/v1;runtimev1";
 
 // Runtime is the control plane for the Phrony agent runtime.
@@ -585,10 +587,11 @@ message SessionAgentContext {
   int32 max_wall_clock_seconds = 7;
 }
 
+// Inspect-only event projection with readable JSON payload.
 message SessionEventEntry {
   int64 id = 1;
   string type = 2;
-  bytes payload = 3;      // full JSON as stored (protojson for wire-backed events)
+  google.protobuf.Value payload = 3;
   string created_at = 4;  // RFC3339
   int32 seq = 5;
   int64 ts_unix_ms = 6;
@@ -599,14 +602,15 @@ message SessionEventEntry {
   string actor = 11;
 }
 
+// Inspect-only tool invocation projection with readable JSON args/result.
 message ToolInvocationEntry {
   string call_id = 1;
   string agent_version_id = 2;
   int32 turn = 3;
   string tool = 4;
   string version = 5;
-  bytes args = 6;
-  bytes result = 7;
+  google.protobuf.Value args = 6;
+  google.protobuf.Value result = 7;
   string status = 8;
   string worker_identity = 9;
   string image_digest = 10;
@@ -626,8 +630,37 @@ message ToolInvocationEntry {
   int64 total_duration_ms = 23;     // completed_at - created_at
 }
 
+// Inspect-only approval projection with readable JSON args/policy_runtime.
+// Live approval RPCs keep Approval with bytes fields.
+message InspectApproval {
+  string id = 1;
+  string session_id = 2;
+  string call_id = 3;
+  string status = 4;
+  string route = 5;
+  string reason = 6;
+  string tool = 7;
+  string version = 8;
+  google.protobuf.Value args = 9;
+  string authority_ref = 10;
+  string policy_name = 11;
+  google.protobuf.Value policy_runtime = 12;
+  int32 approvals_required = 13;
+  int32 approvals_received = 14;
+  bool comprehension_required = 15;
+  string on_reject = 16;
+  string on_modify = 17;
+  // RFC3339; empty when no timeout is configured.
+  string expires_at = 18;
+  string created_at = 19; // RFC3339
+  string decided_at = 20; // RFC3339
+  string decided_by = 21;
+  string comment = 22;
+  repeated ApprovalVote votes = 23;
+}
+
 // Server-built unified chronological view merging events, invocation
-// milestones, and approvals. Clients that want one timeline use this.
+// milestones, and approvals across the inspected root and descendants.
 message InspectTimelineEntry {
   string timestamp = 1;   // RFC3339
   int64 gap_ms = 2;       // ms since previous entry (0 for first)
@@ -636,14 +669,14 @@ message InspectTimelineEntry {
   string summary = 5;     // one-line human summary
   SessionEventEntry event = 10;
   ToolInvocationEntry invocation = 11;
-  Approval approval = 12;
+  InspectApproval approval = 12;
   string session_id = 13;
   int32 depth = 14;
   int32 seq = 15;
   int64 ts_unix_ms = 16;
 }
 
-// Recursive tree node: one session and its delegated children.
+// Recursive tree node: session header and delegated children (story is in response.timeline).
 message SessionInspect {
   // Identity & status
   string id = 1;
@@ -655,36 +688,28 @@ message SessionInspect {
   string created_at = 7;
   string updated_at = 8;
 
-  // Session I/O (full, not truncated)
-  bytes input = 9;
-  bytes output_raw = 10;  // verbatim sessions.output JSON
+  // Session I/O summary (full input as nested JSON; output folded from events)
+  google.protobuf.Value input = 9;
+  reserved 10, 13, 18 to 21;
+  reserved "output_raw", "history", "events", "invocations", "approvals", "timeline";
   SessionOutputInspect output = 11;
   string error = 12;
-  repeated InteractiveConversationMessage history = 13;
 
-  // Agent/runtime context & governance
+  // Agent/runtime context & governance (readable nested JSON, including framework packs)
   SessionAgentContext agent = 14;
-  DescriptiveMetadataEvidence descriptive_metadata = 15;
+  google.protobuf.Value descriptive_metadata = 15;
 
   // Wall-clock bounds (unix ms; derived from session timestamps + lifecycle events)
   int64 session_started_at_unix_ms = 16;
   int64 session_ended_at_unix_ms = 17;
-
-  // Raw data sources
-  repeated SessionEventEntry events = 18;
-  repeated ToolInvocationEntry invocations = 19;
-  repeated Approval approvals = 20;  // reuse existing Approval message + votes
-
-  // Unified timeline (events + invocation milestones + approvals, sorted)
-  repeated InspectTimelineEntry timeline = 21;
 
   repeated SessionInspect children = 22;
 }
 
 message InspectSessionResponse {
   SessionInspect session = 1;
-  // Merged parent+child event log ordered by ts then global id.
-  repeated InspectTimelineEntry merged_timeline = 2;
+  // Single chronological narrative for the inspected root and descendants.
+  repeated InspectTimelineEntry timeline = 2;
 }
 
 message ApprovalVote {
