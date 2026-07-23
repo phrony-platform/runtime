@@ -473,17 +473,16 @@ func closureMemberRefKey(m ClosureMember) string {
 			Path: filepath.ToSlash(m.Ref),
 		})
 	case ClosureMemberOriginExternal:
-		raw := LogicalID(m.Namespace, m.Name)
-		if v := strings.TrimSpace(m.Version); v != "" {
-			raw += "@" + v
-		}
+		// Key by namespace.name only. ParseLogicalRef stores Raw without @version,
+		// and compiled tool refs keep that form (version lives on agent.version /
+		// the closure member). Including @version here breaks publish pinning.
 		return edgeRefKey(AgentEdgeRef{
 			Kind: AgentEdgeRefKindExternal,
 			External: ParsedLogicalRef{
 				Namespace:  m.Namespace,
 				Name:       m.Name,
 				Constraint: m.Version,
-				Raw:        raw,
+				Raw:        LogicalID(m.Namespace, m.Name),
 			},
 		})
 	default:

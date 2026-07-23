@@ -344,6 +344,54 @@ func TestPinCompiledAgentBindings_pinsAgentVersionID(t *testing.T) {
 	}
 }
 
+func TestPinCompiledAgentBindings_pinsExternalPinnedRef(t *testing.T) {
+	t.Parallel()
+	// Compiled snapshots store external refs as namespace.name (no @version);
+	// the pin lives on agent.version and the closure member.
+	agent := &Agent{
+		Metadata: AgentMetadata{
+			Annotations: map[string]string{AnnotationPoliciesCompiled: "true"},
+		},
+		Spec: AgentSpec{
+			Tools: []ToolBinding{{
+				Ref:             "support.shipping",
+				As:              "ask_shipping",
+				InputSchema:     &SchemaSpec{Inline: map[string]any{"type": "object"}},
+				SideEffectClass: SideEffectNonIdempotentWrite,
+				Agent: &ToolAgentBinding{
+					Namespace: "support",
+					Name:      "shipping",
+					Version:   "1.0.0",
+				},
+			}},
+		},
+	}
+	ctx := NewClosureContext(&ClosurePackage{
+		Members: []ClosureMember{{
+			ChildName:      "shipping",
+			Origin:         ClosureMemberOriginExternal,
+			Ref:            "support.shipping@1.0.0",
+			Namespace:      "support",
+			Name:           "shipping",
+			Version:        "1.0.0",
+			AgentVersionID: "ver-shipping",
+		}},
+	})
+	if err := PinCompiledAgentBindings(agent, ctx); err != nil {
+		t.Fatalf("PinCompiledAgentBindings() error = %v", err)
+	}
+	got := agent.Spec.Tools[0].Agent
+	if got == nil || got.AgentVersionID != "ver-shipping" {
+		t.Fatalf("agent_version_id = %+v, want ver-shipping", got)
+	}
+	if got.ChildName != "shipping" {
+		t.Fatalf("child_name = %q, want shipping", got.ChildName)
+	}
+	if got.Namespace != "support" || got.Name != "shipping" || got.Version != "1.0.0" {
+		t.Fatalf("identity = %s/%s@%s, want support/shipping@1.0.0", got.Namespace, got.Name, got.Version)
+	}
+}
+
 func TestExpandSubagentBindings_closureContextPinsChildName(t *testing.T) {
 	t.Parallel()
 	agent := &Agent{

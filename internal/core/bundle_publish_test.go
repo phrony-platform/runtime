@@ -215,7 +215,20 @@ func TestRuntime_PublishBundle_rejectsMissingCommittedLock(t *testing.T) {
 
 func TestRuntime_PublishBundle_externalClosure(t *testing.T) {
 	bundleManifest := bundleManifestJSON(t)
-	orchestrator := bundleMemberManifestJSON(t, "orchestrator", "support", nil)
+	// Compiled tool refs for pinned externals are namespace.name (no @version),
+	// matching docs: version is on agent.version / the closure member.
+	orchestrator := bundleMemberManifestJSON(t, "orchestrator", "support", []manifest.ToolBinding{{
+		Ref:             "support.billing",
+		As:              "ask_billing",
+		InputSchema:     &manifest.SchemaSpec{Inline: map[string]any{"type": "object"}},
+		SideEffectClass: manifest.SideEffectNonIdempotentWrite,
+		Agent: &manifest.ToolAgentBinding{
+			Namespace: "support",
+			Name:      "billing",
+			Version:   "1.2.0",
+			Result:    manifest.SubagentResultSummary,
+		},
+	}})
 
 	db, mock := testSQLxDB(t)
 	mock.ExpectQuery(`FROM agent_versions av`).
