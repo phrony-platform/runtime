@@ -73,8 +73,26 @@ The [Compose file](https://phrony.com/runtime/docker-compose.yml) sets dev defau
 | `PHRONY_ACTOR` | `phrony` | Audit identity for publish, deploy, rollback (defaults to OS username) |
 | `PHRONY_NO_TUI` | `phrony` | Disable interactive session TUI (plain stdout) |
 | `NO_COLOR` | `phrony diff` | Disable colorized diff output |
+| `DO_NOT_TRACK` | `phrony-runtime`, `phrony` | Opt out of telemetry (any truthy value) |
+| `DISABLE_TELEMETRY` | `phrony-runtime`, `phrony` | Opt out of telemetry (alias) |
+| `PHRONY_DISABLE_TELEMETRY` | `phrony-runtime`, `phrony` | Opt out of telemetry (alias) |
+| `PHRONY_TELEMETRY_ENDPOINT` | `phrony-runtime`, `phrony` | Override telemetry URL (default `https://hxybgqfxykmxdhyqsvlh.supabase.co/functions/v1/telemetry`) |
 
 Provider API keys referenced in manifest `secrets.*.fromEnv` (e.g. `ANTHROPIC_API_KEY`) are read on the machine running `phrony publish`, not on the runtime daemon.
+
+## Telemetry
+
+Telemetry is **enabled by default** (opt-out). The runtime and operator CLI send coarse, whitelisted event counts—not content—to help us understand adoption and reliability.
+
+**Collected:** random `install_id` (in your config file), `app_version`, coarse `platform` (`GOOS/GOARCH`), and counts for whitelisted events (`daemon_started`, `session_started`, `session_completed`, `session_failed`, `agent_deployed`, `tool_dispatched`, `migrate_run`, `cli_command`).
+
+**Never collected:** IP addresses, hostnames, usernames, paths, project or agent names, session IDs, prompts, tool arguments, or any free-form content.
+
+**Endpoint:** `https://hxybgqfxykmxdhyqsvlh.supabase.co/functions/v1/telemetry` (override with `PHRONY_TELEMETRY_ENDPOINT`).
+
+**Disable:** `DO_NOT_TRACK=1`, `phrony telemetry disable`, or set `enabled: false` in `~/.config/phrony/telemetry.json`.
+
+More detail: [Telemetry docs](https://phrony.com/docs/runtime/telemetry).
 
 ## Development
 

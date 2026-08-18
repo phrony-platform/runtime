@@ -18,8 +18,8 @@ func TestRuntime_GetVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetVersion: %v", err)
 	}
-	if resp.GetVersion() != version.Version {
-		t.Fatalf("version = %q, want %q", resp.GetVersion(), version.Version)
+	if resp.GetVersion() != version.RuntimeVersion {
+		t.Fatalf("version = %q, want %q", resp.GetVersion(), version.RuntimeVersion)
 	}
 	if resp.GetSchemaVersion() != "" {
 		t.Fatalf("schema_version = %q, want empty without db", resp.GetSchemaVersion())

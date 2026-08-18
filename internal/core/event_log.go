@@ -10,6 +10,7 @@ import (
 
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/store"
+	"github.com/phrony-platform/runtime/internal/telemetry"
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
 )
 
@@ -608,18 +609,27 @@ func appendSessionStarted(ctx context.Context, txQ *store.Queries, sessionID, ro
 		Actor:         ActorSystem,
 		Payload:       input,
 	})
+	if err == nil {
+		telemetry.Track(telemetry.EventSessionStarted)
+	}
 	return err
 }
 
 // appendSessionFailed marks a session failed via the event log.
 func appendSessionFailed(ctx context.Context, q *store.Queries, sessionID, message string) error {
 	_, _, err := appendEventAuto(ctx, q, sessionFailedEvent(sessionID, message))
+	if err == nil {
+		telemetry.Track(telemetry.EventSessionFailed)
+	}
 	return err
 }
 
 // appendSessionCompleted marks a session completed via the event log.
 func appendSessionCompleted(ctx context.Context, q *store.Queries, sessionID string, payload json.RawMessage, useCompleteSQL bool) error {
 	_, _, err := appendEventAuto(ctx, q, sessionCompletedEvent(sessionID, payload, useCompleteSQL))
+	if err == nil {
+		telemetry.Track(telemetry.EventSessionCompleted)
+	}
 	return err
 }
 

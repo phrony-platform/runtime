@@ -14,6 +14,7 @@ import (
 	"github.com/phrony-platform/runtime/internal/model"
 	"github.com/phrony-platform/runtime/internal/sessionids"
 	"github.com/phrony-platform/runtime/internal/store"
+	"github.com/phrony-platform/runtime/internal/telemetry"
 	"github.com/phrony-platform/runtime/internal/tooldispatch"
 )
 
@@ -149,6 +150,8 @@ func (d *agentDispatcher) Dispatch(ctx context.Context, call tooldispatch.ToolCa
 			return tooldispatch.ToolResult{}, fmt.Errorf("record tool dispatch: %w", err)
 		}
 	}
+
+	telemetry.Track(telemetry.EventToolDispatched)
 
 	res, runErr := d.runChild(runCtx, call, binding)
 	if runErr != nil {

@@ -49,10 +49,10 @@ func TestStatusCommand_success(t *testing.T) {
 	if !strings.Contains(outStr, "ÆÆÆÆÆ") {
 		t.Fatalf("output = %q, want ASCII logo", outStr)
 	}
-	if !strings.Contains(outStr, version.Version) {
+	if !strings.Contains(outStr, version.CLIVersion) {
 		t.Fatalf("output = %q, want CLI version", outStr)
 	}
-	if !strings.Contains(outStr, version.Version) {
+	if !strings.Contains(outStr, version.RuntimeVersion) {
 		t.Fatalf("output = %q, want runtime version", outStr)
 	}
 	if !strings.Contains(outStr, "Schema meta") || !strings.Contains(outStr, "2") {

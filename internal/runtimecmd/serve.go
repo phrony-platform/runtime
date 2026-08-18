@@ -7,11 +7,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/phrony-platform/runtime/internal/cliout"
 	"github.com/phrony-platform/runtime/internal/common"
 	"github.com/phrony-platform/runtime/internal/core"
+	"github.com/phrony-platform/runtime/internal/telemetry"
 )
 
 type serveDeps struct {
@@ -51,6 +53,7 @@ func runServeWithDeps(ctx context.Context, skipMigrate bool, deps serveDeps) err
 			return fmt.Errorf("migrate: %w", err)
 		}
 		slog.Info("database migrated")
+		telemetry.Track(telemetry.EventMigrateRun)
 	}
 
 	srv, err := deps.newServer(db)
@@ -63,6 +66,15 @@ func runServeWithDeps(ctx context.Context, skipMigrate bool, deps serveDeps) err
 
 	if err := cliout.WriteLogo(os.Stderr); err != nil {
 		return fmt.Errorf("write logo: %w", err)
+	}
+	if err := telemetry.WriteNotice(os.Stderr); err != nil {
+		return fmt.Errorf("write telemetry notice: %w", err)
+	}
+
+	if telemetry.Enabled() {
+		telemetry.Track(telemetry.EventDaemonStarted)
+		telemetry.StartPeriodicFlush(ctx, 30*time.Second)
+		defer telemetry.Flush()
 	}
 
 	if err := srv.Serve(ctx, settings.GRPCAddr); err != nil && ctx.Err() == nil {
