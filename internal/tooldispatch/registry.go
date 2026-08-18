@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/phrony-platform/runtime/internal/telemetry"
 )
 
 // WorkSend delivers a server message to a connected worker stream.
@@ -323,6 +325,7 @@ func (r *WorkerRegistry) Dispatch(ctx context.Context, call ToolCall) (ToolResul
 	}
 	r.trackSessionLocked(call)
 	r.inflight[call.CallID] = dw
+	telemetry.Track(telemetry.EventToolDispatched)
 	rec := r.recorder
 	if rec != nil {
 		if err := rec.RecordPending(ctx, call, ""); err != nil {

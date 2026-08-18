@@ -39,7 +39,7 @@ func runStatus(cmd *cobra.Command, runtimeAddr *string) error {
 
 	return cliout.WriteStatus(cmd.OutOrStdout(), cliout.StatusPanel{
 		RuntimeAddr:    common.ResolveRuntimeAddr(*runtimeAddr),
-		CLIVersion:     version.Version,
+		CLIVersion:     version.CLIVersion,
 		RuntimeVersion: versionResp.GetVersion(),
 		SchemaVersion:  versionResp.GetSchemaVersion(),
 		Health:         healthResp.GetStatus().String(),

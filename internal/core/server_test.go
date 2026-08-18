@@ -46,8 +46,8 @@ func TestNewServer_registersServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetVersion: %v", err)
 	}
-	if versionResp.GetVersion() != version.Version {
-		t.Fatalf("version = %q, want %q", versionResp.GetVersion(), version.Version)
+	if versionResp.GetVersion() != version.RuntimeVersion {
+		t.Fatalf("version = %q, want %q", versionResp.GetVersion(), version.RuntimeVersion)
 	}
 	if versionResp.GetSchemaVersion() != "1" {
 		t.Fatalf("schema_version = %q, want 1", versionResp.GetSchemaVersion())

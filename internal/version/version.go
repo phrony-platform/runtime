@@ -1,4 +1,10 @@
 package version
 
-// Version is the Phrony runtime and operator CLI release version.
-const Version = "0.1.1"
+// RuntimeVersion is the phrony-runtime daemon release version.
+const RuntimeVersion = "0.1.2"
+
+// CLIVersion is the phrony operator CLI release version.
+const CLIVersion = "0.1.2"
+
+// Version is the shared release label when runtime and CLI ship together.
+const Version = RuntimeVersion

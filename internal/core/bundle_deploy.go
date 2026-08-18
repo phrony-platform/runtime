@@ -10,6 +10,7 @@ import (
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/store"
+	"github.com/phrony-platform/runtime/internal/telemetry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -60,6 +61,8 @@ func (s *runtimeServer) DeployBundle(ctx context.Context, req *runtimev1.DeployB
 	if err != nil {
 		return nil, err
 	}
+
+	telemetry.Track(telemetry.EventAgentDeployed)
 
 	return &runtimev1.DeployBundleResponse{
 		Namespace:          ns,

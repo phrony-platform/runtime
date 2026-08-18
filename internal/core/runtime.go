@@ -47,7 +47,7 @@ func (s *runtimeServer) queries() (*store.Queries, error) {
 }
 
 func (s *runtimeServer) GetVersion(ctx context.Context, _ *runtimev1.GetVersionRequest) (*runtimev1.GetVersionResponse, error) {
-	resp := &runtimev1.GetVersionResponse{Version: version.Version}
+	resp := &runtimev1.GetVersionResponse{Version: version.RuntimeVersion}
 	if schemaVersion, ok := s.lookupSchemaVersion(ctx); ok {
 		resp.SchemaVersion = schemaVersion
 	}

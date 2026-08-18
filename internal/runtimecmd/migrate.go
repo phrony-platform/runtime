@@ -7,6 +7,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/phrony-platform/runtime/internal/common"
 	"github.com/phrony-platform/runtime/internal/core"
+	"github.com/phrony-platform/runtime/internal/telemetry"
 )
 
 type migrateDeps struct {
@@ -42,5 +43,6 @@ func runMigrateWithDeps(deps migrateDeps) error {
 	}
 
 	slog.Info("database migrated")
+	telemetry.Track(telemetry.EventMigrateRun)
 	return nil
 }

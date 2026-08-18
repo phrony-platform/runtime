@@ -9,7 +9,7 @@ import (
 )
 
 func TestRootCommand_versionFlag(t *testing.T) {
-	want := "phrony version " + version.Version + "\n"
+	want := "phrony version " + version.CLIVersion + "\n"
 	for _, args := range [][]string{{"-v"}, {"--version"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out bytes.Buffer
