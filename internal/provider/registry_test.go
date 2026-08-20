@@ -19,6 +19,87 @@ func TestNew_unsupportedProvider(t *testing.T) {
 	}
 }
 
+func TestNew_openAICompatibleProvider(t *testing.T) {
+	p, err := New(IDOpenAICompatible, "key", "http://localhost:11434/v1")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if p.ID() != IDOpenAICompatible {
+		t.Fatalf("ID() = %q, want %q", p.ID(), IDOpenAICompatible)
+	}
+}
+
+func TestNewForSession_openAICompatibleKeyless(t *testing.T) {
+	agent := &manifest.Agent{
+		Spec: manifest.AgentSpec{
+			Model: manifest.ModelConfig{
+				Provider: IDOpenAICompatible,
+				Name:     "llama3",
+				BaseURL:  "http://localhost:11434/v1",
+			},
+		},
+	}
+	reg, err := NewForSession(context.Background(), mustTestEncryptor(t), nil, "session-id", agent)
+	if err != nil {
+		t.Fatalf("NewForSession: %v", err)
+	}
+	p, err := reg.ModelProvider(agent)
+	if err != nil {
+		t.Fatalf("ModelProvider: %v", err)
+	}
+	if p.ID() != IDOpenAICompatible {
+		t.Fatalf("provider id = %q, want %q", p.ID(), IDOpenAICompatible)
+	}
+}
+
+func TestNewForSession_openAICompatibleWithSecret(t *testing.T) {
+	enc := mustTestEncryptor(t)
+	plaintext := []byte("sk-test-key")
+	sealed, err := enc.Encrypt("session-id", "openai-compatible", plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectQuery(`SELECT key_version, nonce, ciphertext`).
+		WithArgs("session-id", "openai-compatible").
+		WillReturnRows(sqlmock.NewRows([]string{"key_version", "nonce", "ciphertext"}).
+			AddRow(sealed.KeyVersion, sealed.Nonce, sealed.Ciphertext))
+
+	agent := &manifest.Agent{
+		Secrets: map[string]manifest.SecretDefinition{
+			"openai-compatible": {FromEnv: "OPENAI_COMPATIBLE_API_KEY"},
+		},
+		Spec: manifest.AgentSpec{
+			Model: manifest.ModelConfig{
+				Provider: IDOpenAICompatible,
+				Name:     "llama3",
+				BaseURL:  "http://localhost:11434/v1",
+			},
+		},
+	}
+	reg, err := NewForSession(context.Background(), enc, store.New(db), "session-id", agent)
+	if err != nil {
+		t.Fatalf("NewForSession: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+
+	p, err := reg.ModelProvider(agent)
+	if err != nil {
+		t.Fatalf("ModelProvider: %v", err)
+	}
+	if p.ID() != IDOpenAICompatible {
+		t.Fatalf("provider id = %q, want %q", p.ID(), IDOpenAICompatible)
+	}
+}
+
 func TestRegistry_ModelProvider(t *testing.T) {
 	reg := NewRegistry()
 	p := &stubProvider{id: IDAnthropic}
