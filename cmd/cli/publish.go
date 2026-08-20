@@ -40,7 +40,7 @@ func runAgentPublish(cmd *cobra.Command, runtimeAddr *string, manifestPath strin
 		return fmt.Errorf("encode resolved manifest: %w", err)
 	}
 
-	clients, err := dialRuntime(cmd.Context(), *runtimeAddr)
+	clients, err := openRuntime(cmd.Context(), cmd.ErrOrStderr(), *runtimeAddr)
 	if err != nil {
 		return err
 	}

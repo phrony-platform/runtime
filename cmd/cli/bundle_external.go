@@ -71,7 +71,7 @@ func loadResolvedBundleWithExternals(ctx context.Context, bundlePath, runtimeAdd
 	}
 
 	ext := firstExternalMember(resolved.Closure)
-	clients, err := dialRuntime(ctx, runtimeAddr)
+	clients, err := openRuntime(ctx, os.Stderr, runtimeAddr)
 	if err != nil {
 		return nil, fmt.Errorf("bundle has external member %q: %w (set --runtime-addr to resolve content_hash)",
 			externalMemberRef(ext), err)

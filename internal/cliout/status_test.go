@@ -61,3 +61,23 @@ func TestWriteStatus_missingSchemaShowsDash(t *testing.T) {
 		t.Fatalf("output = %q, want em dash for missing schema", out.String())
 	}
 }
+
+func TestWriteStatus_appendsMismatchWarning(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var out bytes.Buffer
+	if err := WriteStatus(&out, StatusPanel{
+		RuntimeAddr:    "127.0.0.1:7777",
+		CLIVersion:     "0.2.0",
+		RuntimeVersion: "0.3.0",
+		SchemaVersion:  "1",
+		Health:         "SERVING",
+	}); err != nil {
+		t.Fatalf("WriteStatus: %v", err)
+	}
+	s := out.String()
+	for _, want := range []string{"0.2.0", "0.3.0", "warning:", "phrony upgrade"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("output missing %q:\n%s", want, s)
+		}
+	}
+}

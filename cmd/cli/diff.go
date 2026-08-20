@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
 	"github.com/phrony-platform/runtime/internal/agentref"
 	"github.com/phrony-platform/runtime/internal/clierr"
+	"github.com/phrony-platform/runtime/internal/cliout"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 func newAgentDiffCommand(runtimeAddr *string) *cobra.Command {
@@ -61,7 +60,7 @@ func runDiff(cmd *cobra.Command, runtimeAddr *string, manifestPath, remoteRef st
 		agentLabel := agentref.FormatVersioned(ref.GetNamespace(), ref.GetName(), ref.GetVersion())
 		out := cmd.OutOrStdout()
 		if bytes.Equal(localPretty, remotePretty) {
-			c := newDiffColors(useColor(out))
+			c := newDiffColors(cliout.UseColor(out))
 			fmt.Fprintf(out, "%s local manifest matches %s\n", c.equal("No differences."), c.bold(agentLabel))
 			return nil
 		}
@@ -73,7 +72,7 @@ func runDiff(cmd *cobra.Command, runtimeAddr *string, manifestPath, remoteRef st
 			// "to" side, so additions/deletions read as "what publishing would change".
 			from:  string(remotePretty),
 			to:    string(localPretty),
-			color: useColor(out),
+			color: cliout.UseColor(out),
 		})
 		return nil
 	})
@@ -310,17 +309,4 @@ func plural(n int, one, many string) string {
 		return fmt.Sprintf("%d %s", n, one)
 	}
 	return fmt.Sprintf("%d %s", n, many)
-}
-
-// useColor reports whether ANSI styling should be emitted to w, honoring the
-// NO_COLOR convention and only coloring when writing to a terminal.
-func useColor(w io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" {
-		return false
-	}
-	f, ok := w.(interface{ Fd() uintptr })
-	if !ok {
-		return false
-	}
-	return term.IsTerminal(int(f.Fd()))
 }

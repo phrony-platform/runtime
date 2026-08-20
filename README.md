@@ -31,6 +31,8 @@ mv -f "$(go env GOPATH)/bin/cli" "$(go env GOPATH)/bin/phrony"
 
 Or from a clone: `make install-cli` (installs to `~/.local/bin`).
 
+Upgrade an installed CLI: `phrony upgrade`
+
 ## Run your first agent in 5 minutes
 
 ```bash

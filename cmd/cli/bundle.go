@@ -259,7 +259,7 @@ func runBundlePublish(cmd *cobra.Command, runtimeAddr *string, bundlePath string
 		return err
 	}
 
-	clients, err := dialRuntime(cmd.Context(), *runtimeAddr)
+	clients, err := openRuntime(cmd.Context(), cmd.ErrOrStderr(), *runtimeAddr)
 	if err != nil {
 		return err
 	}

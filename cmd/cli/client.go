@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 
 	grpc_health_v1 "github.com/phrony-platform/runtime/gen/grpc/health/v1"
 	runtimev1 "github.com/phrony-platform/runtime/gen/phrony/runtime/v1"
+	"github.com/phrony-platform/runtime/internal/cliout"
 	"github.com/phrony-platform/runtime/internal/common"
+	"github.com/phrony-platform/runtime/internal/version"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,6 +37,26 @@ func dialRuntime(ctx context.Context, runtimeAddrFlag string) (*runtimeClients, 
 	}, nil
 }
 
+func openRuntime(ctx context.Context, w io.Writer, runtimeAddrFlag string) (*runtimeClients, error) {
+	clients, err := dialRuntime(ctx, runtimeAddrFlag)
+	if err != nil {
+		return nil, err
+	}
+	warnVersionMismatch(ctx, w, clients.runtime)
+	return clients, nil
+}
+
+func warnVersionMismatch(ctx context.Context, w io.Writer, runtimeClient runtimev1.RuntimeClient) {
+	resp, err := runtimeClient.GetVersion(ctx, &runtimev1.GetVersionRequest{})
+	if err != nil {
+		return
+	}
+	if version.SameRelease(version.CLIVersion, resp.GetVersion()) {
+		return
+	}
+	_ = cliout.WriteVersionMismatchWarning(w, version.CLIVersion, resp.GetVersion())
+}
+
 func (c *runtimeClients) Close() error {
 	if c == nil || c.conn == nil {
 		return nil
@@ -50,7 +73,7 @@ func withRuntimeClient(cmd *cobra.Command, runtimeAddrFlag string, fn func(runti
 	if testWithRuntimeClientHook != nil {
 		return testWithRuntimeClientHook(fn)
 	}
-	clients, err := dialRuntime(cmd.Context(), runtimeAddrFlag)
+	clients, err := openRuntime(cmd.Context(), cmd.ErrOrStderr(), runtimeAddrFlag)
 	if err != nil {
 		return err
 	}

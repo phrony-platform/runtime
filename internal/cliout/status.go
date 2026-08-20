@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/phrony-platform/runtime/internal/version"
 )
 
 // StatusPanel is the data shown by `phrony status`.
@@ -41,6 +43,13 @@ func WriteStatus(w io.Writer, panel StatusPanel) error {
 	}
 	var b strings.Builder
 	writeTable(&b, rows)
+
+	if !version.SameRelease(panel.CLIVersion, panel.RuntimeVersion) {
+		b.WriteByte('\n')
+		if err := WriteVersionMismatchWarning(&b, panel.CLIVersion, panel.RuntimeVersion); err != nil {
+			return err
+		}
+	}
 
 	_, err := io.WriteString(w, b.String())
 	return err

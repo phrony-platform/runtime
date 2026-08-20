@@ -40,6 +40,7 @@ func NewRootCommand() *cobra.Command {
 
 	root.AddCommand(
 		newInitCommand(),
+		newUpgradeCommand(),
 		newTelemetryCommand(),
 		newStatusCommand(&runtimeAddr),
 		newRollbackCommand(&runtimeAddr),
