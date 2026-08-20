@@ -13,17 +13,18 @@ import (
 
 func TestLatestVersion_parsesProxyResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/@latest" {
+		switch r.URL.Path {
+		case "/repos/phrony-platform/runtime/releases/latest":
+			fmt.Fprint(w, `{"tag_name":"0.3.0"}`)
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		fmt.Fprint(w, `{"Version":"v0.3.0"}`)
 	}))
 	t.Cleanup(srv.Close)
 
-	old := moduleProxyBaseURL
-	moduleProxyBaseURL = srv.URL
-	t.Cleanup(func() { moduleProxyBaseURL = old })
+	old := githubLatestReleaseURL
+	githubLatestReleaseURL = srv.URL + "/repos/phrony-platform/runtime/releases/latest"
+	t.Cleanup(func() { githubLatestReleaseURL = old })
 
 	got, err := LatestVersion(context.Background(), srv.Client())
 	if err != nil {
@@ -31,6 +32,98 @@ func TestLatestVersion_parsesProxyResponse(t *testing.T) {
 	}
 	if got != "0.3.0" {
 		t.Fatalf("got %q, want 0.3.0", got)
+	}
+}
+
+func TestLatestVersion_fallsBackToModuleProxy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/phrony-platform/runtime/releases/latest":
+			http.Error(w, "missing", http.StatusNotFound)
+		case "/@latest":
+			fmt.Fprint(w, `{"Version":"v0.3.1"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	oldGitHub := githubLatestReleaseURL
+	githubLatestReleaseURL = srv.URL + "/repos/phrony-platform/runtime/releases/latest"
+	t.Cleanup(func() { githubLatestReleaseURL = oldGitHub })
+
+	oldProxy := moduleProxyBaseURL
+	moduleProxyBaseURL = srv.URL
+	t.Cleanup(func() { moduleProxyBaseURL = oldProxy })
+
+	runner := fakeRunner{
+		lookPath: map[string]string{"go": "/usr/bin/go"},
+	}
+
+	got, err := latestVersion(context.Background(), srv.Client(), runner)
+	if err != nil {
+		t.Fatalf("latestVersion: %v", err)
+	}
+	if got != "0.3.1" {
+		t.Fatalf("got %q, want 0.3.1", got)
+	}
+}
+
+func TestLatestVersion_fallsBackToGoList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	oldGitHub := githubLatestReleaseURL
+	githubLatestReleaseURL = srv.URL + "/repos/phrony-platform/runtime/releases/latest"
+	t.Cleanup(func() { githubLatestReleaseURL = oldGitHub })
+
+	runner := fakeRunner{
+		lookPath: map[string]string{"go": "/usr/bin/go"},
+		output: map[string]string{
+			"go\x00list\x00-m\x00-json\x00" + ModuleRoot + "@latest": `{"Version":"v0.3.2"}`,
+		},
+	}
+
+	got, err := latestVersion(context.Background(), srv.Client(), runner)
+	if err != nil {
+		t.Fatalf("latestVersion: %v", err)
+	}
+	if got != "0.3.2" {
+		t.Fatalf("got %q, want 0.3.2", got)
+	}
+}
+
+func TestInstall_usesInstallRef(t *testing.T) {
+	dir := t.TempDir()
+	gobin := filepath.Join(dir, "gobin")
+	localBin := filepath.Join(dir, ".local", "bin")
+	t.Setenv("GOBIN", gobin)
+	t.Setenv("HOME", dir)
+
+	var runs [][]string
+	runner := fakeRunner{
+		lookPath: map[string]string{"go": "/usr/bin/go"},
+		run: func(name string, args ...string) error {
+			runs = append(runs, append([]string{name}, args...))
+			return os.WriteFile(filepath.Join(gobin, "phrony"), []byte("binary"), 0o755)
+		},
+	}
+
+	if err := Install(context.Background(), InstallOptions{
+		Version:    "0.3.0",
+		InstallRef: "latest",
+		Runner:     runner,
+	}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	want := []string{"go", "install", "-o", filepath.Join(gobin, "phrony"), ModulePath + "@latest"}
+	if strings.Join(runs[0], " ") != strings.Join(want, " ") {
+		t.Fatalf("run = %v, want %v", runs[0], want)
+	}
+	if _, err := os.Stat(filepath.Join(localBin, "phrony")); err != nil {
+		t.Fatalf("local copy missing: %v", err)
 	}
 }
 

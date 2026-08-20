@@ -17,14 +17,26 @@ import (
 
 const (
 	ModulePath = "github.com/phrony-platform/runtime/cmd/cli"
+	ModuleRoot = "github.com/phrony-platform/runtime"
 	// ProxyBaseURL is the Go module proxy path for this module.
 	ProxyBaseURL = "https://proxy.golang.org/github.com/phrony-platform/runtime"
 )
 
-var moduleProxyBaseURL = ProxyBaseURL
+var (
+	moduleProxyBaseURL     = ProxyBaseURL
+	githubLatestReleaseURL = "https://api.github.com/repos/phrony-platform/runtime/releases/latest"
+)
 
 type proxyLatestResponse struct {
 	Version string `json:"Version"`
+}
+
+type goListModuleResponse struct {
+	Version string `json:"Version"`
+}
+
+type githubReleaseResponse struct {
+	TagName string `json:"tag_name"`
 }
 
 // ExecRunner runs external commands; inject a fake in tests.
@@ -54,14 +66,85 @@ func (defaultRunner) Run(name string, args ...string) error {
 // InstallOptions configures a CLI self-upgrade install.
 type InstallOptions struct {
 	Version string
-	Runner  ExecRunner
+	// InstallRef overrides Version for go install (for example "latest").
+	InstallRef string
+	Runner     ExecRunner
 }
 
-// LatestVersion fetches the latest release tag from the Go module proxy.
+// LatestVersion fetches the latest release label for upgrade checks.
+// It prefers the GitHub release tag (matches CLIVersion), then go list @latest,
+// then the public module proxy.
 func LatestVersion(ctx context.Context, client *http.Client) (string, error) {
+	return latestVersion(ctx, client, defaultRunner{})
+}
+
+func latestVersion(ctx context.Context, client *http.Client, runner ExecRunner) (string, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
+	if runner == nil {
+		runner = defaultRunner{}
+	}
+
+	if version, err := latestVersionFromGitHub(ctx, client); err == nil {
+		return version, nil
+	}
+	if _, err := runner.LookPath("go"); err == nil {
+		if version, err := latestVersionFromGoList(runner); err == nil {
+			return version, nil
+		}
+	}
+	return latestVersionFromModuleProxy(ctx, client)
+}
+
+func latestVersionFromGitHub(ctx context.Context, client *http.Client) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubLatestReleaseURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("build GitHub request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "phrony-cli")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch GitHub release: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub releases API returned HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read GitHub release response: %w", err)
+	}
+	var parsed githubReleaseResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("parse GitHub release response: %w", err)
+	}
+	version := strings.TrimSpace(parsed.TagName)
+	if version == "" {
+		return "", fmt.Errorf("GitHub release returned empty tag")
+	}
+	return StripVPrefix(version), nil
+}
+
+func latestVersionFromGoList(runner ExecRunner) (string, error) {
+	out, err := runner.Output("go", "list", "-m", "-json", ModuleRoot+"@latest")
+	if err != nil {
+		return "", fmt.Errorf("go list @latest: %w", err)
+	}
+	var parsed goListModuleResponse
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		return "", fmt.Errorf("parse go list response: %w", err)
+	}
+	version := strings.TrimSpace(parsed.Version)
+	if version == "" {
+		return "", fmt.Errorf("go list returned empty version")
+	}
+	return StripVPrefix(version), nil
+}
+
+func latestVersionFromModuleProxy(ctx context.Context, client *http.Client) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, moduleProxyBaseURL+"/@latest", nil)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
@@ -72,7 +155,11 @@ func LatestVersion(ctx context.Context, client *http.Client) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("module proxy returned HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf(
+			"module proxy returned HTTP %d (reinstall manually: go install %s@latest)",
+			resp.StatusCode,
+			ModulePath,
+		)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -117,7 +204,10 @@ func Install(ctx context.Context, opts InstallOptions) error {
 		return fmt.Errorf("create install dir %s: %w", gobin, err)
 	}
 
-	ref := installRef(opts.Version)
+	ref := strings.TrimSpace(opts.InstallRef)
+	if ref == "" {
+		ref = installRef(opts.Version)
+	}
 	dest := filepath.Join(gobin, "phrony")
 	module := ModulePath + "@" + ref
 	if err := opts.Runner.Run("go", "install", "-o", dest, module); err != nil {

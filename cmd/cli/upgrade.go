@@ -113,11 +113,21 @@ func runUpgrade(cmd *cobra.Command, opts upgradeOptions) error {
 		}
 	}
 
-	if err := cliupgrade.Install(ctx, cliupgrade.InstallOptions{Version: installVersion}); err != nil {
+	if err := cliupgrade.Install(ctx, cliupgrade.InstallOptions{
+		Version:    installVersion,
+		InstallRef: installRefForUpgrade(opts.targetVersion),
+	}); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "upgraded phrony CLI v%s → v%s\n", current, installVersion)
 	return nil
+}
+
+func installRefForUpgrade(targetVersion string) string {
+	if strings.TrimSpace(targetVersion) == "" {
+		return "latest"
+	}
+	return ""
 }
 
 func readConfirmation(r io.Reader) (bool, error) {
