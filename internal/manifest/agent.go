@@ -315,10 +315,15 @@ type InstructionsSpec struct {
 	Text    string `yaml:"text,omitempty" json:"text,omitempty"`
 }
 
+// ModelProviderOpenAICompatible is the provider id for OpenAI Chat Completions wire
+// format against a user-supplied base_url (Ollama, vLLM, gateways, etc.).
+const ModelProviderOpenAICompatible = "openai-compatible"
+
 // ModelConfig selects the model and provider pass-through options.
 type ModelConfig struct {
 	Provider        string           `yaml:"provider" json:"provider"`
 	Name            string           `yaml:"name" json:"name"`
+	BaseURL         string           `yaml:"base_url,omitempty" json:"base_url,omitempty"`
 	Secret          string           `yaml:"secret,omitempty" json:"secret,omitempty"`
 	Parameters      *ModelParameters `yaml:"parameters,omitempty" json:"parameters,omitempty"`
 	Reasoning       *ReasoningConfig `yaml:"reasoning,omitempty" json:"reasoning,omitempty"`

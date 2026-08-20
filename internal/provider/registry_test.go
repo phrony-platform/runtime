@@ -13,7 +13,7 @@ import (
 )
 
 func TestNew_unsupportedProvider(t *testing.T) {
-	_, err := New("unknown", "key")
+	_, err := New("unknown", "key", "")
 	if err == nil {
 		t.Fatal("New() = nil, want error")
 	}

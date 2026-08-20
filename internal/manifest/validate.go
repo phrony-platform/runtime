@@ -553,6 +553,7 @@ func validateModel(m *ModelConfig, secrets map[string]SecretDefinition) []FieldE
 		errs = append(errs, FieldError{Path: "spec.model.name", Message: "is required"})
 	}
 	errs = append(errs, validateModelSecret(m, secrets)...)
+	errs = append(errs, validateModelBaseURL(m)...)
 	if m.Parameters != nil {
 		errs = append(errs, validateModelParameters(m.Parameters)...)
 	}
@@ -565,6 +566,34 @@ func validateModel(m *ModelConfig, secrets map[string]SecretDefinition) []FieldE
 		}
 	}
 	return errs
+}
+
+func validateModelBaseURL(m *ModelConfig) []FieldError {
+	baseURL := strings.TrimSpace(m.BaseURL)
+	provider := strings.TrimSpace(m.Provider)
+	if provider == ModelProviderOpenAICompatible {
+		if baseURL == "" {
+			return []FieldError{{
+				Path:    "spec.model.base_url",
+				Message: "is required when provider is openai-compatible",
+			}}
+		}
+		u, err := url.Parse(baseURL)
+		if err != nil || !u.IsAbs() || (u.Scheme != "http" && u.Scheme != "https") {
+			return []FieldError{{
+				Path:    "spec.model.base_url",
+				Message: "must be an absolute http or https URL",
+			}}
+		}
+		return nil
+	}
+	if baseURL != "" {
+		return []FieldError{{
+			Path:    "spec.model.base_url",
+			Message: "must be empty unless provider is openai-compatible",
+		}}
+	}
+	return nil
 }
 
 func validateModelSecret(m *ModelConfig, secrets map[string]SecretDefinition) []FieldError {

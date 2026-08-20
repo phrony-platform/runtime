@@ -80,13 +80,22 @@ func NewForSession(
 		return reg, nil
 	}
 
-	apiKey, err := APIKeyForModel(ctx, enc, q, sessionID, agent)
-	if err != nil {
-		return nil, err
+	var apiKey string
+	if hasModelSecret(agent) {
+		var err error
+		apiKey, err = APIKeyForModel(ctx, enc, q, sessionID, agent)
+		if err != nil {
+			return nil, err
+		}
+		defer zeroString(apiKey)
 	}
-	defer zeroString(apiKey)
 
-	p, err := New(providerID, apiKey)
+	baseURL := ""
+	if providerID == IDOpenAICompatible {
+		baseURL = agent.Spec.Model.BaseURL
+	}
+
+	p, err := New(providerID, apiKey, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -95,13 +104,15 @@ func NewForSession(
 	return reg, nil
 }
 
-// New constructs a provider implementation for the given id and API key.
-func New(id, apiKey string) (Provider, error) {
+// New constructs a provider implementation for the given id, API key, and optional base URL.
+func New(id, apiKey, baseURL string) (Provider, error) {
 	switch strings.TrimSpace(id) {
 	case IDAnthropic:
 		return newAnthropicProvider(apiKey), nil
 	case IDOpenAI:
 		return newOpenAIProvider(apiKey), nil
+	case IDOpenAICompatible:
+		return newOpenAICompatibleProvider(apiKey, baseURL), nil
 	case IDStub:
 		return newStubProvider(apiKey)
 	default:
