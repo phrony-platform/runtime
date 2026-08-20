@@ -56,6 +56,56 @@ func TestValidate_fieldErrors(t *testing.T) {
 			wantPaths: []string{"spec.model.provider", "spec.model.name"},
 		},
 		{
+			name: "openai-compatible requires base_url",
+			mutate: func(a *Agent) {
+				a.Spec.Model = ModelConfig{
+					Provider: ModelProviderOpenAICompatible,
+					Name:     "llama3",
+				}
+			},
+			wantPaths: []string{"spec.model.base_url"},
+		},
+		{
+			name: "openai-compatible invalid base_url",
+			mutate: func(a *Agent) {
+				a.Spec.Model = ModelConfig{
+					Provider: ModelProviderOpenAICompatible,
+					Name:     "llama3",
+					BaseURL:  "not-a-url",
+				}
+			},
+			wantPaths: []string{"spec.model.base_url"},
+		},
+		{
+			name: "openai-compatible valid",
+			mutate: func(a *Agent) {
+				a.Spec.Model = ModelConfig{
+					Provider: ModelProviderOpenAICompatible,
+					Name:     "llama3",
+					BaseURL:  "http://localhost:11434/v1",
+				}
+			},
+			wantPaths: nil,
+		},
+		{
+			name: "base_url forbidden on anthropic",
+			mutate: func(a *Agent) {
+				a.Spec.Model.BaseURL = "http://localhost:11434/v1"
+			},
+			wantPaths: []string{"spec.model.base_url"},
+		},
+		{
+			name: "base_url forbidden on openai",
+			mutate: func(a *Agent) {
+				a.Spec.Model = ModelConfig{
+					Provider: "openai",
+					Name:     "gpt-4o",
+					BaseURL:  "http://localhost:8080/v1",
+				}
+			},
+			wantPaths: []string{"spec.model.base_url"},
+		},
+		{
 			name: "invalid reasoning effort",
 			mutate: func(a *Agent) {
 				a.Spec.Model.Reasoning = &ReasoningConfig{Effort: "extreme"}
