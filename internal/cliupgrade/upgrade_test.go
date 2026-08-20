@@ -13,7 +13,7 @@ import (
 
 func TestLatestVersion_parsesProxyResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/@v/latest" {
+		if r.URL.Path != "/@latest" {
 			http.NotFound(w, r)
 			return
 		}

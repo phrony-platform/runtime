@@ -62,7 +62,7 @@ func LatestVersion(ctx context.Context, client *http.Client) (string, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, moduleProxyBaseURL+"/@v/latest", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, moduleProxyBaseURL+"/@latest", nil)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
