@@ -1,0 +1,749 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://phrony.com/schemas/agent-spec/v1.json",
+  "$comment": "Canonical copy: phrony-platform/runtime schemas/agent-spec/v1.json",
+  "title": "Phrony Agent Spec v1",
+  "description": "Authoring schema for Agent, Tool, Policy, and Bundle documents. Structural checks only; phrony validate is authoritative for cross-file rules.",
+  "oneOf": [
+    { "$ref": "#/definitions/AgentDocument" },
+    { "$ref": "#/definitions/ToolDocument" },
+    { "$ref": "#/definitions/PolicyDocument" },
+    { "$ref": "#/definitions/BundleDocument" }
+  ],
+  "definitions": {
+    "apiVersion": {
+      "type": "string",
+      "const": "phrony.com/v1",
+      "description": "Must be phrony.com/v1."
+    },
+    "labels": {
+      "type": "object",
+      "description": "Fleet filtering and monitoring (descriptive).",
+      "additionalProperties": { "type": "string" }
+    },
+    "annotations": {
+      "type": "object",
+      "description": "Arbitrary descriptive metadata (cost center, ticket id, and similar).",
+      "additionalProperties": { "type": "string" }
+    },
+    "schemaSpec": {
+      "type": "object",
+      "description": "JSON Schema by ref or inline. Set exactly one of ref or inline.",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Bundle-relative path to a JSON Schema file."
+        },
+        "version": {
+          "description": "Schema revision when using ref.",
+          "type": ["string", "number"]
+        },
+        "inline": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "JSON Schema object embedded in the document."
+        }
+      },
+      "oneOf": [
+        { "required": ["ref"], "not": { "required": ["inline"] } },
+        { "required": ["inline"], "not": { "required": ["ref"] } }
+      ]
+    },
+    "policyAttachment": {
+      "description": "Policy document by logical id (namespace.name) or bundle file ref.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "description": "Logical policy id (namespace.name)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref"],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Bundle-relative path to a Policy document."
+            }
+          }
+        }
+      ]
+    },
+    "secretDefinition": {
+      "type": "object",
+      "description": "Credential reference only. v1 supports fromEnv; never commit API key values.",
+      "additionalProperties": false,
+      "required": ["fromEnv"],
+      "properties": {
+        "fromEnv": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Environment variable name resolved on the operator host at run time."
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "description": "Credential references keyed by secret name. Names must match [a-z][a-z0-9_-]*.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/secretDefinition"
+      }
+    },
+    "identityMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "namespace", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Resource name; unique with namespace."
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Addressability and multi-tenancy boundary."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Semver release label for humans and CI."
+        },
+        "labels": {
+          "$ref": "#/definitions/labels"
+        }
+      }
+    },
+    "governanceMetadata": {
+      "type": "object",
+      "description": "Risk, authority boundaries, classifications, and optional framework packs.",
+      "additionalProperties": false,
+      "properties": {
+        "risk_tier": {
+          "type": "string",
+          "description": "Customer taxonomy reference (for example high). Descriptive; not a fixed spec enum."
+        },
+        "authority_boundaries": {
+          "type": "array",
+          "description": "Symbolic boundary ids; publish compiles them into policies the runtime evaluates.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "classifications": {
+          "type": "array",
+          "description": "Tags from the deployer's taxonomy (descriptive).",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "frameworks": {
+          "type": "object",
+          "description": "Map of framework pack id to pack payload (for example eu-ai-act/v1).",
+          "additionalProperties": true
+        }
+      }
+    },
+    "agentMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "namespace", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Agent name; unique with namespace."
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Addressability and multi-tenancy boundary."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Semver release label for humans and CI."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Owning team or contact (descriptive; prefer labels for new manifests)."
+        },
+        "governance": {
+          "$ref": "#/definitions/governanceMetadata"
+        },
+        "labels": {
+          "$ref": "#/definitions/labels"
+        },
+        "annotations": {
+          "$ref": "#/definitions/annotations"
+        }
+      }
+    },
+    "instructionsSpec": {
+      "type": "object",
+      "description": "System prompt. Set exactly one of ref or text.",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Bundle-relative path to prompt content."
+        },
+        "version": {
+          "description": "Governed revision when using ref.",
+          "type": ["string", "number"]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Inline system prompt."
+        }
+      },
+      "oneOf": [
+        { "required": ["ref"], "not": { "required": ["text"] } },
+        { "required": ["text"], "not": { "required": ["ref"] } }
+      ]
+    },
+    "sideEffectClass": {
+      "type": "string",
+      "description": "Mutability class for dispatch and recovery.",
+      "enum": [
+        "read_only",
+        "idempotent_write",
+        "non_idempotent_write",
+        "irreversible_action"
+      ]
+    },
+    "modelParameters": {
+      "type": "object",
+      "description": "Pass-through to the provider per completion. Set temperature or top_p, not both.",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": {
+          "type": "number",
+          "description": "Sampling temperature."
+        },
+        "top_p": {
+          "type": "number",
+          "description": "Nucleus sampling; mutually exclusive with temperature."
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "description": "Cap on tokens for one model response."
+        },
+        "stop_sequences": {
+          "type": "array",
+          "description": "Stop sequences for the provider.",
+          "items": { "type": "string" }
+        }
+      },
+      "not": {
+        "allOf": [
+          {
+            "required": ["temperature"],
+            "properties": { "temperature": { "type": "number" } }
+          },
+          {
+            "required": ["top_p"],
+            "properties": { "top_p": { "type": "number" } }
+          }
+        ]
+      }
+    },
+    "reasoningConfig": {
+      "type": "object",
+      "description": "Provider-mapped reasoning controls.",
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Reasoning effort; mapped per provider."
+        }
+      }
+    },
+    "modelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "name"],
+      "properties": {
+        "provider": {
+          "description": "Model provider id. Common values: anthropic, openai, openai-compatible.",
+          "anyOf": [
+            { "enum": ["anthropic", "openai", "openai-compatible"] },
+            { "type": "string", "minLength": 1 }
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model id for that provider."
+        },
+        "base_url": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Absolute http or https URL for the Chat Completions endpoint. Required for openai-compatible; must be empty for anthropic and openai."
+        },
+        "secret": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "description": "Key in secrets for the provider API key. Omit when a secret named after provider exists."
+        },
+        "parameters": {
+          "$ref": "#/definitions/modelParameters"
+        },
+        "reasoning": {
+          "$ref": "#/definitions/reasoningConfig"
+        },
+        "provider_options": {
+          "type": "object",
+          "description": "Escape hatch for provider-specific options.",
+          "additionalProperties": true
+        }
+      },
+      "if": {
+        "properties": { "provider": { "const": "openai-compatible" } },
+        "required": ["provider"]
+      },
+      "then": {
+        "required": ["base_url"]
+      },
+      "else": {
+        "properties": { "base_url": false }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "description": "Caps enforced across the entire run, not per completion.",
+      "additionalProperties": false,
+      "properties": {
+        "max_tokens_per_run": {
+          "type": "integer",
+          "description": "Cumulative input plus output tokens for the run."
+        },
+        "max_loop_iterations": {
+          "type": "integer",
+          "description": "Tool-calling loop steps before forced stop."
+        },
+        "max_wall_clock_seconds": {
+          "type": "integer",
+          "description": "Wall-clock budget for the run (includes tool wait time)."
+        },
+        "max_hitl_wait_minutes": {
+          "type": "integer",
+          "description": "Separate budget for approval waits; distinct from max_wall_clock_seconds."
+        },
+        "max_subagent_depth": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum agent delegation nesting; >= 1, defaults to 5."
+        },
+        "on_limit": {
+          "type": "string",
+          "enum": ["halt", "escalate"],
+          "description": "halt (default) or escalate when a limit is hit."
+        }
+      }
+    },
+    "outputSpec": {
+      "type": "object",
+      "description": "Final response shape and validation. Top-level sibling of spec, not nested under spec.",
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["text", "json"],
+          "description": "text (default) or json."
+        },
+        "schema": {
+          "$ref": "#/definitions/schemaSpec"
+        },
+        "strict": {
+          "type": "boolean",
+          "description": "When true, model output must validate against schema."
+        },
+        "on_invalid": {
+          "type": "string",
+          "enum": ["retry", "repair", "escalate", "fail"],
+          "description": "Policy when validation fails."
+        }
+      }
+    },
+    "mcpServerAuth": {
+      "type": "object",
+      "description": "How the runtime authenticates to an MCP server using a Phrony secret.",
+      "additionalProperties": false,
+      "required": ["scheme", "secret"],
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "enum": ["bearer", "header"],
+          "description": "bearer sends Authorization: Bearer <secret>; header sends the secret in the named custom header."
+        },
+        "secret": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Key in secrets."
+        },
+        "header": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Custom header name. Required when scheme is header."
+        }
+      },
+      "if": {
+        "properties": { "scheme": { "const": "header" } },
+        "required": ["scheme"]
+      },
+      "then": {
+        "required": ["header"]
+      }
+    },
+    "mcpServerSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable id referenced by tools[].mcp.server; unique within the Agent."
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "description": "HTTPS endpoint for Streamable HTTP MCP."
+        },
+        "transport": {
+          "type": "string",
+          "const": "streamable_http",
+          "description": "Must be streamable_http when set; defaults to streamable_http."
+        },
+        "auth": {
+          "$ref": "#/definitions/mcpServerAuth"
+        }
+      }
+    },
+    "toolMCPBinding": {
+      "type": "object",
+      "description": "Route this binding to a declared spec.mcp_servers entry instead of the worker registry.",
+      "additionalProperties": false,
+      "required": ["server"],
+      "properties": {
+        "server": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of a spec.mcp_servers entry."
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Remote MCP tool name; defaults to the binding wire name."
+        }
+      }
+    },
+    "toolBinding": {
+      "type": "object",
+      "description": "One tool the agent may call. Pin version on ref (for example tool@1.0.0); do not set name, version, parameters, policy, or agent on authoring bindings.",
+      "additionalProperties": false,
+      "required": ["ref"],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Logical tool id with optional semver constraint (namespace.name@^1.3)."
+        },
+        "as": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Wire name presented to the model when it should differ from the derived ref."
+        },
+        "description": {
+          "type": "string",
+          "description": "Override or supplement Tool spec.description."
+        },
+        "input_schema": {
+          "$ref": "#/definitions/schemaSpec"
+        },
+        "side_effect_class": {
+          "$ref": "#/definitions/sideEffectClass"
+        },
+        "mcp": {
+          "$ref": "#/definitions/toolMCPBinding"
+        },
+        "policies": {
+          "type": "array",
+          "description": "Policy documents gating this binding.",
+          "items": { "$ref": "#/definitions/policyAttachment" }
+        }
+      }
+    },
+    "subagentBinding": {
+      "type": "object",
+      "description": "Authoring-only delegation to another agent. Valid inside a published Bundle.",
+      "additionalProperties": false,
+      "required": ["ref"],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Bundle-local path, pinned external namespace.name@version, or floating namespace.name when late_bound is true."
+        },
+        "as": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Wire name presented to the parent model; defaults from ref."
+        },
+        "description": {
+          "type": "string",
+          "description": "Tool description presented to the parent model."
+        },
+        "input_schema": {
+          "$ref": "#/definitions/schemaSpec"
+        },
+        "result": {
+          "type": "string",
+          "enum": ["summary", "full"],
+          "description": "How the child output is returned to the parent model. summary (default) returns the final output; full includes the step trace."
+        },
+        "policies": {
+          "type": "array",
+          "description": "Policy documents gating the delegation call.",
+          "items": { "$ref": "#/definitions/policyAttachment" }
+        },
+        "late_bound": {
+          "type": "boolean",
+          "description": "Resolve to the active deployment at call time and exclude the edge from bundle closure walks."
+        }
+      }
+    },
+    "agentSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["purpose", "instructions", "model"],
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable intent; not executed as a prompt."
+        },
+        "instructions": {
+          "$ref": "#/definitions/instructionsSpec"
+        },
+        "model": {
+          "$ref": "#/definitions/modelConfig"
+        },
+        "tools": {
+          "type": "array",
+          "description": "Tool bindings this agent may call.",
+          "items": { "$ref": "#/definitions/toolBinding" }
+        },
+        "mcp_servers": {
+          "type": "array",
+          "description": "Remote MCP servers the runtime connects to natively.",
+          "items": { "$ref": "#/definitions/mcpServerSpec" }
+        },
+        "agents": {
+          "type": "array",
+          "description": "Agent-to-agent delegation. Must be published via a Bundle.",
+          "items": { "$ref": "#/definitions/subagentBinding" }
+        },
+        "default_policies": {
+          "type": "array",
+          "description": "Policies applied to every tool binding unless a more specific rule denies.",
+          "items": { "$ref": "#/definitions/policyAttachment" }
+        },
+        "limits": {
+          "$ref": "#/definitions/limits"
+        }
+      }
+    },
+    "AgentDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "metadata", "spec"],
+      "properties": {
+        "apiVersion": { "$ref": "#/definitions/apiVersion" },
+        "kind": {
+          "const": "Agent",
+          "description": "Runnable agent definition."
+        },
+        "metadata": { "$ref": "#/definitions/agentMetadata" },
+        "secrets": { "$ref": "#/definitions/secrets" },
+        "spec": { "$ref": "#/definitions/agentSpec" },
+        "output": { "$ref": "#/definitions/outputSpec" }
+      }
+    },
+    "toolSpec": {
+      "type": "object",
+      "description": "Portable tool contract. Does not declare where the tool runs.",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human-readable contract summary."
+        },
+        "side_effect_class": {
+          "$ref": "#/definitions/sideEffectClass"
+        },
+        "input_schema": {
+          "$ref": "#/definitions/schemaSpec"
+        },
+        "output_schema": {
+          "$ref": "#/definitions/schemaSpec"
+        },
+        "default_policies": {
+          "type": "array",
+          "description": "Default policy logical ids (namespace.name) for this contract.",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "ToolDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "metadata", "spec"],
+      "properties": {
+        "apiVersion": { "$ref": "#/definitions/apiVersion" },
+        "kind": {
+          "const": "Tool",
+          "description": "Tool contract (schemas, side-effect class, default policies)."
+        },
+        "metadata": { "$ref": "#/definitions/identityMetadata" },
+        "spec": { "$ref": "#/definitions/toolSpec" }
+      }
+    },
+    "policyTimeout": {
+      "type": "object",
+      "description": "Portable approval timeout policy.",
+      "additionalProperties": false,
+      "required": ["after_minutes", "default"],
+      "properties": {
+        "after_minutes": {
+          "type": "integer",
+          "description": "Minutes to wait before applying default."
+        },
+        "default": {
+          "type": "string",
+          "enum": ["deny", "allow", "escalate"],
+          "description": "Action if the timeout elapses without a decision."
+        }
+      }
+    },
+    "policyDecision": {
+      "type": "object",
+      "description": "Portable policy effect.",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["allow", "deny", "require_approval", "escalate", "block"],
+          "description": "allow, deny, require_approval, or escalate. block is treated as deny."
+        },
+        "authority_ref": {
+          "type": "string",
+          "description": "Symbolic link to metadata.governance.authority_boundaries taxonomy. Does not perform authorization."
+        },
+        "approvals_required": {
+          "type": "integer",
+          "description": "Count of distinct approvals when type is require_approval."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable string stored in the approval payload."
+        },
+        "on_reject": {
+          "type": "string",
+          "description": "Action if approval is rejected (for example return_to_agent or fail)."
+        },
+        "on_modify": {
+          "type": "string",
+          "description": "Action if an approver edits proposed arguments (for example revalidate)."
+        },
+        "comprehension_required": {
+          "type": "boolean",
+          "description": "Approver must acknowledge structured context."
+        },
+        "timeout": {
+          "$ref": "#/definitions/policyTimeout"
+        },
+        "runtime": {
+          "type": "object",
+          "description": "Implementation extensions (IdP queues, SLAs, role names). Keys SHOULD use the phrony.com/ prefix.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "policyDocSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human-readable summary of when the policy applies."
+        },
+        "scope": {
+          "type": "string",
+          "description": "Optional scope (for example tool:weather.get-forecast) limiting which bindings the policy applies to."
+        },
+        "allow": {
+          "type": "array",
+          "description": "Allow-list values when decision type is allow.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "conditions": {
+          "type": "object",
+          "description": "When the policy applies. Leaf nodes compare fields; interior nodes use all, any, or not.",
+          "additionalProperties": true
+        },
+        "decision": {
+          "$ref": "#/definitions/policyDecision"
+        }
+      }
+    },
+    "PolicyDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "metadata", "spec"],
+      "properties": {
+        "apiVersion": { "$ref": "#/definitions/apiVersion" },
+        "kind": {
+          "const": "Policy",
+          "description": "Portable policy (conditions, decision)."
+        },
+        "metadata": { "$ref": "#/definitions/identityMetadata" },
+        "spec": { "$ref": "#/definitions/policyDocSpec" }
+      }
+    },
+    "bundleSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Bundle-relative path to the root kind: Agent manifest."
+        }
+      }
+    },
+    "BundleDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "metadata", "spec"],
+      "properties": {
+        "apiVersion": { "$ref": "#/definitions/apiVersion" },
+        "kind": {
+          "const": "Bundle",
+          "description": "Multi-agent packaging document."
+        },
+        "metadata": { "$ref": "#/definitions/identityMetadata" },
+        "spec": { "$ref": "#/definitions/bundleSpec" }
+      }
+    }
+  }
+}

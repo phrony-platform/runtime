@@ -964,8 +964,13 @@ func TestInitCommand_success(t *testing.T) {
 	if !strings.Contains(out.String(), "created") {
 		t.Fatalf("output = %q, want created message", out.String())
 	}
-	if _, err := os.Stat(filepath.Join(dir, "agent.yaml")); err != nil {
+	got, err := os.ReadFile(filepath.Join(dir, "agent.yaml"))
+	if err != nil {
 		t.Fatalf("agent.yaml: %v", err)
+	}
+	wantPrefix := "# yaml-language-server: $schema=" + manifest.AgentSpecSchemaURL
+	if !strings.HasPrefix(string(got), wantPrefix) {
+		t.Fatalf("agent.yaml missing schema comment, got:\n%s", got)
 	}
 }
 

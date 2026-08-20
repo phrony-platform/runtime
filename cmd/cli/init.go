@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/phrony-platform/runtime/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
-const initAgentManifestYAML = `apiVersion: phrony.com/v1
+const initAgentManifestYAML = `# yaml-language-server: $schema=` + manifest.AgentSpecSchemaURL + `
+apiVersion: phrony.com/v1
 kind: Agent
 
 metadata:

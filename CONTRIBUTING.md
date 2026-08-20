@@ -57,6 +57,7 @@ runtime/
 ├── proto/                  Protobuf source (edit here, then regenerate)
 │   ├── grpc/health/v1/     Standard gRPC health definitions
 │   └── phrony/runtime/v1/  Phrony runtime API
+├── schemas/                JSON Schema for Agent Spec YAML authoring
 ├── bin/                    Built binaries (`make build`; gitignored)
 ├── docker-compose.yml      Local Postgres + runtime (Docker Compose)
 ├── Dockerfile              Image for the compose `runtime` service
@@ -72,6 +73,7 @@ runtime/
 | `internal/` | Private application code; not importable by other modules |
 | `gen/` | Output of `make proto` — commit regenerated files with API changes |
 | `proto/` | API contract; changes should align with the Phrony Agent Spec |
+| `schemas/` | Agent Spec authoring JSON Schema (hosted at phrony.com) |
 
 ## Making changes
 
