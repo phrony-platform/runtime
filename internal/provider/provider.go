@@ -17,8 +17,9 @@ const (
 	// converts them to user messages with tool_result blocks.
 	RoleTool = "tool"
 
-	IDAnthropic = "anthropic"
-	IDOpenAI    = "openai"
+	IDAnthropic          = "anthropic"
+	IDOpenAI             = "openai"
+	IDOpenAICompatible   = "openai-compatible"
 
 	StopReasonEndTurn   = "end_turn"
 	StopReasonToolUse   = "tool_use"

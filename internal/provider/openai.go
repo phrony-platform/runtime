@@ -13,19 +13,33 @@ import (
 const defaultOpenAIMaxTokens = 4096
 
 type openAIProvider struct {
+	id     string
 	client openai.Client
 }
 
 func newOpenAIProvider(apiKey string) Provider {
+	return newOpenAIClient(IDOpenAI, apiKey, "")
+}
+
+func newOpenAICompatibleProvider(apiKey, baseURL string) Provider {
+	return newOpenAIClient(IDOpenAICompatible, apiKey, baseURL)
+}
+
+func newOpenAIClient(id, apiKey, baseURL string) Provider {
+	opts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
+		option.WithMaxRetries(3),
+	}
+	if strings.TrimSpace(baseURL) != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
 	return &openAIProvider{
-		client: openai.NewClient(
-			option.WithAPIKey(apiKey),
-			option.WithMaxRetries(3),
-		),
+		id: id,
+		client: openai.NewClient(opts...),
 	}
 }
 
-func (p *openAIProvider) ID() string { return IDOpenAI }
+func (p *openAIProvider) ID() string { return p.id }
 
 func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest, ch chan<- CompletionEvent) error {
 	defer close(ch)

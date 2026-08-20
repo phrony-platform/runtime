@@ -10,6 +10,19 @@ import (
 	"github.com/phrony-platform/runtime/internal/store"
 )
 
+// hasModelSecret reports whether the agent declares a secrets entry for spec.model.
+func hasModelSecret(agent *manifest.Agent) bool {
+	if agent == nil || len(agent.Secrets) == 0 {
+		return false
+	}
+	secretName := manifest.ModelSecretName(agent.Spec.Model)
+	if secretName == "" {
+		return false
+	}
+	_, ok := agent.Secrets[secretName]
+	return ok
+}
+
 // APIKeyForModel decrypts the manifest secret bound to spec.model for a session.
 func APIKeyForModel(
 	ctx context.Context,
