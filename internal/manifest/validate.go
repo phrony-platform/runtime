@@ -623,6 +623,9 @@ func validateModelSecret(m *ModelConfig, secrets map[string]SecretDefinition) []
 		return nil
 	}
 	provider := strings.TrimSpace(m.Provider)
+	if provider == ModelProviderOpenAICompatible {
+		return nil
+	}
 	if provider != "" {
 		if _, ok := secrets[provider]; ok {
 			return nil

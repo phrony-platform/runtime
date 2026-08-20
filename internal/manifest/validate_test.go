@@ -88,6 +88,20 @@ func TestValidate_fieldErrors(t *testing.T) {
 			wantPaths: nil,
 		},
 		{
+			name: "openai-compatible keyless with unrelated secrets",
+			mutate: func(a *Agent) {
+				a.Secrets = map[string]SecretDefinition{
+					"tool_api": {FromEnv: "TOOL_API_KEY"},
+				}
+				a.Spec.Model = ModelConfig{
+					Provider: ModelProviderOpenAICompatible,
+					Name:     "llama3",
+					BaseURL:  "http://localhost:11434/v1",
+				}
+			},
+			wantPaths: nil,
+		},
+		{
 			name: "base_url forbidden on anthropic",
 			mutate: func(a *Agent) {
 				a.Spec.Model.BaseURL = "http://localhost:11434/v1"
