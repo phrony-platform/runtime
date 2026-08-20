@@ -13,8 +13,9 @@ import (
 const defaultOpenAIMaxTokens = 4096
 
 type openAIProvider struct {
-	id     string
-	client openai.Client
+	id      string
+	client  openai.Client
+	baseURL string
 }
 
 func newOpenAIProvider(apiKey string) Provider {
@@ -34,8 +35,9 @@ func newOpenAIClient(id, apiKey, baseURL string) Provider {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 	return &openAIProvider{
-		id: id,
-		client: openai.NewClient(opts...),
+		id:      id,
+		client:  openai.NewClient(opts...),
+		baseURL: strings.TrimSpace(baseURL),
 	}
 }
 
@@ -93,6 +95,7 @@ func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest, ch
 		}
 	}
 	if err := stream.Err(); err != nil {
+		err = formatCompletionError(p.id, p.baseURL, req.Model, err)
 		emitFailed(ch, err)
 		return err
 	}

@@ -75,6 +75,7 @@ func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest,
 		}
 	}
 	if err := stream.Err(); err != nil {
+		err = formatCompletionError(p.ID(), "", req.Model, err)
 		emitFailed(ch, err)
 		return err
 	}
